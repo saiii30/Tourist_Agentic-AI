@@ -5,17 +5,20 @@ import urllib.error
 
 
 def get_place_photo(photo_name: str, api_key: str):
-    """
-    Generate Google Place Photo URL.
-    """
-    if not photo_name:
-        return None
-
-    return (
+    url = (
         f"https://places.googleapis.com/v1/{photo_name}/media"
         f"?maxHeightPx=400"
+        f"&skipHttpRedirect=true"
         f"&key={api_key}"
     )
+
+    try:
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data.get("photoUri")
+    except Exception as e:
+        print("Photo Error:", e)
+        return None
 
 def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
@@ -36,7 +39,8 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
         "places.rating,"
         "places.userRatingCount,"
         "places.formattedAddress,"
-        "places.websiteUri"
+        "places.websiteUri,"
+        "places.photos"
     )
 
     payload = {
@@ -78,6 +82,11 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
                 "Address not available"
             )
             website = place.get("websiteUri", "Not available")
+            photo_url = None
+            photos = place.get("photos")
+            if photos:
+                photo_name = photos[0].get("name")
+                photo_url = get_place_photo(photo_name, api_key)
 
             lines.append(f"🏨 {name}")
             lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
@@ -85,6 +94,8 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
 
             if website != "Not available":
                 lines.append(f"🌐 Website: {website}")
+            if photo_url:
+                lines.append(f"![{name}]({photo_url})")
 
             lines.append("")
 

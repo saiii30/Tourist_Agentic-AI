@@ -4,6 +4,23 @@ import urllib.request
 import urllib.parse
 from rag_service import client
 import urllib.error
+
+def get_place_photo(photo_name: str, api_key: str):
+    url = (
+        f"https://places.googleapis.com/v1/{photo_name}/media"
+        f"?maxHeightPx=400"
+        f"&skipHttpRedirect=true"
+        f"&key={api_key}"
+    )
+
+    try:
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data.get("photoUri")
+    except Exception as e:
+        print("Photo Error:", e)
+        return None
+        
 def get_places_from_google(city: str, interests: str) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
     if not api_key:
@@ -19,7 +36,7 @@ def get_places_from_google(city: str, interests: str) -> str | None:
     
     # New Places API endpoint and parameters
     url = "https://places.googleapis.com/v1/places:searchText"
-    field_mask = "places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.websiteUri"
+    field_mask = "places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.websiteUri,places.photos"
     
     post_data = json.dumps({"textQuery": query}).encode('utf-8')
     
@@ -45,6 +62,11 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 num_reviews = place.get("userRatingCount", 0)
                 address = place.get("formattedAddress", "Address not available")
                 website = place.get("websiteUri", "Not available")
+                photo_url = None
+                photos = place.get("photos")
+                if photos:
+                    photo_name = photos[0].get("name")
+                    photo_url = get_place_photo(photo_name, api_key)
 
                 lines.append(f"🏛 {name}")
                 lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
@@ -52,6 +74,8 @@ def get_places_from_google(city: str, interests: str) -> str | None:
 
                 if website != "Not available":
                     lines.append(f"🌐 Website: {website}")
+                if photo_url:
+                    lines.append(f"![{name}]({photo_url})")
 
                 lines.append("")
             
@@ -66,7 +90,7 @@ def get_places_from_google(city: str, interests: str) -> str | None:
         return None
 
     except Exception as e:
-        print("Error:", str(e))
+        print("Error:", str(neede))
         return None
 
 def nearby_agent(question, city="None", interests="None"):

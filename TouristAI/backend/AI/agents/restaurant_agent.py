@@ -3,7 +3,22 @@ import json
 import urllib.request
 import urllib.error
 
+def get_place_photo(photo_name: str, api_key: str):
+    url = (
+        f"https://places.googleapis.com/v1/{photo_name}/media"
+        f"?maxHeightPx=400"
+        f"&skipHttpRedirect=true"
+        f"&key={api_key}"
+    )
 
+    try:
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data.get("photoUri")
+    except Exception as e:
+        print("Photo Error:", e)
+        return None
+        
 def get_restaurants_from_google(city: str, budget: str, interests: str) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
@@ -29,7 +44,8 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
         "places.rating,"
         "places.userRatingCount,"
         "places.formattedAddress,"
-        "places.priceLevel"
+        "places.priceLevel,"
+        "places.photos"
     )
 
     payload = {
@@ -78,11 +94,18 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
                 "Address not available"
             )
             price = place.get("priceLevel", "N/A")
+            photo_url = None
+            photos = place.get("photos")
+            if photos:
+                photo_name = photos[0].get("name")
+                photo_url = get_place_photo(photo_name, api_key)
 
             lines.append(f"🍽️ {name}")
             lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
             lines.append(f"💰 Price Level: {price}")
             lines.append(f"📍 Address: {address}")
+            if photo_url:
+                lines.append(f"![{name}]({photo_url})")
             lines.append("")
 
         print("✅ Google Places API call successful.")
