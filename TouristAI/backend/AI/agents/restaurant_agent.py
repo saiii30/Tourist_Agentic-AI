@@ -160,6 +160,13 @@ def restaurant_agent(
 
     if google_results:
         print("✅ Found restaurant recommendations from Google Places API.")
+        # Save the successful Google response to RAG for future queries
+        try:
+            from rag_service import save_to_rag
+            save_to_rag(question, google_results)
+            print("✅ Saved Google Places response to RAG.")
+        except Exception as e:
+            print(f"⚠️ Could not save Google response to RAG: {e}")
         return google_results
 
     # Fallback to RAG

@@ -127,6 +127,14 @@ def hotel_agent(question, city="None", budget="None", travelers=1):
     )
 
     if google_results:
+        # Save the successful Google response to RAG for future queries
+        try:
+            from rag_service import save_to_rag
+            save_to_rag(question, google_results)
+            print("✅ Saved Google Places response to RAG.")
+        except Exception as e:
+            print(f"⚠️ Could not save Google response to RAG: {e}")
+
         return {
             "source": "google_places",
             "city": city,

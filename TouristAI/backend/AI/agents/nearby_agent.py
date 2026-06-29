@@ -101,6 +101,13 @@ def nearby_agent(question, city="None", interests="None"):
     google_results = get_places_from_google(city, interests)
     if google_results:
         print("Found nearby place recommendations from Google Places API.")
+        # Save the successful Google response to RAG for future queries
+        try:
+            from rag_service import save_to_rag
+            save_to_rag(question, google_results)
+            print("✅ Saved Google Places response to RAG.")
+        except Exception as e:
+            print(f"⚠️ Could not save Google response to RAG: {e}")
         return google_results
 
     # 2. Fallback to RAG service (FAISS DB -> Groq LLM) if Google API fails
