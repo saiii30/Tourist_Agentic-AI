@@ -133,7 +133,13 @@ def restaurant_node(state):
 
 def hotel_node(state):
     answer = hotel_agent(state["question"], state.get("city", "None"), state.get("budget", "None"), state.get("travelers", 1))
-    text = answer.get("answer") if isinstance(answer, dict) else answer
+    
+    # The hotel_agent returns a dictionary with different keys based on the source.
+    # We need to extract the relevant text from 'hotels' or 'answer'.
+    if isinstance(answer, dict):
+        text = answer.get("hotels") or answer.get("answer") or answer.get("message", "Could not retrieve hotel info.")
+    else:
+        text = str(answer)
 
     return {
         "responses": [

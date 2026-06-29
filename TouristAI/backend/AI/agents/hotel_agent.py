@@ -1,17 +1,162 @@
 import os
 import json
-from rag_service import client
+import urllib.request
+import urllib.error
+
+
+def get_place_photo(photo_name: str, api_key: str):
+    """
+    Generate Google Place Photo URL.
+    """
+    if not photo_name:
+        return None
+
+    return (
+        f"https://places.googleapis.com/v1/{photo_name}/media"
+        f"?maxHeightPx=400"
+        f"&key={api_key}"
+    )
+
+def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None:
+    api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+
+    if not api_key:
+        print("❌ GOOGLE_PLACES_API_KEY not found.")
+        return None
+
+    query = f"best hotels in {city}"
+
+    if budget and budget.lower() != "none":
+        query = f"{budget} budget hotels in {city}"
+
+    url = "https://places.googleapis.com/v1/places:searchText"
+
+    field_mask = (
+        "places.displayName,"
+        "places.rating,"
+        "places.userRatingCount,"
+        "places.formattedAddress,"
+        "places.websiteUri"
+    )
+
+    payload = {
+        "textQuery": query,
+        "maxResultCount": 5
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": field_mask
+    }
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+
+        print(json.dumps(data, indent=2))
+
+        if not data.get("places"):
+            print("⚠️ No hotels found.")
+            return None
+
+        lines = []
+
+        for place in data["places"][:5]:
+            name = place.get("displayName", {}).get("text", "N/A")
+            rating = place.get("rating", "N/A")
+            reviews = place.get("userRatingCount", 0)
+            address = place.get(
+                "formattedAddress",
+                "Address not available"
+            )
+            website = place.get("websiteUri", "Not available")
+
+            lines.append(f"🏨 {name}")
+            lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
+            lines.append(f"📍 Address: {address}")
+
+            if website != "Not available":
+                lines.append(f"🌐 Website: {website}")
+
+            lines.append("")
+
+        print("✅ Hotels fetched successfully.")
+
+        return "\n".join(lines)
+
+    except urllib.error.HTTPError as e:
+        print("Status:", e.code)
+        print(e.read().decode("utf-8"))
+        return None
+
+    except Exception as e:
+        print("Error:", str(e))
+        return None
+
 
 def hotel_agent(question, city="None", budget="None", travelers=1):
     if city == "None":
-        return "I need to know which city you are visiting to suggest hotels."
-        
-    # Fallback to get_answer for hotel recommendations
-    print("Using RAG service for hotel recommendations.")
+        return {
+            "message": "I need to know which city you are visiting."
+        }
+
+    # Google Places
+    google_results = get_hotels_from_google(
+        city,
+        budget,
+        travelers
+    )
+
+    if google_results:
+        return {
+            "source": "google_places",
+            "city": city,
+            "travelers": travelers,
+            "hotels": google_results
+        }
+
+    # RAG Fallback
+    print("⚠️ Google failed. Using RAG.")
+
     try:
         from rag_service import get_answer
+
         ans = get_answer(question)
-        return ans.get("answer") if isinstance(ans, dict) else ans
+
+        if isinstance(ans, dict):
+            answer = ans.get("answer")
+        else:
+            answer = str(ans)
+
+        return {
+            "source": "rag",
+            "answer": answer
+        }
+
     except Exception as e:
-        print(f"Error in hotel_agent fallback: {e}")
-        return f"Currently, I cannot fetch hotel recommendations for {city}."
+        print("RAG Error:", str(e))
+
+        return {
+            "source": "fallback",
+            "answer": f"Currently, I cannot fetch hotel recommendations for {city}."
+        }
+
+
+# Example
+if __name__ == "__main__":
+    result = hotel_agent(
+        question="Suggest hotels in Madurai",
+        city="Madurai",
+        budget="medium",
+        travelers=2
+    )
+
+    print(json.dumps(result, indent=4))
