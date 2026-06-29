@@ -216,18 +216,7 @@ def extract_single_field(field_key: str, user_response: str) -> str:
     
     # --- Local Rule-Based / Regex Parsing ---
     if field_key == "destination":
-        # Check if the response matches any city in our json database
-        db_path = os.path.join(os.path.dirname(__file__), "agents", "locations_data.json")
-        if os.path.exists(db_path):
-            try:
-                with open(db_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                for city in data.keys():
-                    if city in user_response_clean:
-                        return city.title()
-            except Exception:
-                pass
-                
+        pass # This is now fully handled by the LLM fallback for better accuracy
     elif field_key == "travel_date":
         # If response is simple/short, just return it title-cased
         words = user_response_clean.split()

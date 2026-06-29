@@ -54,13 +54,7 @@ def chat(req: ChatRequest):
     result = graph.invoke(
         {
             "question": req.question,
-            "responses": [],
-            "city": "None",
-            "days": 3,
-            "budget": "None",
-            "travelers": 1,
-            "travel_style": "None",
-            "interests": "None"
+            "responses": []
         }
     )
     return {
