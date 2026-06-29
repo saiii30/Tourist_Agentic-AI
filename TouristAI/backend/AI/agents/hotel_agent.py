@@ -115,17 +115,23 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
 
 def hotel_agent(question, city="None", budget="None", travelers=1):
     if city == "None":
-        return {
-            "message": "I need to know which city you are visiting."
-        }
+        return {"message": "I need to know which city you are visiting."}
 
-    # Google Places
+    # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
+    try:
+        from rag_service import get_answer
+        rag_result = get_answer(question, check_rag_only=True)
+        if rag_result:
+            print("✅ Found hotel recommendations from RAG (FAISS DB).")
+            return rag_result
+    except Exception as e:
+        print(f"⚠️ Error checking RAG for hotels: {e}")
+
+    # 2. If RAG is empty, try the Google Places API
+    print("ℹ️ No results in RAG. Checking Google Places API for hotels.")
     google_results = get_hotels_from_google(
-        city,
-        budget,
-        travelers
+        city, budget, travelers
     )
-
     if google_results:
         # Save the successful Google response to RAG for future queries
         try:
@@ -134,39 +140,16 @@ def hotel_agent(question, city="None", budget="None", travelers=1):
             print("✅ Saved Google Places response to RAG.")
         except Exception as e:
             print(f"⚠️ Could not save Google response to RAG: {e}")
+        return {"source": "google_places", "hotels": google_results}
 
-        return {
-            "source": "google_places",
-            "city": city,
-            "travelers": travelers,
-            "hotels": google_results
-        }
-
-    # RAG Fallback
-    print("⚠️ Google failed. Using RAG.")
-
+    # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
+    print("⚠️ Google Places API also failed. Falling back to Groq LLM.")
     try:
         from rag_service import get_answer
-
-        ans = get_answer(question)
-
-        if isinstance(ans, dict):
-            answer = ans.get("answer")
-        else:
-            answer = str(ans)
-
-        return {
-            "source": "rag",
-            "answer": answer
-        }
-
+        return get_answer(question)
     except Exception as e:
-        print("RAG Error:", str(e))
-
-        return {
-            "source": "fallback",
-            "answer": f"Currently, I cannot fetch hotel recommendations for {city}."
-        }
+        print(f"❌ Final fallback to Groq failed: {e}")
+        return {"message": f"Sorry, I'm having trouble finding hotel recommendations for {city} right now."}
 
 
 # Example

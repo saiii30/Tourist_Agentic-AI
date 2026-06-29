@@ -146,20 +146,24 @@ def restaurant_agent(
     budget="None"
 ):
     if city == "None":
-        return (
-            "I need to know which city you are visiting "
-            "to suggest restaurants."
-        )
+        return {"message": "I need to know which city you are visiting to suggest restaurants."}
 
-    # Try Google Places first
+    # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
+    try:
+        from rag_service import get_answer
+        rag_result = get_answer(question, check_rag_only=True)
+        if rag_result:
+            print("✅ Found restaurant recommendations from RAG (FAISS DB).")
+            return rag_result
+    except Exception as e:
+        print(f"⚠️ Error checking RAG for restaurants: {e}")
+
+    # 2. If RAG is empty, try the Google Places API
+    print("ℹ️ No results in RAG. Checking Google Places API for restaurants.")
     google_results = get_restaurants_from_google(
-        city,
-        budget,
-        interests
+        city, budget, interests
     )
-
     if google_results:
-        print("✅ Found restaurant recommendations from Google Places API.")
         # Save the successful Google response to RAG for future queries
         try:
             from rag_service import save_to_rag
@@ -167,28 +171,16 @@ def restaurant_agent(
             print("✅ Saved Google Places response to RAG.")
         except Exception as e:
             print(f"⚠️ Could not save Google response to RAG: {e}")
-        return google_results
+        return {"source": "google_places", "answer": google_results}
 
-    # Fallback to RAG
-    print("⚠️ Google Places API failed or returned no results.")
-    print("⚠️ Falling back to RAG service.")
-
+    # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
+    print("⚠️ Google Places API also failed. Falling back to Groq LLM.")
     try:
         from rag_service import get_answer
-
-        ans = get_answer(question)
-
-        if isinstance(ans, dict):
-            return ans.get("answer")
-
-        return ans
-
+        return get_answer(question)
     except Exception as e:
-        print(f"❌ Error in restaurant_agent fallback: {e}")
-        return (
-            f"Currently, I cannot fetch restaurant "
-            f"recommendations for {city}."
-        )
+        print(f"❌ Final fallback to Groq failed: {e}")
+        return {"message": f"Sorry, I'm having trouble finding restaurant recommendations for {city} right now."}
 
 
 # Test directly

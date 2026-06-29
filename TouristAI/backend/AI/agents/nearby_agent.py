@@ -95,12 +95,22 @@ def get_places_from_google(city: str, interests: str) -> str | None:
 
 def nearby_agent(question, city="None", interests="None"):
     if city == "None":
-        return "I need to know which city you are visiting to suggest nearby places."
-        
-    # 1. Attempt to get data from Google Places API first
+        return {"message": "I need to know which city you are visiting to suggest nearby places."}
+
+    # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
+    try:
+        from rag_service import get_answer
+        rag_result = get_answer(question, check_rag_only=True)
+        if rag_result:
+            print("✅ Found nearby place recommendations from RAG (FAISS DB).")
+            return rag_result
+    except Exception as e:
+        print(f"⚠️ Error checking RAG for nearby places: {e}")
+
+    # 2. If RAG is empty, try the Google Places API
+    print("ℹ️ No results in RAG. Checking Google Places API for nearby places.")
     google_results = get_places_from_google(city, interests)
     if google_results:
-        print("Found nearby place recommendations from Google Places API.")
         # Save the successful Google response to RAG for future queries
         try:
             from rag_service import save_to_rag
@@ -108,14 +118,13 @@ def nearby_agent(question, city="None", interests="None"):
             print("✅ Saved Google Places response to RAG.")
         except Exception as e:
             print(f"⚠️ Could not save Google response to RAG: {e}")
-        return google_results
+        return {"source": "google_places", "answer": google_results}
 
-    # 2. Fallback to RAG service (FAISS DB -> Groq LLM) if Google API fails
-    print("Google Places API failed or returned no results. Falling back to RAG service.")
+    # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
+    print("⚠️ Google Places API also failed. Falling back to Groq LLM.")
     try:
         from rag_service import get_answer
-        ans = get_answer(question)
-        return ans.get("answer") if isinstance(ans, dict) else ans
+        return get_answer(question)
     except Exception as e:
-        print(f"Error in nearby_agent fallback: {e}")
-        return f"Currently, I cannot fetch sightseeing suggestions for {city}."
+        print(f"❌ Final fallback to Groq failed: {e}")
+        return {"message": f"Sorry, I'm having trouble finding sightseeing suggestions for {city} right now."}
