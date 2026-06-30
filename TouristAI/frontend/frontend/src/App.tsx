@@ -128,6 +128,9 @@ function MarkdownContent({ text }: { text: string }) {
 // Convert inline markdown: **bold**, *italic*, `code`
 function inlineMd(text: string): string {
   return text
+    .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="my-2 rounded-lg border border-black/[0.07] max-h-48" />')    
+    .replace(/\[View Map\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">🗺️ View Map</a>')
+    .replace(/\[Visit Website\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Visit Website</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code class="bg-gray-100 text-[#1D9E75] px-1 py-0.5 rounded text-xs font-mono">$1</code>');
@@ -170,6 +173,7 @@ function App() {
   const [progressStep, setProgressStep] = useState(0);
   const [isListening, setIsListening] = useState(false);
   const [savedTrips, setSavedTrips] = useState<Record<number, { tripName: string; loading: boolean }>>({});
+  const [mapModalUrl, setMapModalUrl] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

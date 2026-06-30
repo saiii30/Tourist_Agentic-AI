@@ -5,6 +5,38 @@ import urllib.error
 import urllib.parse
 import base64
 
+def get_unsplash_photo(query: str) -> str | None:
+    """
+    Fetches a generic photo from Unsplash based on a query.
+    Returns a direct URL to the image.
+    """
+    unsplash_api_key = os.getenv("UNSPLASH_API_KEY")
+    if not unsplash_api_key:
+        print("⚠️ UNSPLASH_API_KEY not found. Skipping Unsplash fallback.")
+        return None
+
+    search_url = "https://api.unsplash.com/search/photos"
+    params = {
+        "query": query,
+        "per_page": 1,
+        "orientation": "landscape",
+        "client_id": unsplash_api_key
+    }
+    encoded_params = urllib.parse.urlencode(params)
+    full_url = f"{search_url}?{encoded_params}"
+
+    try:
+        req = urllib.request.Request(full_url)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            if data and data.get("results"):
+                print(f"✅ Found Unsplash fallback image for '{query}'")
+                return data["results"][0]["urls"]["regular"]
+            return None
+    except Exception as e:
+        print(f"❌ Unsplash API Error for query '{query}': {e}")
+        return None
+
 def get_place_photo(photo_name: str, api_key: str):
     uri_url = (
         f"https://places.googleapis.com/v1/{photo_name}/media"
@@ -110,6 +142,10 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
             if photos:
                 photo_name = photos[0].get("name")
                 photo_url = get_place_photo(photo_name, api_key)
+            
+            # Fallback to Unsplash if Google Places photo is not available
+            if not photo_url:
+                photo_url = get_unsplash_photo(f"{name} {city} restaurant food")
 
             lines.append(f"🍽️ {name}")
             lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
@@ -118,17 +154,15 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
 
             if address != "Address not available":
                 map_query = urllib.parse.quote_plus(address)
-                map_url = f"https://www.google.com/maps/embed/v1/place?key={api_key}&q={map_query}"
+                map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
                 lines.append(f"🗺️ [View Map]({map_url})")
 
             website = place.get("websiteUri", "Not available")
             if website != "Not available":
                 lines.append(f"🌐 [Visit Website]({website})")
 
-            if photo_url:
-                lines.append(f"![{name}]({photo_url})")
-            else:
-                lines.append(f"📷 *No photo available*")
+            # Ensure photo_url is not None for markdown, or it will render an empty image tag
+            lines.append(f"![{name}]({photo_url or ''})")
                 
             lines.append("")
 
