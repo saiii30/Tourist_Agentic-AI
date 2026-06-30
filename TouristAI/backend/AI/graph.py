@@ -123,10 +123,11 @@ def supervisor_node(state):
 def restaurant_node(state):
     answer = restaurant_agent(state["question"], state.get("city", "None"), state.get("interests", "None"), state.get("budget", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
+    source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
 
     return {
         "responses": [
-            f"Restaurant suggestions:\n{text}"
+            f"Restaurant suggestions:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
@@ -138,12 +139,14 @@ def hotel_node(state):
     # We need to extract the relevant text from 'hotels' or 'answer'.
     if isinstance(answer, dict):
         text = answer.get("hotels") or answer.get("answer") or answer.get("message", "Could not retrieve hotel info.")
+        source = answer.get("source", "Groq")
     else:
         text = str(answer)
+        source = "Groq"
 
     return {
         "responses": [
-            f"Hotel suggestions:\n{text}"
+            f"Hotel suggestions:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
@@ -151,10 +154,11 @@ def hotel_node(state):
 def nearby_node(state):
     answer = nearby_agent(state["question"], state.get("city", "None"), state.get("interests", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
+    source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
 
     return {
         "responses": [
-            f"Nearby Places to visit:\n{text}"
+            f"Nearby Places to visit:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
@@ -162,6 +166,7 @@ def nearby_node(state):
 def weather_node(state):
     answer = weather_agent(state["question"], state.get("city", "None"))
 
+    # Weather agent response is a string with source info already inside
     return {
         "responses": [
             f"Weather:\n{answer}"
@@ -172,9 +177,10 @@ def weather_node(state):
 def general_node(state):
     answer = general_agent(state["question"])
 
+    # General agent now returns a dict with 'answer' and 'source'
     return {
         "responses": [
-            f"{answer}"
+            f"{answer.get('answer')}\n[SOURCE:{answer.get('source', 'Groq')}]"
         ]
     }
 

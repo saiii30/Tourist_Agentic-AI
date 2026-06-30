@@ -5,38 +5,6 @@ import urllib.error
 import urllib.parse
 import base64
 
-def get_unsplash_photo(query: str) -> str | None:
-    """
-    Fetches a generic photo from Unsplash based on a query.
-    Returns a direct URL to the image.
-    """
-    unsplash_api_key = os.getenv("UNSPLASH_API_KEY")
-    if not unsplash_api_key:
-        print("⚠️ UNSPLASH_API_KEY not found. Skipping Unsplash fallback.")
-        return None
-
-    search_url = "https://api.unsplash.com/search/photos"
-    params = {
-        "query": query,
-        "per_page": 1,
-        "orientation": "landscape",
-        "client_id": unsplash_api_key
-    }
-    encoded_params = urllib.parse.urlencode(params)
-    full_url = f"{search_url}?{encoded_params}"
-
-    try:
-        req = urllib.request.Request(full_url)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            if data and data.get("results"):
-                print(f"✅ Found Unsplash fallback image for '{query}'")
-                return data["results"][0]["urls"]["regular"]
-            return None
-    except Exception as e:
-        print(f"❌ Unsplash API Error for query '{query}': {e}")
-        return None
-
 
 def get_place_photo(photo_name: str, api_key: str):
     # First, get the photo URI from Google
@@ -116,41 +84,34 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
 
         lines = []
 
-        for place in data["places"][:5]:
+        for i, place in enumerate(data["places"][:5], 1):
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
             reviews = place.get("userRatingCount", 0)
-            address = place.get(
-                "formattedAddress",
-                "Address not available"
-            )
+            address = place.get("formattedAddress", "Address not available")
             website = place.get("websiteUri", "Not available")
             photo_url = None
             photos = place.get("photos")
             if photos:
                 photo_name = photos[0].get("name")
                 photo_url = get_place_photo(photo_name, api_key)
-            
-            # Fallback to Unsplash if Google Places photo is not available
-            if not photo_url:
-                photo_url = get_unsplash_photo(f"{name} {city} hotel exterior")
 
-            lines.append(f"🏨 {name}")
-            lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
-            lines.append(f"📍 Address: {address}")
+            item_lines = [f"**{name}**"]
+            item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
+            item_lines.append(f"📍 Address: {address}")
             
             if address != "Address not available":
                 map_query = urllib.parse.quote_plus(address)
                 map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
-                lines.append(f"🗺️ [View Map]({map_url})")
+                item_lines.append(f"[View Map]({map_url})")
                 
             if website != "Not available":
-                lines.append(f"🌐 [Visit Website]({website})")
+                item_lines.append(f"[Visit Website]({website})")
 
             if photo_url:
-                lines.append(f"![{name}]({photo_url})")
+                item_lines.append(f"![{name}]({photo_url})")
 
-            lines.append("")
+            lines.append(f"{i}. {chr(10).join(item_lines)}")
 
         print("✅ Hotels fetched successfully.")
 

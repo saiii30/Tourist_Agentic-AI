@@ -80,9 +80,11 @@ function MarkdownContent({ text }: { text: string }) {
 
     // Numbered list block: lines starting with 1. 2. etc.
     if (/^\d+\. /.test(line)) {
-      const items: string[] = [];
+      const items: { num: string; content: string }[] = [];
       while (i < lines.length && /^\d+\. /.test(lines[i])) {
-        items.push(lines[i].replace(/^\d+\. /, ""));
+        const numMatch = lines[i].match(/^(\d+)\. /);
+        const num = numMatch ? numMatch[1] : "1";
+        items.push({ num, content: lines[i].replace(/^\d+\. /, "") });
         i++;
       }
       elements.push(
@@ -90,9 +92,9 @@ function MarkdownContent({ text }: { text: string }) {
           {items.map((it, ii) => (
             <li key={ii} className="flex items-start gap-2.5 text-sm text-gray-700">
               <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#1D9E75]/10 text-[#1D9E75] text-[10px] font-semibold flex items-center justify-center mt-0.5">
-                {ii + 1}
+                {it.num}
               </span>
-              <span dangerouslySetInnerHTML={{ __html: inlineMd(it) }} />
+              <span dangerouslySetInnerHTML={{ __html: inlineMd(it.content) }} />
             </li>
           ))}
         </ol>
@@ -128,7 +130,7 @@ function MarkdownContent({ text }: { text: string }) {
 // Convert inline markdown: **bold**, *italic*, `code`
 function inlineMd(text: string): string {
   return text
-    .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="my-2 rounded-lg border border-black/[0.07] max-h-48" />')    
+    .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="my-2 rounded-lg border border-black/[0.07] max-h-48" />')
     .replace(/\[View Map\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">🗺️ View Map</a>')
     .replace(/\[Visit Website\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Visit Website</a>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')

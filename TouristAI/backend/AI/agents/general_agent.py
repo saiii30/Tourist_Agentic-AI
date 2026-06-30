@@ -4,6 +4,33 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import json
+import base64
+
+def get_place_photo(photo_name: str, api_key: str):
+    # First, get the photo URI from Google
+    uri_url = (
+        f"https://places.googleapis.com/v1/{photo_name}/media"
+        f"?maxHeightPx=400"
+        f"&skipHttpRedirect=true"
+        f"&key={api_key}"
+    )
+    try:
+        with urllib.request.urlopen(uri_url) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            photo_uri = data.get("photoUri")
+        
+        if not photo_uri:
+            print("⚠️ No photoUri in response")
+            return None
+            
+        # Then, download the image data from the URI and encode it as Base64
+        with urllib.request.urlopen(photo_uri) as response:
+            image_data = response.read()
+            # Return a data URI that the browser can render directly
+            return f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
+    except Exception as e:
+        print("Photo Error:", e)
+        return None
 
 def general_agent(question):
     """
@@ -102,31 +129,36 @@ def search_google_places(query: str):
 
         lines = []
 
-        for place in data["places"]:
+        for i, place in enumerate(data["places"][:5], 1): # Limit to top 5 and enumerate
             name = place.get("displayName", {}).get("text", "N/A")
             address = place.get("formattedAddress", "N/A")
             rating = place.get("rating", "N/A")
             reviews = place.get("userRatingCount", 0)
             website = place.get("websiteUri", "N/A")
+            photo_url = None
 
-            lines.append(f"📍 {name}")
-            lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
-            lines.append(f"🏠 Address: {address}")
+            item_lines = [f"**{name}**"]
+            item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
+            item_lines.append(f"📍 Address: {address}")
+
+            if address != "N/A":
+                map_query = urllib.parse.quote_plus(address)
+                map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
+                item_lines.append(f"[View Map]({map_url})")
 
             if website != "N/A":
-                lines.append(f"🌐 Website: {website}")
+                item_lines.append(f"[Visit Website]({website})")
 
             photos = place.get("photos")
             if photos:
-                photo = get_place_photo(
+                photo_url = get_place_photo(
                     photos[0]["name"],
                     api_key
                 )
+                if photo_url:
+                    item_lines.append(f"![{name}]({photo_url})")
 
-                if photo:
-                    lines.append(f"🖼️ Photo: {photo}")
-
-            lines.append("")
+            lines.append(f"{i}. {chr(10).join(item_lines)}")
 
         return "\n".join(lines)
 

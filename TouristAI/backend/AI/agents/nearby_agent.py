@@ -6,38 +6,6 @@ from rag_service import client
 import urllib.error
 import base64
 
-def get_unsplash_photo(query: str) -> str | None:
-    """
-    Fetches a generic photo from Unsplash based on a query.
-    Returns a direct URL to the image.
-    """
-    unsplash_api_key = os.getenv("UNSPLASH_API_KEY")
-    if not unsplash_api_key:
-        print("⚠️ UNSPLASH_API_KEY not found. Skipping Unsplash fallback.")
-        return None
-
-    search_url = "https://api.unsplash.com/search/photos"
-    params = {
-        "query": query,
-        "per_page": 1,
-        "orientation": "landscape",
-        "client_id": unsplash_api_key
-    }
-    encoded_params = urllib.parse.urlencode(params)
-    full_url = f"{search_url}?{encoded_params}"
-
-    try:
-        req = urllib.request.Request(full_url)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            if data and data.get("results"):
-                print(f"✅ Found Unsplash fallback image for '{query}'")
-                return data["results"][0]["urls"]["regular"]
-            return None
-    except Exception as e:
-        print(f"❌ Unsplash API Error for query '{query}': {e}")
-        return None
-
 def get_place_photo(photo_name: str, api_key: str):
     # First, get the photo URI from Google
     uri_url = (
@@ -61,6 +29,71 @@ def get_place_photo(photo_name: str, api_key: str):
             return f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
     except Exception as e:
         print("Photo Error:", e)
+        return None
+
+def get_places_from_foursquare(city: str, interests: str) -> str | None:
+    """
+    Fetches nearby places from the Foursquare API.
+    """
+    api_key = os.getenv("FOURSQUARE_API_KEY")
+    if not api_key:
+        print("⚠️ FOURSQUARE_API_KEY not found. Skipping Foursquare search.")
+        return None
+
+    query_parts = [interests] if interests and interests.lower() != "none" else ["tourist attractions"]
+    query = " ".join(query_parts)
+
+    url = "https://api.foursquare.com/v3/places/search"
+    params = {
+        "query": query,
+        "near": city,
+        "limit": 5,
+        "fields": "fsq_id,name,location,rating,website,photos"
+    }
+    headers = {
+        "Accept": "application/json",
+        "Authorization": api_key
+    }
+
+    try:
+        req = urllib.request.Request(f"{url}?{urllib.parse.urlencode(params)}", headers=headers)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+
+        if data and data.get("results"):
+            print("✅ Foursquare API call successful, found nearby places.")
+            lines = []
+            for i, place in enumerate(data["results"][:5], 1): # Use enumerate
+                name = place.get("name", "N/A")
+                # Foursquare rating is out of 10, convert to 5-star scale
+                rating = round(place.get("rating", 0) / 2, 1) if "rating" in place else "N/A"
+                address = place.get("location", {}).get("formatted_address", "Address not available")
+                website = place.get("website", "Not available")
+                photo_url = None
+                if place.get("photos"):
+                    photo = place["photos"][0]
+                    photo_url = f"{photo['prefix']}original{photo['suffix']}"
+
+                item_lines = [f"**{name}**"]
+                item_lines.append(f"⭐ Rating: {rating}") # Foursquare doesn't provide review counts in basic search
+                item_lines.append(f"📍 Address: {address}")
+
+                if address != "Address not available":
+                    map_query = urllib.parse.quote_plus(f"{name}, {address}")
+                    map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
+                    item_lines.append(f"[View Map]({map_url})") # No emoji
+
+                if website != "Not available":
+                    item_lines.append(f"[Visit Website]({website})") # No emoji
+                if photo_url:
+                    item_lines.append(f"![{name}]({photo_url})")
+
+                lines.append(f"{i}. {chr(10).join(item_lines)}") # Append as numbered item
+            return "\n".join(lines)
+        else:
+            return None
+    except Exception as e:
+        print(f"❌ Foursquare API Error: {e}")
         return None
         
 def get_places_from_google(city: str, interests: str) -> str | None:
@@ -97,8 +130,7 @@ def get_places_from_google(city: str, interests: str) -> str | None:
         if data and data.get("places"):
             print("Google Places API call successful, found nearby places.")
             lines = []
-            # Limit to top 3 results
-            for place in data["places"][:5]:
+            for i, place in enumerate(data["places"][:5], 1):
                 name = place.get("displayName", {}).get("text", "N/A")
                 rating = place.get("rating", "N/A")
                 num_reviews = place.get("userRatingCount", 0)
@@ -109,26 +141,22 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 if photos:
                     photo_name = photos[0].get("name")
                     photo_url = get_place_photo(photo_name, api_key)
-                
-                # Fallback to Unsplash if Google Places photo is not available
-                if not photo_url:
-                    photo_url = get_unsplash_photo(f"{name} {city}")
 
-                lines.append(f"🏛 {name}")
-                lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
-                lines.append(f"📍 Address: {address}")
+                item_lines = [f"**{name}**"]
+                item_lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
+                item_lines.append(f"📍 Address: {address}")
 
                 if address != "Address not available":
                     map_query = urllib.parse.quote_plus(address)
                     map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
-                    lines.append(f"🗺️ [View Map]({map_url})")
+                    item_lines.append(f"[View Map]({map_url})")
 
                 if website != "Not available":
-                    lines.append(f"🌐 [Visit Website]({website})")
+                    item_lines.append(f"[Visit Website]({website})")
                 if photo_url:
-                    lines.append(f"![{name}]({photo_url})")
+                    item_lines.append(f"![{name}]({photo_url})")
 
-                lines.append("")
+                lines.append(f"{i}. {chr(10).join(item_lines)}")
             
             return "\n".join(lines)
         else:
@@ -148,7 +176,7 @@ def nearby_agent(question, city="None", interests="None"):
     if city == "None":
         return {"message": "I need to know which city you are visiting to suggest nearby places."}
 
-    # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
+    # 1. Check RAG cache
     try:
         from rag_service import get_answer
         rag_result = get_answer(question, check_rag_only=True)
@@ -158,10 +186,18 @@ def nearby_agent(question, city="None", interests="None"):
     except Exception as e:
         print(f"⚠️ Error checking RAG for nearby places: {e}")
 
-    # 2. If RAG is empty, try the Google Places API
-    print("ℹ️ No results in RAG. Checking Google Places API for nearby places.")
+    # 2. Try Foursquare API
+    print("ℹ️ Checking Foursquare API for nearby places.")
+    foursquare_results = get_places_from_foursquare(city, interests)
+    if foursquare_results:
+        print("✅ Found results from Foursquare.")
+        return {"source": "foursquare", "answer": foursquare_results}
+
+    # 3. If Foursquare fails, try the Google Places API
+    print("⚠️ Foursquare failed. Checking Google Places API for nearby places.")
     google_results = get_places_from_google(city, interests)
     if google_results:
+        print("✅ Found results from Google Places.")
         # Save the successful Google response to RAG for future queries
         try:
             from rag_service import save_to_rag
@@ -171,8 +207,8 @@ def nearby_agent(question, city="None", interests="None"):
             print(f"⚠️ Could not save Google response to RAG: {e}")
         return {"source": "google_places", "answer": google_results}
 
-    # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
-    print("⚠️ Google Places API also failed. Falling back to Groq LLM.")
+    # 4. Final fallback to Groq LLM
+    print("⚠️ All place APIs failed. Falling back to Groq LLM.")
     try:
         from rag_service import get_answer
         return get_answer(question)
