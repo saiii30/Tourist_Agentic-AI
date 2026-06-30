@@ -2,19 +2,29 @@ import os
 import json
 import urllib.request
 import urllib.error
+import urllib.parse
+import base64
 
 def get_place_photo(photo_name: str, api_key: str):
-    url = (
+    uri_url = (
         f"https://places.googleapis.com/v1/{photo_name}/media"
         f"?maxHeightPx=400"
         f"&skipHttpRedirect=true"
         f"&key={api_key}"
     )
-
     try:
-        with urllib.request.urlopen(url) as response:
+        with urllib.request.urlopen(uri_url) as response:
             data = json.loads(response.read().decode("utf-8"))
-            return data.get("photoUri")
+            photo_uri = data.get("photoUri")
+
+        if not photo_uri:
+            print("⚠️ No photoUri in response")
+            return None
+
+        with urllib.request.urlopen(photo_uri) as response:
+            image_data = response.read()
+            return f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
+
     except Exception as e:
         print("Photo Error:", e)
         return None
@@ -45,7 +55,8 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
         "places.userRatingCount,"
         "places.formattedAddress,"
         "places.priceLevel,"
-        "places.photos"
+        "places.photos,"
+        "places.websiteUri"
     )
 
     payload = {
@@ -104,8 +115,21 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
             lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
             lines.append(f"💰 Price Level: {price}")
             lines.append(f"📍 Address: {address}")
+
+            if address != "Address not available":
+                map_query = urllib.parse.quote_plus(address)
+                map_url = f"https://www.google.com/maps/embed/v1/place?key={api_key}&q={map_query}"
+                lines.append(f"🗺️ [View Map]({map_url})")
+
+            website = place.get("websiteUri", "Not available")
+            if website != "Not available":
+                lines.append(f"🌐 [Visit Website]({website})")
+
             if photo_url:
                 lines.append(f"![{name}]({photo_url})")
+            else:
+                lines.append(f"📷 *No photo available*")
+                
             lines.append("")
 
         print("✅ Google Places API call successful.")

@@ -1,5 +1,9 @@
 from rag_service import get_answer, save_to_rag
-
+import os
+import urllib.request
+import urllib.error
+import urllib.parse
+import json
 
 def general_agent(question):
     """

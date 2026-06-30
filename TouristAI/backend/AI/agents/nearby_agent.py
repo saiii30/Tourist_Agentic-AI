@@ -4,19 +4,29 @@ import urllib.request
 import urllib.parse
 from rag_service import client
 import urllib.error
+import base64
 
 def get_place_photo(photo_name: str, api_key: str):
-    url = (
+    # First, get the photo URI from Google
+    uri_url = (
         f"https://places.googleapis.com/v1/{photo_name}/media"
         f"?maxHeightPx=400"
         f"&skipHttpRedirect=true"
         f"&key={api_key}"
     )
-
     try:
-        with urllib.request.urlopen(url) as response:
+        with urllib.request.urlopen(uri_url) as response:
             data = json.loads(response.read().decode("utf-8"))
-            return data.get("photoUri")
+            photo_uri = data.get("photoUri")
+        
+        if not photo_uri:
+            return None
+            
+        # Then, download the image data from the URI and encode it as Base64
+        with urllib.request.urlopen(photo_uri) as response:
+            image_data = response.read()
+            # Return a data URI that the browser can render directly
+            return f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
     except Exception as e:
         print("Photo Error:", e)
         return None
@@ -72,8 +82,13 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
                 lines.append(f"📍 Address: {address}")
 
+                if address != "Address not available":
+                    map_query = urllib.parse.quote_plus(address)
+                    map_url = f"https://www.google.com/maps/embed/v1/place?key={api_key}&q={map_query}"
+                    lines.append(f"🗺️ [View Map]({map_url})")
+
                 if website != "Not available":
-                    lines.append(f"🌐 Website: {website}")
+                    lines.append(f"🌐 [Visit Website]({website})")
                 if photo_url:
                     lines.append(f"![{name}]({photo_url})")
 
@@ -90,7 +105,7 @@ def get_places_from_google(city: str, interests: str) -> str | None:
         return None
 
     except Exception as e:
-        print("Error:", str(neede))
+        print("Error:", str(e))
         return None
 
 def nearby_agent(question, city="None", interests="None"):
