@@ -5,6 +5,39 @@ import urllib.parse
 from rag_service import client
 import urllib.error
 import base64
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+def get_image_from_website(url: str):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=5)
+
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # 1. OG IMAGE (BEST)
+        og = soup.find("meta", property="og:image")
+        if og and og.get("content"):
+            return og["content"]
+
+        # 2. TWITTER IMAGE
+        tw = soup.find("meta", property="twitter:image")
+        if tw and tw.get("content"):
+            return tw["content"]
+
+        # 3. FIRST IMAGE TAG
+        img = soup.find("img")
+        if img and img.get("src"):
+            img_url = img["src"]
+
+            if img_url.startswith("/"):
+                img_url = urljoin(url, img_url)
+
+            return img_url
+
+    except Exception as e:
+        print("Website image error:", e)
 
 def get_place_photo(photo_name: str, api_key: str):
     # First, get the photo URI from Google
@@ -70,9 +103,14 @@ def get_places_from_foursquare(city: str, interests: str) -> str | None:
                 address = place.get("location", {}).get("formatted_address", "Address not available")
                 website = place.get("website", "Not available")
                 photo_url = None
+
+                if website != "Not available":
+                    photo_url = get_image_from_website(website)
+
                 if place.get("photos"):
-                    photo = place["photos"][0]
-                    photo_url = f"{photo['prefix']}original{photo['suffix']}"
+                    if not photo_url:
+                        photo = place["photos"][0]
+                        photo_url = f"{photo['prefix']}original{photo['suffix']}"
 
                 item_lines = [f"**{name}**"]
                 item_lines.append(f"⭐ Rating: {rating}") # Foursquare doesn't provide review counts in basic search
@@ -137,8 +175,12 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 address = place.get("formattedAddress", "Address not available")
                 website = place.get("websiteUri", "Not available")
                 photo_url = None
+
+                if website != "Not available":
+                    photo_url = get_image_from_website(website)
+
                 photos = place.get("photos")
-                if photos:
+                if not photo_url and photos:
                     photo_name = photos[0].get("name")
                     photo_url = get_place_photo(photo_name, api_key)
 

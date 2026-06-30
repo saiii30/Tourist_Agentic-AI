@@ -5,6 +5,39 @@ import urllib.error
 import urllib.parse
 import json
 import base64
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+def get_image_from_website(url: str):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=5)
+
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # 1. OG IMAGE (BEST)
+        og = soup.find("meta", property="og:image")
+        if og and og.get("content"):
+            return og["content"]
+
+        # 2. TWITTER IMAGE
+        tw = soup.find("meta", property="twitter:image")
+        if tw and tw.get("content"):
+            return tw["content"]
+
+        # 3. FIRST IMAGE TAG
+        img = soup.find("img")
+        if img and img.get("src"):
+            img_url = img["src"]
+
+            if img_url.startswith("/"):
+                img_url = urljoin(url, img_url)
+
+            return img_url
+
+    except Exception as e:
+        print("Website image error:", e)
 
 def get_place_photo(photo_name: str, api_key: str):
     # First, get the photo URI from Google
@@ -137,6 +170,9 @@ def search_google_places(query: str):
             website = place.get("websiteUri", "N/A")
             photo_url = None
 
+            if website != "N/A":
+                photo_url = get_image_from_website(website)
+
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
             item_lines.append(f"📍 Address: {address}")
@@ -150,13 +186,14 @@ def search_google_places(query: str):
                 item_lines.append(f"[Visit Website]({website})")
 
             photos = place.get("photos")
-            if photos:
-                photo_url = get_place_photo(
-                    photos[0]["name"],
-                    api_key
-                )
-                if photo_url:
-                    item_lines.append(f"![{name}]({photo_url})")
+            if not photo_url and photos:
+                photo_name = photos[0]["name"]
+                photo_url_google = get_place_photo(photo_name, api_key)
+                if photo_url_google:
+                    photo_url = photo_url_google
+            
+            if photo_url:
+                item_lines.append(f"![{name}]({photo_url})")
 
             lines.append(f"{i}. {chr(10).join(item_lines)}")
 

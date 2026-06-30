@@ -4,6 +4,39 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import base64
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+def get_image_from_website(url: str):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=5)
+
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # 1. OG IMAGE (BEST)
+        og = soup.find("meta", property="og:image")
+        if og and og.get("content"):
+            return og["content"]
+
+        # 2. TWITTER IMAGE
+        tw = soup.find("meta", property="twitter:image")
+        if tw and tw.get("content"):
+            return tw["content"]
+
+        # 3. FIRST IMAGE TAG
+        img = soup.find("img")
+        if img and img.get("src"):
+            img_url = img["src"]
+
+            if img_url.startswith("/"):
+                img_url = urljoin(url, img_url)
+
+            return img_url
+
+    except Exception as e:
+        print("Website image error:", e)
 
 def get_place_photo(photo_name: str, api_key: str):
     uri_url = (
@@ -102,9 +135,16 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
             reviews = place.get("userRatingCount", 0)
             address = place.get("formattedAddress", "Address not available")
             price = place.get("priceLevel", "N/A")
+            website = place.get("websiteUri", "Not available")
             photo_url = None
+
+            # 1. Try website image first
+            if website != "Not available":
+                photo_url = get_image_from_website(website)
+
+            # 2. Fallback to Google Places photo
             photos = place.get("photos")
-            if photos:
+            if not photo_url and photos:
                 photo_name = photos[0].get("name")
                 photo_url = get_place_photo(photo_name, api_key)
 
@@ -118,7 +158,6 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
                 map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
                 item_lines.append(f"[View Map]({map_url})")
 
-            website = place.get("websiteUri", "Not available")
             if website != "Not available":
                 item_lines.append(f"[Visit Website]({website})")
 

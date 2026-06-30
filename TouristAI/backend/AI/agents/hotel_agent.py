@@ -4,32 +4,42 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import base64
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, quote
 
-
-def get_place_photo(photo_name: str, api_key: str):
-    # First, get the photo URI from Google
-    uri_url = (
-        f"https://places.googleapis.com/v1/{photo_name}/media"
-        f"?maxHeightPx=400"
-        f"&skipHttpRedirect=true"
-        f"&key={api_key}"
-    )
+def get_image_from_website(url: str):
     try:
-        with urllib.request.urlopen(uri_url) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            photo_uri = data.get("photoUri")
-        
-        if not photo_uri:
-            return None
-            
-        # Then, download the image data from the URI and encode it as Base64
-        with urllib.request.urlopen(photo_uri) as response:
-            image_data = response.read()
-            # Return a data URI that the browser can render directly
-            return f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url, headers=headers, timeout=5)
+
+        soup = BeautifulSoup(res.text, "html.parser")
+
+        # 1. OG IMAGE (BEST)
+        og = soup.find("meta", property="og:image")
+        if og and og.get("content"):
+            return og["content"]
+
+        # 2. TWITTER IMAGE
+        tw = soup.find("meta", property="twitter:image")
+        if tw and tw.get("content"):
+            return tw["content"]
+
+        # 3. FIRST IMAGE TAG
+        img = soup.find("img")
+        if img and img.get("src"):
+            img_url = img["src"]
+
+            if img_url.startswith("/"):
+                img_url = urljoin(url, img_url)
+
+            return img_url
+
     except Exception as e:
-        print("Photo Error:", e)
-        return None
+        print("Website image error:", e)
+
+    return None
+
 
 def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
@@ -85,16 +95,23 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
         lines = []
 
         for i, place in enumerate(data["places"][:5], 1):
+            print(place)
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
             reviews = place.get("userRatingCount", 0)
             address = place.get("formattedAddress", "Address not available")
             website = place.get("websiteUri", "Not available")
+            
             photo_url = None
+
+            website = place.get("websiteUri")
             photos = place.get("photos")
-            if photos:
-                photo_name = photos[0].get("name")
-                photo_url = get_place_photo(photo_name, api_key)
+
+            # 1. TRY WEBSITE IMAGE FIRST
+            if website:
+                photo_url = get_image_from_website(website)
+            
+
 
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
@@ -114,6 +131,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
             lines.append(f"{i}. {chr(10).join(item_lines)}")
 
         print("✅ Hotels fetched successfully.")
+       
 
         return "\n".join(lines)
 
