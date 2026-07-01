@@ -8,35 +8,124 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
-def get_image_from_website(url: str):
+import base64
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, quote
+
+
+
+def get_image_from_website(url, max_images=20):
+    """
+    Returns up to max_images image URLs from a website.
+    """
+
     try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        res = requests.get(url, headers=headers, timeout=5)
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/138.0 Safari/537.36"
+            )
+        }
 
-        soup = BeautifulSoup(res.text, "html.parser")
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=20,
+            allow_redirects=True,
+        )
 
-        # 1. OG IMAGE (BEST)
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        images = []
+        seen = set()
+
+        def add_image(src):
+            if not src:
+                return
+
+            src = src.strip()
+
+            if src.startswith("data:"):
+                return
+
+            full = urljoin(url, src)
+
+            # Ignore icons/logos/svg
+            if any(
+                x in full.lower()
+                for x in [
+                    ".svg",
+                    "logo",
+                    "icon",
+                    "favicon",
+                    "sprite",
+                ]
+            ):
+                return
+
+            if full not in seen:
+                seen.add(full)
+                images.append(full)
+
+        # -----------------------
+        # OpenGraph
+        # -----------------------
         og = soup.find("meta", property="og:image")
-        if og and og.get("content"):
-            return og["content"]
+        if og:
+            add_image(og.get("content"))
 
-        # 2. TWITTER IMAGE
-        tw = soup.find("meta", property="twitter:image")
-        if tw and tw.get("content"):
-            return tw["content"]
+        # -----------------------
+        # Twitter
+        # -----------------------
+        twitter = soup.find("meta", attrs={"name": "twitter:image"})
+        if twitter:
+            add_image(twitter.get("content"))
 
-        # 3. FIRST IMAGE TAG
-        img = soup.find("img")
-        if img and img.get("src"):
-            img_url = img["src"]
+        # -----------------------
+        # Picture source tags
+        # -----------------------
+        for source in soup.find_all("source"):
+            add_image(source.get("srcset"))
 
-            if img_url.startswith("/"):
-                img_url = urljoin(url, img_url)
+        # -----------------------
+        # IMG tags
+        # -----------------------
+        for img in soup.find_all("img"):
 
-            return img_url
+            attrs = [
+                "src",
+                "data-src",
+                "data-lazy-src",
+                "data-original",
+                "data-image",
+                "data-large-image",
+                "data-srcset",
+                "srcset",
+            ]
+
+            for attr in attrs:
+
+                value = img.get(attr)
+
+                if not value:
+                    continue
+
+                # srcset contains multiple URLs
+                if attr in ["srcset", "data-srcset"]:
+                    for item in value.split(","):
+                        add_image(item.strip().split(" ")[0])
+                else:
+                    add_image(value)
+
+        return images[:max_images]
 
     except Exception as e:
         print("Website image error:", e)
+        return []
 
 def get_place_photo(photo_name: str, api_key: str):
     uri_url = (
@@ -136,17 +225,12 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
             address = place.get("formattedAddress", "Address not available")
             price = place.get("priceLevel", "N/A")
             website = place.get("websiteUri", "Not available")
-            photo_url = None
+            photo_urls = []
 
-            # 1. Try website image first
-            # if website != "Not available":
-            #     photo_url = get_image_from_website(website)
-
-            # 2. Fallback to Google Places photo
-            photos = place.get("photos")
-            if not photo_url and photos:
-                photo_name = photos[0].get("name")
-                photo_url = get_place_photo(photo_name, api_key)
+            if website:
+                print(f"Getting images from: {website}")
+                photo_urls = get_image_from_website(website, max_images=20)
+                print("Images:", photo_urls)
 
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
@@ -161,8 +245,9 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
             if website != "Not available":
                 item_lines.append(f"[Visit Website]({website})")
 
-            if photo_url:
-                item_lines.append(f"![{name}]({photo_url})")
+            if photo_urls:
+                for photo in photo_urls:
+                    item_lines.append(f"![{name}]({photo})")
 
             lines.append(f"{i}. {chr(10).join(item_lines)}")
 

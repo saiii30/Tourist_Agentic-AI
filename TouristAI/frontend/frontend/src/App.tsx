@@ -14,21 +14,83 @@ import {
   FaCog,
   FaSearch,
 } from "react-icons/fa";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Navigation, Pagination } from "swiper/modules";
 
+import "swiper/css";
+import "swiper/css/navigation";
+import "swiper/css/pagination";
+import "./App.css";
 type Message = {
   role: "user" | "assistant";
   text: string;
   routes?: string[];
 };
 
-// Simple markdown renderer for AI responses
+function ImageSlider({ images }: { images: string[] }) {
+  return (
+    <div className="flex justify-center my-3">
+      <div className="w-full max-w-[370px] overflow-hidden rounded-xl shadow-md">
+        <Swiper
+          modules={[Navigation, Pagination]}
+          slidesPerView={1}
+          pagination={{ clickable: true }}
+          loop={true}
+        >
+          {images.map((img, index) => (
+            <SwiperSlide key={index}>
+              <img
+                src={img}
+                alt={`Hotel ${index + 1}`}
+                className="w-full h-48 object-cover rounded-xl"
+                loading="lazy"
+              />
+            </SwiperSlide>
+          ))}
+        </Swiper>
+      </div>
+    </div>
+  );
+}
+
 function MarkdownContent({ text }: { text: string }) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];
   let i = 0;
 
+  const imageRegex = /^!\[(.*?)\]\((.*?)\)$/;
+
   while (i < lines.length) {
     const line = lines[i];
+
+    // ==========================
+    // Image Slider
+    // ==========================
+    if (imageRegex.test(line.trim())) {
+      const images: string[] = [];
+
+      while (
+        i < lines.length &&
+        imageRegex.test(lines[i].trim())
+      ) {
+        const match = lines[i].match(imageRegex);
+
+        if (match) {
+          images.push(match[2]);
+        }
+
+        i++;
+      }
+
+      elements.push(
+        <ImageSlider
+          key={`slider-${i}`}
+          images={images}
+        />
+      );
+
+      continue;
+    }
 
     // Skip empty lines
     if (line.trim() === "") {
@@ -36,7 +98,7 @@ function MarkdownContent({ text }: { text: string }) {
       continue;
     }
 
-    // H1 heading: # Title
+    // H1 heading
     if (/^# /.test(line)) {
       elements.push(
         <p key={i} className="text-base font-semibold text-gray-900 mt-3 mb-1">
@@ -47,7 +109,7 @@ function MarkdownContent({ text }: { text: string }) {
       continue;
     }
 
-    // H2/H3 heading: ## or ###
+    // H2 / H3
     if (/^#{2,3} /.test(line)) {
       elements.push(
         <p key={i} className="text-sm font-semibold text-gray-800 mt-3 mb-1">
@@ -58,79 +120,109 @@ function MarkdownContent({ text }: { text: string }) {
       continue;
     }
 
-    // Bullet list block: lines starting with - or *
+    // Bullet list
     if (/^[-*] /.test(line)) {
       const bullets: string[] = [];
+
       while (i < lines.length && /^[-*] /.test(lines[i])) {
         bullets.push(lines[i].replace(/^[-*] /, ""));
         i++;
       }
+
       elements.push(
         <ul key={`ul-${i}`} className="mt-1 mb-2 space-y-1.5 pl-1">
           {bullets.map((b, bi) => (
-            <li key={bi} className="flex items-start gap-2 text-sm text-gray-700">
+            <li
+              key={bi}
+              className="flex items-start gap-2 text-sm text-gray-700"
+            >
               <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#1D9E75] flex-shrink-0" />
-              <span dangerouslySetInnerHTML={{ __html: inlineMd(b) }} />
+              <span
+                dangerouslySetInnerHTML={{
+                  __html: inlineMd(b),
+                }}
+              />
             </li>
           ))}
         </ul>
       );
+
       continue;
     }
 
-    // Numbered list block: lines starting with 1. 2. etc.
+    // Numbered list
     if (/^\d+\. /.test(line)) {
       const items: { num: string; content: string }[] = [];
+
       while (i < lines.length && /^\d+\. /.test(lines[i])) {
         const numMatch = lines[i].match(/^(\d+)\. /);
-        const num = numMatch ? numMatch[1] : "1";
-        items.push({ num, content: lines[i].replace(/^\d+\. /, "") });
+
+        items.push({
+          num: numMatch ? numMatch[1] : "1",
+          content: lines[i].replace(/^\d+\. /, ""),
+        });
+
         i++;
       }
+
       elements.push(
         <ol key={`ol-${i}`} className="mt-1 mb-2 space-y-1.5 pl-1">
           {items.map((it, ii) => (
-            <li key={ii} className="flex items-start gap-2.5 text-sm text-gray-700">
+            <li
+              key={ii}
+              className="flex items-start gap-2.5 text-sm text-gray-700"
+            >
               <span className="flex-shrink-0 w-5 h-5 rounded-full bg-[#1D9E75]/10 text-[#1D9E75] text-[10px] font-semibold flex items-center justify-center mt-0.5">
                 {it.num}
               </span>
-              <span dangerouslySetInnerHTML={{ __html: inlineMd(it.content) }} />
+
+              <span
+                dangerouslySetInnerHTML={{
+                  __html: inlineMd(it.content),
+                }}
+              />
             </li>
           ))}
         </ol>
       );
+
       continue;
     }
 
-    // Bold-only line used as a section label (e.g. **Hotels:**)
+    // Bold heading
     if (/^\*\*[^*]+\*\*:?$/.test(line.trim())) {
       elements.push(
-        <p key={i} className="text-sm font-semibold text-gray-800 mt-3 mb-0.5">
+        <p
+          key={i}
+          className="text-sm font-semibold text-gray-800 mt-3 mb-0.5"
+        >
           {line.replace(/\*\*/g, "").replace(/:$/, "")}
         </p>
       );
+
       i++;
       continue;
     }
 
-    // Regular paragraph
+    // Paragraph
     elements.push(
       <p
         key={i}
         className="text-sm text-gray-700 leading-relaxed mb-1"
-        dangerouslySetInnerHTML={{ __html: inlineMd(line) }}
+        dangerouslySetInnerHTML={{
+          __html: inlineMd(line),
+        }}
       />
     );
+
     i++;
   }
 
   return <div className="space-y-0.5">{elements}</div>;
 }
-
 // Convert inline markdown: **bold**, *italic*, `code`
 function inlineMd(text: string): string {
   return text
-    .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="my-2 rounded-lg border border-black/[0.07]" style="max-width: 300px; height: auto;" />')
     .replace(/\[View Map\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">🗺️ View Map</a>')
     .replace(/\[Visit Website\]\((.+?)\)/g, (match, url) => {
   try {
@@ -269,6 +361,10 @@ function App() {
       const res = await axios.post("http://localhost:8000/chat", {
         question: userQuestion,
       });
+
+  
+
+
       setMessages((prev) => [
         ...prev,
         { role: "assistant", text: res.data.answer, routes: res.data.routes },
@@ -433,7 +529,7 @@ function App() {
 
                 {/* Bubble */}
                 <div
-                  className={`max-w-[72%] px-4 py-3 text-sm leading-relaxed ${
+                  className={`max-w-[90%] px-4 py-3 text-sm leading-relaxed ${
                     msg.role === "user"
                       ? "text-white rounded-2xl rounded-br-[4px]"
                       : "bg-white border border-black/[0.07] text-gray-800 rounded-2xl rounded-bl-[4px]"
