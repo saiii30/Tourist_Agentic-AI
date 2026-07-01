@@ -298,6 +298,7 @@ function App() {
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const [progressStep, setProgressStep] = useState(0);
   const [isListening, setIsListening] = useState(false);
   const [savedTrips, setSavedTrips] = useState<Record<number, { tripName: string; loading: boolean }>>({});
@@ -453,13 +454,13 @@ function App() {
   };
 
   return (
-    <div className="h-screen flex bg-[#F5F4F0] text-[#1a1a1a] font-sans">
+    <div className={`h-screen flex font-sans transition-colors duration-200 ${theme === "dark" ? "bg-[#0f172a] text-slate-100" : "bg-[#F5F4F0] text-[#1a1a1a]"}`}>
 
       {/* ── Sidebar ── */}
-      <aside className="w-64 bg-white border-r border-black/[0.08] flex flex-col flex-shrink-0">
+      <aside className={`w-64 border-r flex flex-col flex-shrink-0 transition-colors duration-200 ${theme === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-black/[0.08]"}`}>
 
         {/* Logo */}
-        <div className="p-5 border-b border-black/[0.07]">
+        <div className={`p-5 border-b ${theme === "dark" ? "border-slate-800" : "border-black/[0.07]"}`}>
           <div className="inline-flex items-center gap-2 bg-gradient-to-r from-[#1D9E75] to-[#185FA5] rounded-full px-4 py-2">
             <FaMapMarkerAlt className="text-white text-sm" />
             <span className="text-white text-sm font-medium tracking-wide">
@@ -475,7 +476,7 @@ function App() {
               setMessages([]);
               setActiveConversationId(null);
             }}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-black/10 text-sm text-gray-600 hover:bg-gray-50 hover:border-black/20 transition-all duration-150"
+            className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border text-sm transition-all duration-150 ${theme === "dark" ? "border-slate-700 text-slate-300 hover:bg-slate-800 hover:border-slate-600" : "border-black/10 text-gray-600 hover:bg-gray-50 hover:border-black/20"}`}
           >
             <FaPlus className="text-xs text-gray-400" />
             New chat
@@ -494,7 +495,9 @@ function App() {
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-all duration-150 ${
                   activeConversationId === conversation.id
                     ? "bg-[#1D9E75]/10 text-[#1D9E75]"
-                    : "text-gray-600 hover:bg-gray-50"
+                    : theme === "dark"
+                      ? "text-slate-300 hover:bg-slate-800"
+                      : "text-gray-600 hover:bg-gray-50"
                 }`}
               >
                 <div className="truncate">{conversation.title}</div>
@@ -525,12 +528,17 @@ function App() {
         </div>
 
         {/* Footer */}
-        <div className="mt-auto p-4 border-t border-black/[0.07] flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-gray-100 border border-black/10 flex items-center justify-center">
-            <FaUser className="text-[11px] text-gray-400" />
+        <div className={`mt-auto p-4 border-t flex items-center gap-2.5 ${theme === "dark" ? "border-slate-800" : "border-black/[0.07]"}`}>
+          <div className={`w-7 h-7 rounded-full border flex items-center justify-center ${theme === "dark" ? "bg-slate-800 border-slate-700" : "bg-gray-100 border-black/10"}`}>
+            <FaUser className={`text-[11px] ${theme === "dark" ? "text-slate-400" : "text-gray-400"}`} />
           </div>
-          <span className="text-xs text-gray-500 flex-1">Traveller</span>
-          <FaCog className="text-xs text-gray-300 cursor-pointer hover:text-gray-400 transition-colors" />
+          <span className={`text-xs flex-1 ${theme === "dark" ? "text-slate-400" : "text-gray-500"}`}>Traveller</span>
+          <button
+            onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+            className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${theme === "dark" ? "bg-slate-800 text-slate-200 hover:bg-slate-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            {theme === "light" ? "🌙 Dark" : "☀️ Light"}
+          </button>
         </div>
       </aside>
 
@@ -538,19 +546,19 @@ function App() {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* Topbar */}
-        <header className="h-14 bg-white border-b border-black/[0.07] flex items-center justify-between px-5 flex-shrink-0">
+        <header className={`h-14 border-b flex items-center justify-between px-5 flex-shrink-0 transition-colors duration-200 ${theme === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-black/[0.07]"}`}>
           <div className="flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-[#1D9E75] flex-shrink-0" />
             <div>
-              <p className="text-sm font-medium text-gray-800">
+              <p className={`text-sm font-medium ${theme === "dark" ? "text-slate-100" : "text-gray-800"}`}>
                 Tourist AI Assistant
               </p>
-              <p className="text-[11px] text-gray-400">
+              <p className={`text-[11px] ${theme === "dark" ? "text-slate-500" : "text-gray-400"}`}>
                 Powered by AI · Tamil Nadu & beyond
               </p>
             </div>
           </div>
-          <FaRobot className="text-gray-300 text-base" />
+          <FaRobot className={`text-base ${theme === "dark" ? "text-slate-500" : "text-gray-300"}`} />
         </header>
 
         {/* Chat */}
@@ -561,10 +569,10 @@ function App() {
                    style={{ background: "linear-gradient(135deg, rgba(29,158,117,0.1) 0%, rgba(24,95,165,0.1) 100%)", border: "1px solid rgba(29,158,117,0.2)" }}>
                 <FaMapMarkerAlt className="text-2xl text-[#1D9E75]" />
               </div>
-              <h1 className="text-2xl font-medium text-gray-800 mb-2">
+              <h1 className={`text-2xl font-medium mb-2 ${theme === "dark" ? "text-slate-100" : "text-gray-800"}`}>
                 Where to next?
               </h1>
-              <p className="text-sm text-gray-400 max-w-xs leading-relaxed">
+              <p className={`text-sm max-w-xs leading-relaxed ${theme === "dark" ? "text-slate-500" : "text-gray-400"}`}>
                 Ask about hotels, restaurants, weather, or full trip plans — anywhere in India.
               </p>
             </div>
@@ -581,7 +589,9 @@ function App() {
                   className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
                     msg.role === "assistant"
                       ? "text-white"
-                      : "bg-gray-100 border border-black/10"
+                      : theme === "dark"
+                        ? "bg-slate-800 border border-slate-700"
+                        : "bg-gray-100 border border-black/10"
                   }`}
                   style={
                     msg.role === "assistant"
@@ -601,7 +611,9 @@ function App() {
                   className={`max-w-[90%] px-4 py-3 text-sm leading-relaxed ${
                     msg.role === "user"
                       ? "text-white rounded-2xl rounded-br-[4px]"
-                      : "bg-white border border-black/[0.07] text-gray-800 rounded-2xl rounded-bl-[4px]"
+                      : theme === "dark"
+                        ? "bg-slate-800 border border-slate-700 text-slate-100 rounded-2xl rounded-bl-[4px]"
+                        : "bg-white border border-black/[0.07] text-gray-800 rounded-2xl rounded-bl-[4px]"
                   }`}
                   style={
                     msg.role === "user"
@@ -684,7 +696,7 @@ function App() {
               >
                 <FaRobot className="text-[11px]" />
               </div>
-              <div className="bg-white border border-black/[0.07] px-4 py-3 rounded-2xl rounded-bl-[4px] flex flex-col gap-1.5 min-w-[220px]">
+              <div className={`px-4 py-3 rounded-2xl rounded-bl-[4px] flex flex-col gap-1.5 min-w-[220px] ${theme === "dark" ? "bg-slate-800 border border-slate-700" : "bg-white border border-black/[0.07]"}`}>
                 <div className="flex items-center gap-1.5 mb-1">
                   {[0, 1, 2].map((i) => (
                     <span
@@ -718,23 +730,25 @@ function App() {
         </div>
 
         {/* Input */}
-        <div className="bg-white border-t border-black/[0.07] p-4 flex-shrink-0">
+        <div className={`border-t p-4 flex-shrink-0 transition-colors duration-200 ${theme === "dark" ? "bg-slate-900 border-slate-800" : "bg-white border-black/[0.07]"}`}>
           <div className="max-w-3xl mx-auto">
-            <div className="flex items-center gap-2 bg-gray-50 border border-black/[0.09] rounded-xl px-3 py-2 focus-within:border-[#1D9E75] focus-within:ring-1 focus-within:ring-[#1D9E75]/20 transition-all duration-150">
+            <div className={`flex items-center gap-2 rounded-xl px-3 py-2 border transition-all duration-150 ${theme === "dark" ? "bg-slate-800 border-slate-700 focus-within:border-[#1D9E75] focus-within:ring-1 focus-within:ring-[#1D9E75]/20" : "bg-gray-50 border-black/[0.09] focus-within:border-[#1D9E75] focus-within:ring-1 focus-within:ring-[#1D9E75]/20"}`}>
               <FaSearch className="text-gray-300 text-xs flex-shrink-0" />
               <input
                 value={question}
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") askAI(); }}
                 placeholder="Ask about your trip…"
-                className="flex-1 bg-transparent outline-none text-sm text-gray-800 placeholder-gray-400"
+                className={`flex-1 bg-transparent outline-none text-sm ${theme === "dark" ? "text-slate-100 placeholder-slate-500" : "text-gray-800 placeholder-gray-400"}`}
               />
               <button
                 onClick={startVoice}
                 className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-150 ${
                   isListening
                     ? "bg-red-50 text-red-500 animate-pulse"
-                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                    : theme === "dark"
+                      ? "text-slate-400 hover:text-slate-200 hover:bg-slate-700"
+                      : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
                 }`}
                 aria-label="Voice input"
               >
@@ -749,7 +763,7 @@ function App() {
                 <FaPaperPlane className="text-xs" />
               </button>
             </div>
-            <p className="text-center text-[11px] text-gray-400 mt-2">
+            <p className={`text-center text-[11px] mt-2 ${theme === "dark" ? "text-slate-500" : "text-gray-400"}`}>
               {isListening
                 ? "🎤 Listening…"
                 : "Click the microphone to speak, or type your question"}
