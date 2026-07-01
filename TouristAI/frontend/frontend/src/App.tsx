@@ -27,6 +27,12 @@ type Message = {
   routes?: string[];
 };
 
+type ConversationSummary = {
+  id: number;
+  title: string;
+  created_at?: string;
+};
+
 function ImageSlider({ images }: { images: string[] }) {
   return (
     <div className="flex justify-center my-3">
@@ -224,7 +230,7 @@ function MarkdownContent({ text }: { text: string }) {
 function inlineMd(text: string): string {
   return text
     .replace(/\[View Map\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">🗺️ View Map</a>')
-    .replace(/\[Visit Website\]\((.+?)\)/g, (match, url) => {
+    .replace(/\[Visit Website\]\((.+?)\)/g, (_match, url) => {
   try {
     const domain = new URL(url).hostname;
     const logo = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
@@ -295,8 +301,32 @@ function App() {
   const [progressStep, setProgressStep] = useState(0);
   const [isListening, setIsListening] = useState(false);
   const [savedTrips, setSavedTrips] = useState<Record<number, { tripName: string; loading: boolean }>>({});
-  const [mapModalUrl, setMapModalUrl] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const loadConversations = async () => {
+    try {
+      const res = await axios.get("http://localhost:8000/conversations");
+      setConversations(res.data);
+    } catch (err) {
+      console.error("Failed to load conversations", err);
+    }
+  };
+
+  const loadConversation = async (conversationId: number) => {
+    setLoading(true);
+    try {
+      const res = await axios.get(`http://localhost:8000/conversation/${conversationId}`);
+      setActiveConversationId(conversationId);
+      setMessages(res.data.messages || []);
+    } catch (err) {
+      console.error("Failed to load conversation", err);
+      setMessages([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     let interval: any;
@@ -310,6 +340,10 @@ function App() {
     }
     return () => clearInterval(interval);
   }, [loading]);
+
+  useEffect(() => {
+    loadConversations();
+  }, []);
 
   const saveItinerary = async (index: number, text: string) => {
     setSavedTrips(prev => ({
@@ -350,25 +384,36 @@ function App() {
   }, [messages, loading]);
 
   const askAI = async (text?: string) => {
-    const userQuestion = text || question;
-    if (!userQuestion.trim()) return;
+    const userQuestion = (text || question).trim();
+    if (!userQuestion) return;
 
+    const isNewChat = activeConversationId === null;
     setMessages((prev) => [...prev, { role: "user", text: userQuestion }]);
     setQuestion("");
     setLoading(true);
 
     try {
+      let conversationId = activeConversationId;
+
+      if (isNewChat) {
+        const createRes = await axios.post("http://localhost:8000/conversation", {
+          title: userQuestion,
+        });
+        conversationId = createRes.data.id;
+        setActiveConversationId(conversationId);
+        setConversations((prev) => [{ id: conversationId!, title: createRes.data.title }, ...prev]);
+      }
+
       const res = await axios.post("http://localhost:8000/chat", {
         question: userQuestion,
+        conversation_id: conversationId,
       });
-
-  
-
 
       setMessages((prev) => [
         ...prev,
         { role: "assistant", text: res.data.answer, routes: res.data.routes },
       ]);
+      await loadConversations();
     } catch {
       setMessages((prev) => [
         ...prev,
@@ -426,12 +471,36 @@ function App() {
         {/* New Chat */}
         <div className="p-3">
           <button
-            onClick={() => setMessages([])}
+            onClick={() => {
+              setMessages([]);
+              setActiveConversationId(null);
+            }}
             className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-black/10 text-sm text-gray-600 hover:bg-gray-50 hover:border-black/20 transition-all duration-150"
           >
             <FaPlus className="text-xs text-gray-400" />
             New chat
           </button>
+        </div>
+
+        <div className="px-3 pb-3 flex-1 overflow-y-auto">
+          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mb-2">
+            Recent chats
+          </p>
+          <div className="space-y-1.5">
+            {conversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                onClick={() => loadConversation(conversation.id)}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-all duration-150 ${
+                  activeConversationId === conversation.id
+                    ? "bg-[#1D9E75]/10 text-[#1D9E75]"
+                    : "text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <div className="truncate">{conversation.title}</div>
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Examples */}
