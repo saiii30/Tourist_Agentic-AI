@@ -183,7 +183,7 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
 
     payload = {
         "textQuery": query,
-        "maxResultCount": 5
+        "maxResultCount": 10
     }
 
     headers = {
@@ -218,7 +218,7 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
 
         lines = []
 
-        for i, place in enumerate(data["places"][:5], 1):
+        for i, place in enumerate(data["places"][:10], 1):
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
             reviews = place.get("userRatingCount", 0)

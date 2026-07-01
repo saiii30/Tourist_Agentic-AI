@@ -147,7 +147,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
 
     payload = {
         "textQuery": query,
-        "maxResultCount": 5
+        "maxResultCount": 10
     }
 
     headers = {
@@ -175,7 +175,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
 
         lines = []
 
-        for i, place in enumerate(data["places"][:5], 1):
+        for i, place in enumerate(data["places"][:10], 1):
             print(place)
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")

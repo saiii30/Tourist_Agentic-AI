@@ -226,7 +226,7 @@ def search_google_places(query: str):
 
     payload = {
         "textQuery": query,
-        "maxResultCount": 5
+        "maxResultCount": 10
     }
 
     headers = {
@@ -251,7 +251,7 @@ def search_google_places(query: str):
 
         lines = []
 
-        for i, place in enumerate(data["places"][:5], 1): # Limit to top 5 and enumerate
+        for i, place in enumerate(data["places"][:10], 1): # Limit to top 5 and enumerate
             name = place.get("displayName", {}).get("text", "N/A")
             address = place.get("formattedAddress", "N/A")
             rating = place.get("rating", "N/A")
@@ -277,11 +277,6 @@ def search_google_places(query: str):
                 item_lines.append(f"[Visit Website]({website})")
 
             photos = place.get("photos")
-            if not photo_url and photos:
-                photo_name = photos[0]["name"]
-                photo_url_google = get_place_photo(photo_name, api_key)
-                if photo_url_google:
-                    photo_url = photo_url_google
             
             if photo_urls:
                 for photo in photo_urls:

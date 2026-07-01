@@ -169,7 +169,7 @@ def get_places_from_foursquare(city: str, interests: str) -> str | None:
     params = {
         "query": query,
         "near": city,
-        "limit": 5,
+        "limit": 10,
         "fields": "fsq_id,name,location,rating,website,photos"
     }
     headers = {
@@ -255,7 +255,7 @@ def get_places_from_google(city: str, interests: str) -> str | None:
         if data and data.get("places"):
             print("Google Places API call successful, found nearby places.")
             lines = []
-            for i, place in enumerate(data["places"][:5], 1):
+            for i, place in enumerate(data["places"][:10], 1):
                 name = place.get("displayName", {}).get("text", "N/A")
                 rating = place.get("rating", "N/A")
                 num_reviews = place.get("userRatingCount", 0)
