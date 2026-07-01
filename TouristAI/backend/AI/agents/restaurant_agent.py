@@ -139,8 +139,8 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
             photo_url = None
 
             # 1. Try website image first
-            if website != "Not available":
-                photo_url = get_image_from_website(website)
+            # if website != "Not available":
+            #     photo_url = get_image_from_website(website)
 
             # 2. Fallback to Google Places photo
             photos = place.get("photos")

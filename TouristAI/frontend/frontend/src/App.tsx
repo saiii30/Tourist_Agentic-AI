@@ -130,9 +130,37 @@ function MarkdownContent({ text }: { text: string }) {
 // Convert inline markdown: **bold**, *italic*, `code`
 function inlineMd(text: string): string {
   return text
-    .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="my-2 rounded-lg border border-black/[0.07] max-h-48" />')
+    .replace(/!\[(.*?)\]\((.*?)\)/g, '<img src="$2" alt="$1" class="my-2 rounded-lg border border-black/[0.07]" style="max-width: 300px; height: auto;" />')
     .replace(/\[View Map\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">🗺️ View Map</a>')
-    .replace(/\[Visit Website\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">Visit Website</a>')
+    .replace(/\[Visit Website\]\((.+?)\)/g, (match, url) => {
+  try {
+    const domain = new URL(url).hostname;
+    const logo = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
+
+    return `
+      <a href="${url}" target="_blank" rel="noopener noreferrer"
+        class="relative inline-block group mt-2">
+
+        <!-- Logo only -->
+        <img 
+          src="${logo}"
+          class="w-16 h-16 rounded-lg border border-black/10 shadow-sm hover:scale-105 transition object-contain p-1 bg-white"
+        />
+
+        <!-- Hover full URL -->
+        <div class="absolute left-0 -bottom-8 hidden group-hover:block
+                    bg-gray-900 text-white text-[10px] leading-tight
+                    px-2 py-1 rounded-md whitespace-nowrap
+                    z-50 shadow-lg">
+          ${url}
+        </div>
+
+      </a>
+    `;
+  } catch {
+    return `<a href="${url}" target="_blank" class="text-blue-600">Visit Website</a>`;
+  }
+})
     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code class="bg-gray-100 text-[#1D9E75] px-1 py-0.5 rounded text-xs font-mono">$1</code>');

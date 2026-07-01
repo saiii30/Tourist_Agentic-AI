@@ -104,8 +104,8 @@ def get_places_from_foursquare(city: str, interests: str) -> str | None:
                 website = place.get("website", "Not available")
                 photo_url = None
 
-                if website != "Not available":
-                    photo_url = get_image_from_website(website)
+                # if website != "Not available":
+                #     photo_url = get_image_from_website(website)
 
                 if place.get("photos"):
                     if not photo_url:
@@ -176,8 +176,8 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 website = place.get("websiteUri", "Not available")
                 photo_url = None
 
-                if website != "Not available":
-                    photo_url = get_image_from_website(website)
+                # if website != "Not available":
+                #     photo_url = get_image_from_website(website)
 
                 photos = place.get("photos")
                 if not photo_url and photos:

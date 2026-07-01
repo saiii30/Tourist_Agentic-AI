@@ -170,8 +170,8 @@ def search_google_places(query: str):
             website = place.get("websiteUri", "N/A")
             photo_url = None
 
-            if website != "N/A":
-                photo_url = get_image_from_website(website)
+            # if website != "N/A":
+            #     photo_url = get_image_from_website(website)
 
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")

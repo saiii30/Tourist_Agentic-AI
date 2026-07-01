@@ -108,8 +108,8 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
             photos = place.get("photos")
 
             # 1. TRY WEBSITE IMAGE FIRST
-            if website:
-                photo_url = get_image_from_website(website)
+            # if website:
+            #     photo_url = get_image_from_website(website)
             
 
 
