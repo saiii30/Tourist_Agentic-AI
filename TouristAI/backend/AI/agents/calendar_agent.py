@@ -71,7 +71,7 @@ def get_db_places(city: str) -> list:
         print(f"Error querying database for city '{city}': {e}")
     return places
 
-def calendar_agent(question: str, city: str = "None", days: int = 3, interests: str = "None", travel_style: str = "None", budget: str = "None") -> str:
+def calendar_agent(question: str, city: str = "None", days: int = 3, interests: str = "None", travel_style: str = "None", budget: str = "None", other_agent_info: str = "") -> str:
     if city == "None":
         return "I can help you build a personalized day plan, but I need to know your destination first."
         
@@ -126,41 +126,104 @@ def calendar_agent(question: str, city: str = "None", days: int = 3, interests: 
                 matched_places.sort(key=score_place, reverse=True)
                 
                 # Build Day-by-Day schedule
-                lines = []
+                items = []
                 for day in range(1, days + 1):
-                    lines.append(f"### Day {day}")
-                    
-                    # Morning (approx. 9:00 AM - 12:00 PM) - Attraction
+                    # Morning
                     if matched_places:
                         place = matched_places[(day - 1) % len(matched_places)]
-                        lines.append(f"**Morning (9:00 AM - 12:00 PM)**\n**Visit the {place['name']}**\n\n{place['description']} Best time to visit: {place['best_time'].lower()}.")
+                        items.append({
+                            "day": day,
+                            "start_time": "09:00",
+                            "end_time": "12:00",
+                            "activity": f"Visit {place['name']}",
+                            "location": place['name'],
+                            "category": "Sightseeing",
+                            "notes": f"{place['description']} Best time to visit: {place['best_time'].lower()}."
+                        })
                     else:
-                        lines.append(f"**Morning (9:00 AM - 12:00 PM)**\nExplore the local scenic sights and viewpoints around the city.")
+                        items.append({
+                            "day": day,
+                            "start_time": "09:00",
+                            "end_time": "12:00",
+                            "activity": "Morning Sightseeing",
+                            "location": "Local Attractions",
+                            "category": "Sightseeing",
+                            "notes": "Explore the local scenic sights and viewpoints around the city."
+                        })
                         
                     # Lunch
                     if matched_rests:
                         rest = matched_rests[(day * 2 - 2) % len(matched_rests)]
-                        lines.append(f"\n### Lunch\nHead to **{rest['name']}** for a delicious lunch of {rest['cuisine'].lower()} cuisine (approx. {rest['price']}). Recommended: *{rest['must_try']}*.")
+                        items.append({
+                            "day": day,
+                            "start_time": "12:30",
+                            "end_time": "14:00",
+                            "activity": f"Lunch at {rest['name']}",
+                            "location": rest['name'],
+                            "category": "Food",
+                            "restaurant": rest['name'],
+                            "notes": f"Enjoy {rest['cuisine'].lower()} cuisine. Recommended: {rest['must_try']}."
+                        })
                     else:
-                        lines.append(f"\n### Lunch\nEnjoy lunch at a local cafe or restaurant.")
+                        items.append({
+                            "day": day,
+                            "start_time": "12:30",
+                            "end_time": "14:00",
+                            "activity": "Lunch",
+                            "location": "Local Cafe",
+                            "category": "Food",
+                            "notes": "Enjoy lunch at a local cafe or restaurant."
+                        })
                         
-                    # Afternoon (approx. 1:00 PM - 5:00 PM) - Second Attraction
+                    # Afternoon
                     if matched_places and len(matched_places) > 1:
                         place = matched_places[day % len(matched_places)]
-                        lines.append(f"\n**Afternoon (1:00 PM - 5:00 PM)**\n**Explore {place['name']}**\n\n{place['description']} Enjoy the local sights and capture scenic views.")
+                        items.append({
+                            "day": day,
+                            "start_time": "14:30",
+                            "end_time": "17:00",
+                            "activity": f"Explore {place['name']}",
+                            "location": place['name'],
+                            "category": "Sightseeing",
+                            "notes": f"{place['description']} Enjoy the local sights and capture scenic views."
+                        })
                     else:
-                        lines.append(f"\n**Afternoon (1:00 PM - 5:00 PM)**\nRelax and unwind or stroll near your hotel, **{selected_hotel}**.")
+                        items.append({
+                            "day": day,
+                            "start_time": "14:30",
+                            "end_time": "17:00",
+                            "activity": "Afternoon Relaxation",
+                            "location": selected_hotel,
+                            "category": "Relaxation",
+                            "hotel": selected_hotel,
+                            "notes": f"Relax and unwind or stroll near your hotel, {selected_hotel}."
+                        })
                         
-                    # Evening (approx. 6:00 PM - 9:00 PM) - Dinner / Stroll
+                    # Evening
                     if matched_rests and len(matched_rests) > 1:
                         rest = matched_rests[(day * 2 - 1) % len(matched_rests)]
-                        lines.append(f"\n**Evening (6:00 PM - 9:00 PM)**\n**Relax at local beach/viewpoint and enjoy dinner**\n\nHave dinner at **{rest['name']}** ({rest['cuisine']} style). Try their famous *{rest['must_try']}* while enjoying the evening atmosphere.")
+                        items.append({
+                            "day": day,
+                            "start_time": "18:00",
+                            "end_time": "21:00",
+                            "activity": f"Dinner at {rest['name']}",
+                            "location": rest['name'],
+                            "category": "Food",
+                            "restaurant": rest['name'],
+                            "notes": f"{rest['cuisine']} style dinner. Try their famous {rest['must_try']}."
+                        })
                     else:
-                        lines.append(f"\n**Evening (6:00 PM - 9:00 PM)**\nEnjoy a pleasant evening walk in the local market, and dine at a cozy nearby eatery.")
-                        
-                    lines.append("") # Empty line between days
+                        items.append({
+                            "day": day,
+                            "start_time": "18:00",
+                            "end_time": "21:00",
+                            "activity": "Evening Walk & Dinner",
+                            "location": "Local Market",
+                            "category": "Food",
+                            "notes": "Enjoy a pleasant evening walk in the local market, and dine at a cozy nearby eatery."
+                        })
                     
-                return "\n".join(lines)
+                return json.dumps(items)
         except Exception as e:
             print(f"Error programmatically generating calendar: {e}")
             
@@ -194,28 +257,54 @@ def calendar_agent(question: str, city: str = "None", days: int = 3, interests: 
         )
     else:
         prompt += (
-            f"We don't have database records for {city}. "
+            "We don't have database records for this city. "
             f"Please generate a highly realistic, accurate, and appealing day-by-day itinerary/calendar for {city} "
             f"using your general knowledge.\n"
         )
         
+    if other_agent_info:
+        prompt += (
+            "\nIMPORTANT: Your colleague agents have already suggested the following places/hotels/restaurants. "
+            "You MUST incorporate their specific suggestions into your day-by-day schedule to avoid contradictions!\n"
+            f"{other_agent_info}\n\n"
+        )
+        
     prompt += (
         "Construct a detailed day-by-day calendar schedule. For each day, include:\n"
-        "- Morning (approx. 9:00 AM - 12:00 PM) activity/attraction\n"
-        "- Afternoon (approx. 1:00 PM - 5:00 PM) activity/attraction\n"
-        "- Evening (approx. 6:00 PM - 9:00 PM) dining/relaxation or local market stroll\n\n"
-        "Format the output beautifully in Markdown. Make sure each day's schedule is clear and easy to read. "
-        "Recommend specific dining/food choices for breakfast, lunch, and dinner. "
-        "Tailor the spots and activities to match the traveler's interests and travel style.\n"
-        "Keep the tone encouraging, helpful, and professional."
+        "- Morning (approx. 09:00 - 12:00) activity/attraction\n"
+        "- Afternoon (approx. 14:00 - 17:00) activity/attraction\n"
+        "- Evening (approx. 18:00 - 21:00) dining/relaxation or local market stroll\n\n"
+        "Return the output STRICTLY as a JSON list of objects, matching this schema:\n"
+        "[\n"
+        "  {\n"
+        "    \"day\": 1,\n"
+        "    \"start_time\": \"09:00\",\n"
+        "    \"end_time\": \"12:00\",\n"
+        "    \"activity\": \"Activity Name\",\n"
+        "    \"location\": \"Location expected\",\n"
+        "    \"category\": \"Sightseeing\",\n"
+        "    \"restaurant\": null,\n"
+        "    \"hotel\": null,\n"
+        "    \"notes\": \"Details...\"\n"
+        "  }\n"
+        "]\n\n"
+        "Do not output markdown. Output ONLY a valid JSON list."
     )
     
     try:
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0
         )
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        if "[" in content:
+            content = content[content.find("["):content.rfind("]")+1]
+        return content
     except Exception as e:
         print(f"Error calling Groq for calendar fallback: {e}")
         return f"Sorry, I could not generate a travel itinerary calendar for {city} at this moment."

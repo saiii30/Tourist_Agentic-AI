@@ -46,11 +46,19 @@ def hotel_agent(question, city="None", budget="None", travelers=1):
         except Exception as e:
             print(f"Error loading local hotel database: {e}")
             
-    # Fallback to get_answer if city not found in local db or database error
+    # Fallback to LLM specific prompt if city not found in local db or database error
     try:
-        from rag_service import get_answer
-        ans = get_answer(question)
-        return ans.get("answer") if isinstance(ans, dict) else ans
+        prompt = (
+            f"Generate a list of 2-3 realistic hotels in {city.title()} matching a {budget_val} budget.\n"
+            "Format the output strictly as a markdown list with bold names, estimated prices, and a brief vibe/amenities description.\n"
+            "Do not include any greeting, introduction, or general trip advice. Return only the markdown list."
+        )
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+        return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"Error in hotel_agent fallback: {e}")
         return f"Currently, I cannot fetch hotel recommendations for {city}."

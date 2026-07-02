@@ -60,11 +60,21 @@ def restaurant_agent(question, city="None", interests="None", budget="None"):
         except Exception as e:
             print(f"Error loading local restaurant database: {e}")
             
-    # Fallback to get_answer if city not found in local db or database error
+    # Fallback to LLM specific prompt if city not found in local db or database error
     try:
-        from rag_service import get_answer
-        ans = get_answer(question)
-        return ans.get("answer") if isinstance(ans, dict) else ans
+        interests_str = ", ".join(interests_list) if interests_list else "general dining"
+        prompt = (
+            f"Generate a list of 2-3 realistic restaurant recommendations in {city.title()} matching a {budget_val} budget level "
+            f"and catering to {interests_str} interests.\n"
+            "Format the output strictly as a markdown list with bold names, typical cost, cuisine, and a must-try dish.\n"
+            "Do not include any greeting, introduction, or general trip advice. Return only the markdown list."
+        )
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2
+        )
+        return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"Error in restaurant_agent fallback: {e}")
         return f"Currently, I cannot fetch restaurant recommendations for {city}."

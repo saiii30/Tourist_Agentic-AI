@@ -10,6 +10,17 @@ from agents.nearby_agent import nearby_agent
 from agents.weather_agent import weather_agent
 from agents.general_agent import general_agent
 from agents.calendar_agent import calendar_agent
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "graph"))
+from calendar_nodes import (
+    calendar_preview_node,
+    modify_itinerary_node,
+    save_itinerary_node,
+    google_calendar_node,
+    regenerate_itinerary_node,
+    delete_itinerary_node
+)
 from rag_service import client
 
 
@@ -18,48 +29,6 @@ builder = StateGraph(AgentState)
 
 
 def supervisor_node(state):
-    g_state = get_guided_state()
-    
-    # Check if we are waiting for a save confirmation
-    if g_state.get("awaiting_save_confirmation") == "1":
-        from supervisor import update_guided_state, save_itinerary_to_db
-        update_guided_state("awaiting_save_confirmation", "0")
-        
-        question_lower = state["question"].strip().lower()
-        
-        # Check if the user confirmed
-        if any(yes_kw in question_lower for yes_kw in ["yes", "yeah", "sure", "ok", "save", "yep", "please"]):
-            last_itinerary = g_state.get("last_itinerary", "")
-            if last_itinerary:
-                res = save_itinerary_to_db(last_itinerary)
-                if res.get("success"):
-                    msg = (
-                        f"✅ **Itinerary Saved Successfully!**\n\n"
-                        f"I have saved the activities for '{res.get('trip_name')}' to your local database. "
-                        f"You can now download the `.ics` calendar file from the menu options to sync it with Google Calendar or Apple Calendar!"
-                    )
-                else:
-                    msg = f"❌ **Error Saving Itinerary:** {res.get('message')}"
-            else:
-                msg = "I couldn't find the last generated itinerary to save. Please request a new trip plan first."
-                
-            return {
-                **state,
-                "answer": msg,
-                "responses": [],
-                "routes": ["merge"]
-            }
-            
-        elif any(no_kw in question_lower for no_kw in ["no", "nope", "don't", "cancel", "nay"]):
-            return {
-                **state,
-                "answer": "No problem! I won't save this itinerary. Let me know if you want to plan another trip or need any other details.",
-                "responses": [],
-                "routes": ["merge"]
-            }
-        else:
-            # Clear flag and fall through to normal execution
-            pass
 
     # Route first to update database state
     routes = route_question(state)
@@ -191,19 +160,14 @@ def calendar_node(state):
 
 
 def merge_node(state):
-    # If there is only one response, we can return it directly to save time.
-    # This ensures general queries or individual agent warnings are returned directly.
+    # If there is only one response, return directly
     if len(state["responses"]) <= 1:
         context = "\n\n".join(state["responses"])
         if not context.strip():
-            return {
-                "answer": state.get("answer", "")
-            }
-        return {
-            "answer": context
-        }
+            return {"answer": state.get("answer", "")}
+        return {"answer": context}
 
-    # If the destination city is not specified and multiple agents ran, politely ask the user to specify it
+    # If the destination city is not specified
     if state.get("city", "None") == "None":
         return {
             "answer": (
@@ -224,59 +188,118 @@ def merge_node(state):
         budget_description = "luxury"
         budget_limit_text = "above ₹15,000"
 
-    # Combine the responses into a context
-    context = "\n\n".join(state["responses"])
-        
-    prompt = (
-        "You are a highly professional, friendly, and structured AI travel guide.\n"
-        "A traveler requested a trip plan, and our sub-agents gathered the following raw details:\n\n"
-        f"{context}\n\n"
-        "Please compile, personalize, and synthesize this information into a clean, concise, and structured itinerary guide.\n"
-        "Follow these rules strictly:\n"
-        "1. Start with the title: 📍 [City Name]\n"
-        "2. Directly below the title, provide a personalized introduction of exactly 2 sentences, incorporating their details:\n"
-        f"   - Sentence 1: \"Great! I've planned a {state.get('days', 3)}-day {budget_description} {state.get('city', 'None').title()} trip for {state.get('travelers', 1)} traveler(s) (style: {state.get('travel_style', 'None')}) who enjoy {state.get('interests', 'None')}.\"\n"
-        f"   - Sentence 2: \"This itinerary focuses on {state.get('interests', 'None')} attractions, budget-appropriate stays, and local dining while keeping your total budget {budget_limit_text}.\"\n"
-        "3. Keep the responses concise and actionable. Avoid long generic travel articles. Use markdown structure.\n"
-        "4. Incorporate the following sections in order, using these EXACT section titles (with emojis):\n"
-        "   🌤 **Weather** (Concise summary of temperature and packing/sightseeing advice)\n"
-        "   🏨 **Hotels** (List of budget-appropriate hotels recommended by the sub-agent)\n"
-        "   🍽 **Restaurants** (List of dining options recommended by the sub-agent)\n"
-        "   🗺 **Attractions** (List of sightseeing options matching traveler interests)\n"
-        "   🗓 **Day 1** (Day 1 activities)\n"
-        "   [For multiple days, add 🗓 **Day 2**, etc. in sequence]\n"
-        f"   💰 **Estimated Budget** (Show a simple cost breakdown. The total sum of stays, food, and activities "
-        f"MUST strictly respect the budget category: if 'Budget', the total sum must be under ₹5,000; "
-        f"if 'Moderate', between ₹5,000 and ₹15,000; if 'Luxury', above ₹15,000. Do not exceed these boundaries.)\n"
-        "5. Under Hotels and Restaurants, ensure the individual price ranges mentioned align with the total budget (e.g. if the budget is under ₹5,000, do not list hotels that cost ₹8,000 per night).\n"
-        "6. Do not include raw Python dictionaries, bracket symbols, list markers from sub-agent templates, or debug information."
+    city = state.get("city", "None").title()
+    days = state.get("days", 3)
+    travelers = state.get("travelers", 1)
+    travel_style = state.get("travel_style", "None")
+    interests = state.get("interests", "None")
+
+    sections = {}
+    for r in state["responses"]:
+        if r.startswith("Restaurant suggestions:\n"): sections["restaurants"] = r.split(":\n", 1)[1]
+        elif r.startswith("Hotel suggestions:\n"): sections["hotels"] = r.split(":\n", 1)[1]
+        elif r.startswith("Nearby Places to visit:\n"): sections["places"] = r.split(":\n", 1)[1]
+        elif r.startswith("Weather:\n"): sections["weather"] = r.split(":\n", 1)[1]
+
+    # Collect compiled suggestions for the calendar agent
+    other_agent_info = f"Hotels: {sections.get('hotels', 'None')}\nRestaurants: {sections.get('restaurants', 'None')}\nPlaces: {sections.get('places', 'None')}"
+    
+    # Synchronously call calendar_agent with the combined context from other agents
+    from agents.calendar_agent import calendar_agent
+    calendar_text = calendar_agent(
+        state["question"], 
+        state.get("city", "None"), 
+        days, 
+        interests, 
+        travel_style, 
+        budget_val, 
+        other_agent_info
     )
+
+    # Process calendar items
+    import json
     try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        synthesis = response.choices[0].message.content.strip()
-        
-        from supervisor import update_guided_state
-        update_guided_state("last_itinerary", synthesis)
-        update_guided_state("awaiting_save_confirmation", "1")
-        
-        synthesis += "\n\nWould you like me to save this itinerary to your calendar? (Reply **'Yes'** to save it to your database)"
-        
-        return {
-            "answer": synthesis
-        }
+        if "{" in calendar_text or "[" in calendar_text:
+            cleaned_cal = calendar_text[calendar_text.find("["):calendar_text.rfind("]")+1]
+            calendar_items = json.loads(cleaned_cal)
+        else:
+            calendar_items = []
     except Exception as e:
-        print(f"Error in synthesis merge_node: {e}")
-        from supervisor import update_guided_state
-        update_guided_state("last_itinerary", context)
-        update_guided_state("awaiting_save_confirmation", "1")
+        print(f"Failed to parse calendar items in merge_node: {e}")
+        calendar_items = []
+
+    # Store items natively in state for immediate ingestion
+    from supervisor import update_guided_state
+    update_guided_state("last_itinerary_items", json.dumps(calendar_items))
+
+    # Format the calendar markdown
+    calendar_md_lines = []
+    current_day = 0
+    for item in calendar_items:
+        if item.get("day") != current_day:
+            current_day = item.get("day")
+            calendar_md_lines.append(f"\n🗓 **Day {current_day}**")
         
-        context_with_prompt = context + "\n\nWould you like me to save this itinerary to your calendar? (Reply **'Yes'** to save it to your database)"
-        return {
-            "answer": context_with_prompt
-        }
+        start = item.get("start_time", "")
+        # Convert 24h to 12h for pretty print
+        try:
+            from datetime import datetime
+            pretty_time = datetime.strptime(start, "%H:%M").strftime("%I:%M %p") if start else ""
+        except:
+            pretty_time = start
+
+        end = item.get("end_time", "")
+        try:
+            from datetime import datetime
+            pretty_end = datetime.strptime(end, "%H:%M").strftime("%I:%M %p") if end else ""
+            if pretty_end:
+                pretty_time += f" - {pretty_end}"
+        except:
+            pass
+
+        period = "Morning"
+        if start and len(start) >= 5:
+            hour = int(start.split(':')[0])
+            if hour >= 17: period = "Evening"
+            elif hour >= 12: period = "Afternoon"
+            
+        calendar_md_lines.append(f"**{period}{' (' + pretty_time + ')' if pretty_time else ''}**")
+        calendar_md_lines.append(f"**{item.get('activity')}**")
+        if item.get('notes'):
+            calendar_md_lines.append(f"*{item.get('notes')}*")
+        calendar_md_lines.append("")
+        
+    calendar_formatted = "\n".join(calendar_md_lines)
+
+    synthesis = f"""📍 **{city}**
+
+Great! I've planned a {days}-day {budget_description} {city} trip for {travelers} traveler(s) (style: {travel_style}) who enjoy {interests}.
+This itinerary focuses on {interests} attractions, budget-appropriate stays, and local dining while keeping your total budget {budget_limit_text}.
+
+🌤 **Weather**
+{sections.get('weather', 'Not available')}
+
+🏨 **Hotels**
+{sections.get('hotels', 'Not available')}
+
+🍽 **Restaurants**
+{sections.get('restaurants', 'Not available')}
+
+🗺 **Attractions**
+{sections.get('places', 'Not available')}
+{calendar_formatted}
+💰 **Estimated Budget**
+- Accommodation: Budget appropriate
+- Food & Dining: Budget appropriate
+- Travel & Sightseeing: Budget appropriate
+- **Total Estimated**: {budget_limit_text}
+"""
+    update_guided_state("last_itinerary", synthesis)
+
+    return {
+        "answer": synthesis,
+        "routes": ["calendar_preview"]
+    }
     
 builder.add_node(
     "supervisor",
@@ -311,10 +334,7 @@ builder.add_node(
 )
 
 
-builder.add_node(
-    "calendar",
-    calendar_node
-)
+
 
 
 
@@ -322,6 +342,13 @@ builder.add_node(
     "merge",
     merge_node
 )
+
+builder.add_node("calendar_preview", calendar_preview_node)
+builder.add_node("modify_itinerary", modify_itinerary_node)
+builder.add_node("save_itinerary", save_itinerary_node)
+builder.add_node("google_calendar", google_calendar_node)
+builder.add_node("regenerate_itinerary", regenerate_itinerary_node)
+builder.add_node("delete_itinerary", delete_itinerary_node)
 
 builder.set_entry_point(
     "supervisor"
@@ -331,9 +358,10 @@ def router(state):
     sends = []
 
     for route in state["routes"]:
-        sends.append(
-            Send(route, state)
-        )
+        if route != "calendar":
+            sends.append(
+                Send(route, state)
+            )
 
     return sends
 
@@ -370,14 +398,28 @@ builder.add_edge(
 )
 
 
-builder.add_edge(
-    "calendar",
-    "merge"
+
+
+def merge_router(state):
+    g_state = get_guided_state()
+    if "calendar" in state.get("routes", []) or g_state.get("trip_id"):
+        return "calendar_preview"
+    return END
+
+builder.add_conditional_edges(
+    "merge",
+    merge_router,
+    {
+        "calendar_preview": "calendar_preview",
+        END: END
+    }
 )
 
-builder.add_edge(
-    "merge",
-    END
-)
+builder.add_edge("calendar_preview", END)
+builder.add_edge("save_itinerary", END)
+builder.add_edge("google_calendar", END)
+builder.add_edge("delete_itinerary", END)
+builder.add_edge("modify_itinerary", "calendar_preview")
+builder.add_edge("regenerate_itinerary", "calendar_preview")
 
 graph = builder.compile()
