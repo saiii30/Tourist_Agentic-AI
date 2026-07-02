@@ -165,7 +165,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
     : "";
 
   return (
-    <div className="bg-white border border-black/[0.07] rounded-2xl shadow-sm overflow-hidden my-4 text-left">
+    <div className="bg-white border border-black/[0.07] rounded-2xl shadow-sm overflow-hidden my-4 text-left max-w-md">
       {/* Header */}
       <div className="p-3.5 text-left">
         <div className="flex justify-between items-start gap-2.5">
