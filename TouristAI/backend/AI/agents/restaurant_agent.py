@@ -14,6 +14,38 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, quote
 
 
+def get_wikipedia_images(place_name, max_images=5):
+    """
+    Get image(s) from Wikipedia.
+    """
+    try:
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(place_name)}"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code != 200:
+            return []
+
+        data = response.json()
+
+        images = []
+
+        if "originalimage" in data:
+            images.append(data["originalimage"]["source"])
+        elif "thumbnail" in data:
+            images.append(data["thumbnail"]["source"])
+
+        return images[:max_images]
+
+    except Exception as e:
+        print("Wikipedia image error:", e)
+        return []
+
+
 
 def get_image_from_website(url, max_images=20):
     """
@@ -231,6 +263,10 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
                 print(f"Getting images from: {website}")
                 photo_urls = get_image_from_website(website, max_images=20)
                 print("Images:", photo_urls)
+
+            if not photo_urls:
+                print(f"No website images found. Trying Wikipedia for {name}")
+                photo_urls = get_wikipedia_images(name)
 
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")

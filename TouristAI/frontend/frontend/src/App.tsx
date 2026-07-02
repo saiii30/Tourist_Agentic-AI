@@ -13,6 +13,9 @@ import {
   FaBuilding,
   FaCog,
   FaSearch,
+  FaStar,
+  FaChevronLeft,
+  FaChevronRight,
 } from "react-icons/fa";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
@@ -34,27 +37,264 @@ type ConversationSummary = {
 };
 
 function ImageSlider({ images }: { images: string[] }) {
+  const swiperRef = useRef<any>(null);
+  const showNav = images.length > 3;
+
   return (
-    <div className="flex justify-center my-3">
-      <div className="w-full max-w-[370px] overflow-hidden rounded-xl shadow-md">
+    <div className="flex justify-center my-2 px-3">
+      <div className="relative w-full max-w-[400px]">
         <Swiper
           modules={[Navigation, Pagination]}
-          slidesPerView={1}
+          onSwiper={(swiper) => (swiperRef.current = swiper)}
+          slidesPerView={3}
+          spaceBetween={6}
           pagination={{ clickable: true }}
-          loop={true}
+          loop={showNav}
         >
           {images.map((img, index) => (
             <SwiperSlide key={index}>
               <img
                 src={img}
-                alt={`Hotel ${index + 1}`}
-                className="w-full h-48 object-cover rounded-xl"
+                alt={`Photo ${index + 1}`}
+                className="w-full h-24 object-cover rounded-lg"
                 loading="lazy"
               />
             </SwiperSlide>
           ))}
         </Swiper>
+
+        {showNav && (
+          <>
+            <button
+              onClick={() => swiperRef.current?.slidePrev()}
+              aria-label="Previous"
+              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-2 z-10 w-6 h-6 rounded-full bg-white shadow-md border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50"
+            >
+              <FaChevronLeft className="text-[9px]" />
+            </button>
+            <button
+              onClick={() => swiperRef.current?.slideNext()}
+              aria-label="Next"
+              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-2 z-10 w-6 h-6 rounded-full bg-white shadow-md border border-black/10 flex items-center justify-center text-gray-600 hover:bg-gray-50"
+            >
+              <FaChevronRight className="text-[9px]" />
+            </button>
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+// ==========================================================
+// PlaceCard — redesigned to match the "Grand Pavilion" mock:
+// Title / rating / address up top, brand logo badge top-right,
+// image carousel, description paragraph, then a filled "View
+// Map" button next to an outlined "Visit Website" button.
+// ==========================================================
+function PlaceCard({ lines }: { lines: string[] }) {
+  const title = lines[0] || "";
+  const details = lines.slice(1);
+
+  const imageRegex = /!\[.*?\]\((.*?)\)/;
+  const mapRegex = /\[View Map\]\((.*?)\)/;
+  const websiteRegex = /\[Visit Website\]\((.*?)\)/;
+
+  const images = details.map(line => line.match(imageRegex)?.[1]).filter(Boolean) as string[];
+  const mapUrl = details.find(line => mapRegex.test(line))?.match(mapRegex)?.[1];
+  const websiteUrl = details.find(line => websiteRegex.test(line))?.match(websiteRegex)?.[1];
+
+  const otherDetails = details.filter(line =>
+    !imageRegex.test(line) && !mapRegex.test(line) && !websiteRegex.test(line)
+  );
+
+  // Pull out a rating/review line (e.g. "⭐ 4.5 · 520 Reviews"), a price
+  // line (e.g. "₹₹" or "💰 Price Level: PRICE_LEVEL_MODERATE"), and a
+  // location line (e.g. "📍 123, MG Road") from the rest of the details.
+  const ratingLine = otherDetails.find(l => /⭐|★/.test(l));
+  const locationLine = otherDetails.find(l => /📍/.test(l));
+  const priceLine = otherDetails.find(
+    l =>
+      (/₹/.test(l) || /price level/i.test(l) || /💰/.test(l)) &&
+      l !== ratingLine &&
+      l !== locationLine
+  );
+  const descriptionLines = otherDetails.filter(
+    l => l !== ratingLine && l !== locationLine && l !== priceLine
+  );
+
+ 
+
+  let ratingValue = "";
+  let reviewCount = "";
+  if (ratingLine) {
+    const ratingMatch = ratingLine.match(/(\d+(\.\d+)?)/);
+    ratingValue = ratingMatch ? ratingMatch[1] : "";
+    const reviewMatch = ratingLine.match(/(\d+)\s*review/i);
+    reviewCount = reviewMatch ? reviewMatch[1] : "";
+  }
+
+  // Price can be a literal ₹ symbol, a Google-style PRICE_LEVEL_* enum, or
+  // embedded directly in the rating line (e.g. "⭐ 4.5 · ₹₹ · 520 Reviews").
+  const PRICE_LEVEL_MAP: Record<string, string> = {
+    FREE: "Free",
+    INEXPENSIVE: "Inexpensive",
+    MODERATE: "Moderate",
+    EXPENSIVE: "Expensive",
+    VERY_EXPENSIVE: "Very Expensive",
+  };
+  let priceValue = "";
+  const priceSource = priceLine || ratingLine || "";
+  const rupeeMatch = priceSource.match(/₹+/);
+  if (rupeeMatch) {
+    priceValue = rupeeMatch[0];
+  } else {
+    const levelMatch = priceSource.match(/PRICE_LEVEL_([A-Z_]+)/i);
+    if (levelMatch) {
+      priceValue = PRICE_LEVEL_MAP[levelMatch[1].toUpperCase()] || levelMatch[1];
+    }
+  }
+
+  const locationText = locationLine
+    ? locationLine.replace(/📍/g, "").trim()
+    : "";
+
+  const websiteDomain = websiteUrl ? new URL(websiteUrl).hostname : "";
+  const websiteLogo = websiteDomain
+    ? `https://www.google.com/s2/favicons?sz=128&domain=${websiteDomain}`
+    : "";
+
+  return (
+    <div className="bg-white border border-black/[0.07] rounded-2xl shadow-sm overflow-hidden my-4 text-left">
+      {/* Header */}
+      <div className="p-3.5 text-left">
+        <div className="flex justify-between items-start gap-2.5">
+          <div className="flex-1 min-w-0 text-left">
+            <h3
+              className="text-sm font-semibold text-gray-900 leading-snug text-left"
+              dangerouslySetInnerHTML={{ __html: inlineMd(title) }}
+            />
+
+            {(ratingValue || priceValue || locationText) && (
+              <div className="mt-1.5 space-y-1 text-left">
+                {(ratingValue || priceValue) && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-gray-600 text-left">
+                    {ratingValue && (
+                      <>
+                        <FaStar className="text-yellow-400 text-[10px]" />
+                        <span className="font-semibold text-gray-800">{ratingValue}</span>
+                      </>
+                    )}
+                    {ratingValue && priceValue && <span className="text-gray-300">|</span>}
+                    {priceValue && (
+                      <span className="font-semibold text-[#1D9E75]">{priceValue}</span>
+                    )}
+                    {(ratingValue || priceValue) && reviewCount && (
+                      <span className="text-gray-300">|</span>
+                    )}
+                    {reviewCount && <span>{reviewCount} Reviews</span>}
+                  </div>
+                )}
+                {locationText && (
+                  <div className="flex items-start gap-1.5 text-[11px] text-gray-500 text-left">
+                    <FaMapMarkerAlt className="mt-0.5 flex-shrink-0 text-gray-400 text-[10px]" />
+                    <span
+                      className="text-left flex-1"
+                      dangerouslySetInnerHTML={{ __html: inlineMd(locationText) }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {websiteUrl && (
+            <a
+              href={websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-shrink-0 w-9 h-9 rounded-lg border border-black/10 bg-white flex items-center justify-center overflow-hidden shadow-sm"
+            >
+              <img
+                src={websiteLogo}
+                alt="Website"
+                className="w-6 h-6 object-contain"
+              />
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Image Slider */}
+      {images.length > 0 && (
+        <>
+          <div className="border-t border-black/[0.07]" />
+          <div className="bg-gray-50/50">
+            <ImageSlider images={images} />
+          </div>
+        </>
+      )}
+
+      {/* Description */}
+      {descriptionLines.length > 0 && (
+        <>
+          <div className="border-t border-black/[0.07]" />
+          <div className="px-3.5 py-2.5 space-y-1 text-left">
+            {descriptionLines.map((line, i) => (
+              <p
+                key={i}
+                className="text-[11.5px] text-gray-500 leading-relaxed text-left"
+                dangerouslySetInnerHTML={{ __html: inlineMd(line) }}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Footer buttons */}
+      {(mapUrl || websiteUrl) && (
+        <>
+          <div className="border-t border-black/[0.07]" />
+          <div className="p-2.5 flex items-center gap-2">
+            {mapUrl && (
+              <a
+                href={mapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-semibold text-white transition-opacity hover:opacity-90"
+                style={{ background: "#1D9E75" }}
+              >
+                <FaMapMarkerAlt className="text-[10px]" /> View Map
+              </a>
+            )}
+            {websiteUrl && (
+              <a
+                href={websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md border text-[11px] font-semibold transition-colors hover:bg-[#1D9E75]/5"
+                style={{ borderColor: "#1D9E75", color: "#1D9E75" }}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-3 w-3"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                  />
+                </svg>
+                Visit Website
+              </a>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -68,6 +308,24 @@ function MarkdownContent({ text }: { text: string }) {
 
   while (i < lines.length) {
     const line = lines[i];
+
+    // ==========================
+    // Place Card (for numbered lists)
+    // ==========================
+    if (/^\d+\. /.test(line.trim())) {
+      const cardLines: string[] = [];
+      // Extract the first line without the number, e.g., "1. **Name**" -> "**Name**"
+      cardLines.push(line.replace(/^\d+\. /, "").trim());
+
+      // Consume subsequent lines until we hit the next numbered item or end of text
+      i++;
+      while (i < lines.length && !/^\d+\. /.test(lines[i].trim()) && lines[i].trim() !== "") {
+        cardLines.push(lines[i].trim());
+        i++;
+      }
+      elements.push(<PlaceCard key={`card-${i}`} lines={cardLines} />);
+      continue;
+    }
 
     // ==========================
     // Image Slider
@@ -229,36 +487,8 @@ function MarkdownContent({ text }: { text: string }) {
 // Convert inline markdown: **bold**, *italic*, `code`
 function inlineMd(text: string): string {
   return text
-    .replace(/\[View Map\]\((.+?)\)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">🗺️ View Map</a>')
-    .replace(/\[Visit Website\]\((.+?)\)/g, (_match, url) => {
-  try {
-    const domain = new URL(url).hostname;
-    const logo = `https://www.google.com/s2/favicons?sz=128&domain=${domain}`;
-
-    return `
-      <a href="${url}" target="_blank" rel="noopener noreferrer"
-        class="relative inline-block group mt-2">
-
-        <!-- Logo only -->
-        <img 
-          src="${logo}"
-          class="w-16 h-16 rounded-lg border border-black/10 shadow-sm hover:scale-105 transition object-contain p-1 bg-white"
-        />
-
-        <!-- Hover full URL -->
-        <div class="absolute left-0 -bottom-8 hidden group-hover:block
-                    bg-gray-900 text-white text-[10px] leading-tight
-                    px-2 py-1 rounded-md whitespace-nowrap
-                    z-50 shadow-lg">
-          ${url}
-        </div>
-
-      </a>
-    `;
-  } catch {
-    return `<a href="${url}" target="_blank" class="text-blue-600">Visit Website</a>`;
-  }
-})
+    .replace(/\[View Map\]\((.+?)\)/g, '') // These are now handled by the PlaceCard component
+    .replace(/\[Visit Website\]\((.+?)\)/g, '') // These are now handled by the PlaceCard component
     .replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/`(.+?)`/g, '<code class="bg-gray-100 text-[#1D9E75] px-1 py-0.5 rounded text-xs font-mono">$1</code>');
