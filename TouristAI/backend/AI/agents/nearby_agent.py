@@ -236,7 +236,41 @@ def get_places_from_google(city: str, interests: str) -> str | None:
     
     # New Places API endpoint and parameters
     url = "https://places.googleapis.com/v1/places:searchText"
-    field_mask = "places.displayName,places.rating,places.userRatingCount,places.formattedAddress,places.websiteUri,places.photos"
+    field_mask = (
+    "places.id,"
+    "places.displayName,"
+    "places.formattedAddress,"
+    "places.location,"
+    "places.types,"
+    "places.primaryType,"
+    "places.rating,"
+    "places.userRatingCount,"
+    "places.priceLevel,"
+    "places.websiteUri,"
+    "places.googleMapsUri,"
+    "places.nationalPhoneNumber,"
+    "places.internationalPhoneNumber,"
+    "places.businessStatus,"
+    "places.regularOpeningHours,"
+    "places.currentOpeningHours,"
+    "places.photos,"
+    "places.parkingOptions,"
+    "places.paymentOptions,"
+    "places.accessibilityOptions,"
+    "places.takeout,"
+    "places.delivery,"
+    "places.dineIn,"
+    "places.servesBreakfast,"
+    "places.servesLunch,"
+    "places.servesDinner,"
+    "places.servesBeer,"
+    "places.servesWine,"
+    "places.servesVegetarianFood,"
+    "places.allowsDogs,"
+    "places.goodForChildren,"
+    "places.goodForGroups,"
+    "places.editorialSummary"
+    )
     
     post_data = json.dumps({"textQuery": query}).encode('utf-8')
     
@@ -275,6 +309,63 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 item_lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
                 item_lines.append(f"📍 Address: {address}")
 
+                # Phone numbers
+                phone = place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber")
+                if phone:
+                    item_lines.append(f"📞 Phone: {phone}")
+
+                # Editorial summary
+                editorial = place.get("editorialSummary", {}).get("text")
+                if editorial:
+                    item_lines.append(f"📝 {editorial}")
+
+                # Business status
+                business_status = place.get("businessStatus")
+                if business_status:
+                    status_text = "✅ Open" if business_status == "OPERATIONAL" else f"⚠️ {business_status}"
+                    item_lines.append(status_text)
+
+                # Good for children
+                if place.get("goodForChildren"):
+                    item_lines.append("👶 Good for children")
+
+                # Good for groups
+                if place.get("goodForGroups"):
+                    item_lines.append("👥 Good for groups")
+
+                # Accessibility options
+                accessibility = place.get("accessibilityOptions", {})
+                if accessibility:
+                    access_features = []
+                    if accessibility.get("wheelchairAccessibleParking"):
+                        access_features.append("Wheelchair parking")
+                    if accessibility.get("wheelchairAccessibleEntrance"):
+                        access_features.append("Wheelchair entrance")
+                    if access_features:
+                        item_lines.append(f"♿ {', '.join(access_features)}")
+
+                # Payment options
+                payment = place.get("paymentOptions", {})
+                if payment:
+                    payment_methods = []
+                    if payment.get("acceptsCreditCards"):
+                        payment_methods.append("Credit cards")
+                    if payment.get("acceptsDebitCards"):
+                        payment_methods.append("Debit cards")
+                    if payment.get("acceptsNfc"):
+                        payment_methods.append("NFC")
+                    if payment_methods:
+                        item_lines.append(f"💳 {', '.join(payment_methods)}")
+
+                # Opening hours
+                opening_hours = place.get("regularOpeningHours") or place.get("currentOpeningHours")
+                if opening_hours and opening_hours.get("weekdayDescriptions"):
+                    hours_desc = opening_hours["weekdayDescriptions"]
+                    if hours_desc:
+                        item_lines.append(f"🕒 Hours: {', '.join(hours_desc[:3])}")  # Show first 3 days
+                        if len(hours_desc) > 3:
+                            item_lines.append(f"🕒 Hours: {', '.join(hours_desc[3:])}")  # Show remaining days
+
                 if address != "Address not available":
                     map_query = urllib.parse.quote_plus(address)
                     map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
@@ -282,6 +373,12 @@ def get_places_from_google(city: str, interests: str) -> str | None:
 
                 if website != "Not available":
                     item_lines.append(f"[Visit Website]({website})")
+
+                if photo_url:
+                        item_lines.append(f"🕒 Hours: {', '.join(hours_desc[:3])}")  # Show first 3 days
+                        if len(hours_desc) > 3:
+                            item_lines.append(f"🕒 Hours: {', '.join(hours_desc[3:])}")  # Show remaining days
+
                 if photo_url:
                     item_lines.append(f"![{name}]({photo_url})")
 

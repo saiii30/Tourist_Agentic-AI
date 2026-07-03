@@ -16,6 +16,11 @@ import {
   FaStar,
   FaChevronLeft,
   FaChevronRight,
+  FaChevronDown,
+  FaPhone,
+  FaCheckCircle,
+  FaCreditCard,
+  FaWheelchair,
 } from "react-icons/fa";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
@@ -93,6 +98,9 @@ function ImageSlider({ images }: { images: string[] }) {
 // Map" button next to an outlined "Visit Website" button.
 // ==========================================================
 function PlaceCard({ lines }: { lines: string[] }) {
+  const [tab, setTab] = useState<"overview" | "amenities">("overview");
+  const [hoursOpen, setHoursOpen] = useState(false);
+
   const title = lines[0] || "";
   const details = lines.slice(1);
 
@@ -108,22 +116,34 @@ function PlaceCard({ lines }: { lines: string[] }) {
     !imageRegex.test(line) && !mapRegex.test(line) && !websiteRegex.test(line)
   );
 
-  // Pull out a rating/review line (e.g. "⭐ 4.5 · 520 Reviews"), a price
-  // line (e.g. "₹₹" or "💰 Price Level: PRICE_LEVEL_MODERATE"), and a
-  // location line (e.g. "📍 123, MG Road") from the rest of the details.
   const ratingLine = otherDetails.find(l => /⭐|★/.test(l));
   const locationLine = otherDetails.find(l => /📍/.test(l));
+  const hoursLines = otherDetails.filter(l => /🕒/.test(l));
+  const phoneLine = otherDetails.find(l => /📞|phone/i.test(l));
+  const paymentLine = otherDetails.find(l => /💳/.test(l));
+  const accessibilityLine = otherDetails.find(l => /♿/.test(l));
   const priceLine = otherDetails.find(
     l =>
       (/₹/.test(l) || /price level/i.test(l) || /💰/.test(l)) &&
       l !== ratingLine &&
       l !== locationLine
   );
-  const descriptionLines = otherDetails.filter(
-    l => l !== ratingLine && l !== locationLine && l !== priceLine
+
+  // Description = longer free-text lines (e.g. "📝 Tasting menu of...")
+  // Amenities = short tag-like lines (e.g. "✅ Open", "🧒 Good for children")
+  const remaining = otherDetails.filter(
+    l =>
+      l !== ratingLine &&
+      l !== locationLine &&
+      l !== priceLine &&
+      l !== phoneLine &&
+      !hoursLines.includes(l) &&
+      l !== paymentLine &&
+      l !== accessibilityLine
   );
 
- 
+  const descriptionLines = remaining.filter(l => l.replace(/^\W+/, "").length > 45);
+  const amenityLines = remaining.filter(l => !descriptionLines.includes(l));
 
   let ratingValue = "";
   let reviewCount = "";
@@ -134,8 +154,6 @@ function PlaceCard({ lines }: { lines: string[] }) {
     reviewCount = reviewMatch ? reviewMatch[1] : "";
   }
 
-  // Price can be a literal ₹ symbol, a Google-style PRICE_LEVEL_* enum, or
-  // embedded directly in the rating line (e.g. "⭐ 4.5 · ₹₹ · 520 Reviews").
   const PRICE_LEVEL_MAP: Record<string, string> = {
     FREE: "Free",
     INEXPENSIVE: "Inexpensive",
@@ -156,13 +174,38 @@ function PlaceCard({ lines }: { lines: string[] }) {
   }
 
   const locationText = locationLine
-    ? locationLine.replace(/📍/g, "").trim()
+    ? locationLine.replace(/📍/g, "").replace(/^\s*Address:\s*/i, "").trim()
     : "";
 
-  const websiteDomain = websiteUrl ? new URL(websiteUrl).hostname : "";
+  const phoneText = phoneLine
+    ? phoneLine.replace(/📞/g, "").replace(/^\s*Phone:\s*/i, "").trim()
+    : "";
+
+  const paymentText = paymentLine
+    ? paymentLine.replace(/💳/g, "").trim()
+    : "";
+
+  const accessibilityText = accessibilityLine
+    ? accessibilityLine.replace(/♿/g, "").trim()
+    : "";
+
+  let websiteDomain = "";
+  try {
+    websiteDomain = websiteUrl ? new URL(websiteUrl).hostname : "";
+  } catch {
+    websiteDomain = "";
+  }
   const websiteLogo = websiteDomain
     ? `https://www.google.com/s2/favicons?sz=128&domain=${websiteDomain}`
     : "";
+
+  // Today's hours = first hoursLine, rest shown when expanded
+  const todayHours = hoursLines[0]
+    ? hoursLines[0].replace(/🕒\s*Hours?:?\s*/i, "")
+    : "";
+  const isOpen = /open/i.test(todayHours) || amenityLines.some(l => /✅|open now/i.test(l));
+
+  const hasAmenities = amenityLines.length > 0;
 
   return (
     <div className="bg-white border border-black/[0.07] rounded-2xl shadow-sm overflow-hidden my-4 text-left max-w-md">
@@ -175,51 +218,57 @@ function PlaceCard({ lines }: { lines: string[] }) {
               dangerouslySetInnerHTML={{ __html: inlineMd(title) }}
             />
 
-            {(ratingValue || priceValue || locationText) && (
-              <div className="mt-1.5 space-y-1 text-left">
-                {(ratingValue || priceValue) && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-gray-600 text-left">
-                    {ratingValue && (
-                      <>
-                        <FaStar className="text-yellow-400 text-[10px]" />
-                        <span className="font-semibold text-gray-800">{ratingValue}</span>
-                      </>
-                    )}
-                    {ratingValue && priceValue && <span className="text-gray-300">|</span>}
-                    {priceValue && (
-                      <span className="font-semibold text-[#1D9E75]">{priceValue}</span>
-                    )}
-                    {(ratingValue || priceValue) && reviewCount && (
-                      <span className="text-gray-300">|</span>
-                    )}
-                    {reviewCount && <span>{reviewCount} Reviews</span>}
-                  </div>
+            {(ratingValue || priceValue) && (
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-600 mt-1.5">
+                {ratingValue && (
+                  <>
+                    <FaStar className="text-yellow-400 text-[10px]" />
+                    <span className="font-semibold text-gray-800">{ratingValue}</span>
+                  </>
                 )}
-                {locationText && (
-                  <div className="flex items-start gap-1.5 text-[11px] text-gray-500 text-left">
-                    <FaMapMarkerAlt className="mt-0.5 flex-shrink-0 text-gray-400 text-[10px]" />
-                    <span
-                      className="text-left flex-1"
-                      dangerouslySetInnerHTML={{ __html: inlineMd(locationText) }}
-                    />
-                  </div>
+                {ratingValue && priceValue && <span className="text-gray-300">|</span>}
+                {priceValue && (
+                  <span className="font-semibold text-[#1D9E75]">{priceValue}</span>
                 )}
+                {(ratingValue || priceValue) && reviewCount && (
+                  <span className="text-gray-300">|</span>
+                )}
+                {reviewCount && <span>{reviewCount} Reviews</span>}
+              </div>
+            )}
+
+            {/* Collapsible hours pill */}
+            {hoursLines.length > 0 && (
+              <button
+                onClick={() => setHoursOpen(!hoursOpen)}
+                className={`mt-2 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                  isOpen ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                {todayHours || "Hours"}
+                <FaChevronDown
+                  className={`text-[9px] transition-transform ${hoursOpen ? "rotate-180" : ""}`}
+                />
+              </button>
+            )}
+            {hoursOpen && hoursLines.length > 0 && (
+              <div className="mt-1.5 pl-1 space-y-0.5 text-[11px] text-gray-500 leading-relaxed">
+                {hoursLines.map((line, idx) => (
+                  <div key={idx}>{line.replace(/🕒\s*Hours?:?\s*/i, "")}</div>
+                ))}
               </div>
             )}
           </div>
 
           {websiteUrl && (
+            
             <a
               href={websiteUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="flex-shrink-0 w-9 h-9 rounded-lg border border-black/10 bg-white flex items-center justify-center overflow-hidden shadow-sm"
             >
-              <img
-                src={websiteLogo}
-                alt="Website"
-                className="w-6 h-6 object-contain"
-              />
+              <img src={websiteLogo} alt="Website" className="w-6 h-6 object-contain" />
             </a>
           )}
         </div>
@@ -235,11 +284,36 @@ function PlaceCard({ lines }: { lines: string[] }) {
         </>
       )}
 
-      {/* Description */}
-      {descriptionLines.length > 0 && (
-        <>
-          <div className="border-t border-black/[0.07]" />
-          <div className="px-3.5 py-2.5 space-y-1 text-left">
+      {/* Tabs */}
+      {hasAmenities && (
+        <div className="border-t border-black/[0.07] flex">
+          <button
+            onClick={() => setTab("overview")}
+            className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${
+              tab === "overview"
+                ? "text-gray-900 border-b-2 border-[#1D9E75]"
+                : "text-gray-400 border-b-2 border-transparent"
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setTab("amenities")}
+            className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${
+              tab === "amenities"
+                ? "text-gray-900 border-b-2 border-[#1D9E75]"
+                : "text-gray-400 border-b-2 border-transparent"
+            }`}
+          >
+            Amenities
+          </button>
+        </div>
+      )}
+
+      {/* Panel content */}
+      <div className="px-3.5 py-2.5">
+        {tab === "overview" || !hasAmenities ? (
+          <div className="space-y-2 text-left">
             {descriptionLines.map((line, i) => (
               <p
                 key={i}
@@ -247,9 +321,51 @@ function PlaceCard({ lines }: { lines: string[] }) {
                 dangerouslySetInnerHTML={{ __html: inlineMd(line) }}
               />
             ))}
+            {locationText && (
+              <div className="flex items-start gap-1.5 text-[11px] text-gray-500">
+                <FaMapMarkerAlt className="mt-0.5 flex-shrink-0 text-gray-400 text-[10px]" />
+                <span
+                  className="flex-1"
+                  dangerouslySetInnerHTML={{ __html: inlineMd(locationText) }}
+                />
+              </div>
+            )}
+            {phoneText && (
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <FaPhone className="flex-shrink-0 text-gray-400 text-[9px]" />
+                <span>{phoneText}</span>
+              </div>
+            )}
+            {paymentText && (
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <FaCreditCard className="flex-shrink-0 text-gray-400 text-[10px]" />
+                <span>{paymentText}</span>
+              </div>
+            )}
+            {accessibilityText && (
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <FaWheelchair className="flex-shrink-0 text-gray-400 text-[10px]" />
+                <span
+                  dangerouslySetInnerHTML={{ __html: inlineMd(accessibilityText) }}
+                />
+              </div>
+            )}
           </div>
-        </>
-      )}
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {amenityLines.map((line, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <FaCheckCircle className="flex-shrink-0 text-[#1D9E75] text-[10px]" />
+                <span
+                  dangerouslySetInnerHTML={{
+                    __html: inlineMd(line.replace(/^[^\w]+/, "").trim()),
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Footer buttons */}
       {(mapUrl || websiteUrl) && (
@@ -257,6 +373,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
           <div className="border-t border-black/[0.07]" />
           <div className="p-2.5 flex items-center gap-2">
             {mapUrl && (
+              
               <a
                 href={mapUrl}
                 target="_blank"
@@ -268,6 +385,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
               </a>
             )}
             {websiteUrl && (
+              
               <a
                 href={websiteUrl}
                 target="_blank"
@@ -298,7 +416,6 @@ function PlaceCard({ lines }: { lines: string[] }) {
     </div>
   );
 }
-
 function MarkdownContent({ text }: { text: string }) {
   const lines = text.split("\n");
   const elements: React.ReactNode[] = [];

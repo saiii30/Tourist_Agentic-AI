@@ -204,13 +204,39 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
     url = "https://places.googleapis.com/v1/places:searchText"
 
     field_mask = (
-        "places.displayName,"
-        "places.rating,"
-        "places.userRatingCount,"
-        "places.formattedAddress,"
-        "places.priceLevel,"
-        "places.photos,"
-        "places.websiteUri"
+    "places.id,"
+    "places.displayName,"
+    "places.formattedAddress,"
+    "places.location,"
+    "places.types,"
+    "places.primaryType,"
+    "places.rating,"
+    "places.userRatingCount,"
+    "places.priceLevel,"
+    "places.websiteUri,"
+    "places.googleMapsUri,"
+    "places.nationalPhoneNumber,"
+    "places.internationalPhoneNumber,"
+    "places.businessStatus,"
+    "places.regularOpeningHours,"
+    "places.currentOpeningHours,"
+    "places.photos,"
+    "places.parkingOptions,"
+    "places.paymentOptions,"
+    "places.accessibilityOptions,"
+    "places.takeout,"
+    "places.delivery,"
+    "places.dineIn,"
+    "places.servesBreakfast,"
+    "places.servesLunch,"
+    "places.servesDinner,"
+    "places.servesBeer,"
+    "places.servesWine,"
+    "places.servesVegetarianFood,"
+    "places.allowsDogs,"
+    "places.goodForChildren,"
+    "places.goodForGroups,"
+    "places.editorialSummary"
     )
 
     payload = {
@@ -272,6 +298,82 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
             item_lines.append(f"💰 Price Level: {price}")
             item_lines.append(f"📍 Address: {address}")
+
+            # Phone numbers
+            phone = place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber")
+            if phone:
+                item_lines.append(f"📞 Phone: {phone}")
+
+            # Editorial summary
+            editorial = place.get("editorialSummary", {}).get("text")
+            if editorial:
+                item_lines.append(f"📝 {editorial}")
+
+            # Business status
+            business_status = place.get("businessStatus")
+            if business_status:
+                status_text = "✅ Open" if business_status == "OPERATIONAL" else f"⚠️ {business_status}"
+                item_lines.append(status_text)
+
+            # Good for children
+            if place.get("goodForChildren"):
+                item_lines.append("👶 Good for children")
+
+            # Good for groups
+            if place.get("goodForGroups"):
+                item_lines.append("👥 Good for groups")
+
+            # Accessibility options
+            accessibility = place.get("accessibilityOptions", {})
+            if accessibility:
+                access_features = []
+                if accessibility.get("wheelchairAccessibleParking"):
+                    access_features.append("Wheelchair parking")
+                if accessibility.get("wheelchairAccessibleEntrance"):
+                    access_features.append("Wheelchair entrance")
+                if access_features:
+                    item_lines.append(f"♿ {', '.join(access_features)}")
+
+            # Payment options
+            payment = place.get("paymentOptions", {})
+            if payment:
+                payment_methods = []
+                if payment.get("acceptsCreditCards"):
+                    payment_methods.append("Credit cards")
+                if payment.get("acceptsDebitCards"):
+                    payment_methods.append("Debit cards")
+                if payment.get("acceptsNfc"):
+                    payment_methods.append("NFC")
+                if payment_methods:
+                    item_lines.append(f"💳 {', '.join(payment_methods)}")
+
+            # Dining options
+            dining_options = []
+            if place.get("servesBreakfast"):
+                dining_options.append("Breakfast")
+            if place.get("servesLunch"):
+                dining_options.append("Lunch")
+            if place.get("servesDinner"):
+                dining_options.append("Dinner")
+            if place.get("servesVegetarianFood"):
+                dining_options.append("Vegetarian")
+            if place.get("takeout"):
+                dining_options.append("Takeout")
+            if place.get("delivery"):
+                dining_options.append("Delivery")
+            if place.get("dineIn"):
+                dining_options.append("Dine-in")
+            if dining_options:
+                item_lines.append(f"🍽️ {', '.join(dining_options)}")
+
+            # Opening hours
+            opening_hours = place.get("regularOpeningHours") or place.get("currentOpeningHours")
+            if opening_hours and opening_hours.get("weekdayDescriptions"):
+                hours_desc = opening_hours["weekdayDescriptions"]
+                if hours_desc:
+                    item_lines.append(f"🕒 Hours: {', '.join(hours_desc[:3])}")  # Show first 3 days
+                    if len(hours_desc) > 3:
+                        item_lines.append(f"🕒 Hours: {', '.join(hours_desc[3:])}")  # Show remaining days
 
             if address != "Address not available":
                 map_query = urllib.parse.quote_plus(address)
