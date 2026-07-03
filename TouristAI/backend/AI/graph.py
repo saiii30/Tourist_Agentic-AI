@@ -175,7 +175,7 @@ def weather_node(state):
 
 
 def general_node(state):
-    answer = general_agent(state["question"])
+    answer = general_agent(state)
 
     # General agent now returns a dict with 'answer' and 'source'
     return {

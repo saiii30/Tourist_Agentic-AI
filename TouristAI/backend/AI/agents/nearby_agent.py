@@ -314,6 +314,17 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 if phone:
                     item_lines.append(f"📞 Phone: {phone}")
 
+                hours = (
+                place.get("currentOpeningHours", {}).get("weekdayDescriptions")
+                or place.get("regularOpeningHours", {}).get("weekdayDescriptions")
+                or []
+                )
+
+                if hours:
+                    item_lines.append("🕒 Hours:")
+                    for h in hours:
+                        item_lines.append(f"🕒 {h}")
+
                 # Editorial summary
                 editorial = place.get("editorialSummary", {}).get("text")
                 if editorial:
@@ -357,14 +368,9 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                     if payment_methods:
                         item_lines.append(f"💳 {', '.join(payment_methods)}")
 
-                # Opening hours
-                opening_hours = place.get("regularOpeningHours") or place.get("currentOpeningHours")
-                if opening_hours and opening_hours.get("weekdayDescriptions"):
-                    hours_desc = opening_hours["weekdayDescriptions"]
-                    if hours_desc:
-                        item_lines.append(f"🕒 Hours: {', '.join(hours_desc[:3])}")  # Show first 3 days
-                        if len(hours_desc) > 3:
-                            item_lines.append(f"🕒 Hours: {', '.join(hours_desc[3:])}")  # Show remaining days
+                
+
+                
 
                 if address != "Address not available":
                     map_query = urllib.parse.quote_plus(address)
@@ -373,11 +379,6 @@ def get_places_from_google(city: str, interests: str) -> str | None:
 
                 if website != "Not available":
                     item_lines.append(f"[Visit Website]({website})")
-
-                if photo_url:
-                        item_lines.append(f"🕒 Hours: {', '.join(hours_desc[:3])}")  # Show first 3 days
-                        if len(hours_desc) > 3:
-                            item_lines.append(f"🕒 Hours: {', '.join(hours_desc[3:])}")  # Show remaining days
 
                 if photo_url:
                     item_lines.append(f"![{name}]({photo_url})")
