@@ -399,21 +399,31 @@ function PlaceCard({ lines }: { lines: string[] }) {
             ))}
           </div>
         ) : tab === "accessibility" ? (
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-            <FaWheelchair className="flex-shrink-0 text-gray-400 text-[10px]" />
-            <span
-              dangerouslySetInnerHTML={{ __html: inlineMd(accessibilityText) }}
-            />
+          <div className="grid grid-cols-2 gap-2">
+            {accessibilityText.split(',').map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <FaWheelchair className="flex-shrink-0 text-[#1D9E75] text-[10px]" />
+                <span dangerouslySetInnerHTML={{ __html: inlineMd(item.trim()) }} />
+              </div>
+            ))}
           </div>
         ) : tab === "paymentOptions" ? (
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-            <FaCreditCard className="flex-shrink-0 text-gray-400 text-[10px]" />
-            <span>{paymentText}</span>
+          <div className="grid grid-cols-2 gap-2">
+            {paymentText.replace(/^Accepts\s/i, '').split(',').map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <FaCreditCard className="flex-shrink-0 text-[#1D9E75] text-[10px]" />
+                <span dangerouslySetInnerHTML={{ __html: inlineMd(item.trim()) }} />
+              </div>
+            ))}
           </div>
         ) : tab === "parkingOptions" ? (
-          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-            <FaParking className="flex-shrink-0 text-gray-400 text-[10px]" />
-            <span>{parkingText}</span>
+          <div className="grid grid-cols-2 gap-2">
+            {parkingText.replace(/^Parking:\s/i, '').split(',').map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <FaParking className="flex-shrink-0 text-[#1D9E75] text-[10px]" />
+                <span dangerouslySetInnerHTML={{ __html: inlineMd(item.trim()) }} />
+              </div>
+            ))}
           </div>
         ) : (
           <p className="text-xs text-gray-400">No details available.</p>

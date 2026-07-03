@@ -458,7 +458,7 @@ def search_google_places(question: str, city: str, budget: str, travelers: int) 
 
             parking_info = [k.replace('parking', '').replace('free', 'Free ').replace('paid', 'Paid ').strip() for k, v in parking.items() if v]
             if parking_info:
-                item_lines.append(f"🅿 Parking: {', '.join(parking_info)}")
+                item_lines.append(f"{', '.join(parking_info)}")
 
             # ---------- Accessibility ----------
 
