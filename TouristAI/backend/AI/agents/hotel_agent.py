@@ -368,21 +368,23 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
 
             parking = place.get("parkingOptions", {})
 
-            parking_info = [k.replace('parking', '').replace('free', 'Free ').replace('paid', 'Paid ').strip() for k, v in parking.items() if v]
-            if parking_info:
-                item_lines.append(f" {', '.join(parking_info)}")
+            if parking:
+                parking_info = [k.replace('parking', '').replace('free', 'Free ').replace('paid', 'Paid ').strip() for k, v in parking.items() if v]
+                if parking_info:
+                    item_lines.append(f"🅿 Parking: {', '.join(parking_info)}")
 
             # ---------- Accessibility ----------
 
             access = place.get("accessibilityOptions", {})
 
-            access_info = [
-                "wheelchair accessible parking" for k, v in access.items() if k == "wheelchairAccessibleParking" and v
-            ] + [
-                "wheelchair accessible entrance" for k, v in access.items() if k == "wheelchairAccessibleEntrance" and v
-            ]
-            if access_info:
-                item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
+            if access:
+                access_info = [
+                    "wheelchair accessible parking" for k, v in access.items() if k == "wheelchairAccessibleParking" and v
+                ] + [
+                    "wheelchair accessible entrance" for k, v in access.items() if k == "wheelchairAccessibleEntrance" and v
+                ]
+                if access_info:
+                    item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
 
             # ---------- Links ----------
 

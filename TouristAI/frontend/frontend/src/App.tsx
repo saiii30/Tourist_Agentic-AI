@@ -15,6 +15,7 @@ import {
   FaSearch,
   FaParking,
   FaStar,
+  FaConciergeBell,
   FaChevronLeft,
   FaChevronRight,
   FaChevronDown,
@@ -99,7 +100,7 @@ function ImageSlider({ images }: { images: string[] }) {
 // Map" button next to an outlined "Visit Website" button.
 // ==========================================================
 function PlaceCard({ lines }: { lines: string[] }) {
-  const [tab, setTab] = useState<"overview" | "amenities" | "accessibility" | "parkingOptions" | "paymentOptions">("overview");
+  const [tab, setTab] = useState<"overview" | "amenities" | "accessibility" | "parkingOptions" | "paymentOptions" | "dining">("overview");
   const [hoursOpen, setHoursOpen] = useState(false);
 
   const title = lines[0] || "";
@@ -145,8 +146,12 @@ function PlaceCard({ lines }: { lines: string[] }) {
       l !== parkingLine
   );
 
+  const diningKeywords = /breakfast|lunch|dinner|beer|wine|vegetarian|takeout|delivery|dine-in|🍽️|🍳|🥗|🍺|🍷|🥦|🥡|🚚|🍴/i;
+  const diningLines = remaining.filter(l => diningKeywords.test(l));
+
+
   const descriptionLines = remaining.filter(l => l.replace(/^\W+/, "").length > 45);
-  const amenityLines = remaining.filter(l => !descriptionLines.includes(l));
+  const amenityLines = remaining.filter(l => !descriptionLines.includes(l) && !diningLines.includes(l));
 
   let ratingValue = "";
   let reviewCount = "";
@@ -354,6 +359,19 @@ function PlaceCard({ lines }: { lines: string[] }) {
               Parking Options
             </button>
           )}
+          {diningLines.length > 0 && (
+            <button
+              onClick={() => setTab("dining")}
+              className={`flex-1 py-2 text-[11px] font-semibold transition-colors truncate ${
+                tab === "dining"
+                  ? "text-gray-900 border-b-2 border-[#1D9E75]"
+                  : "text-gray-400 border-b-2 border-transparent"
+              }`}
+            >
+              Dining
+            </button>
+          )}
+
           
         </div>
       )}
@@ -422,6 +440,17 @@ function PlaceCard({ lines }: { lines: string[] }) {
               <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
                 <FaParking className="flex-shrink-0 text-[#1D9E75] text-[10px]" />
                 <span dangerouslySetInnerHTML={{ __html: inlineMd(item.trim()) }} />
+              </div>
+            ))}
+          </div>
+        ) : tab === "dining" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {diningLines.map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <FaConciergeBell className="flex-shrink-0 text-[#1D9E75] text-[10px]" />
+                <span
+                  dangerouslySetInnerHTML={{ __html: inlineMd(item.replace(/^[^\w]+/, "").trim()) }}
+                />
               </div>
             ))}
           </div>

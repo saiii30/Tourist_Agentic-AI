@@ -325,26 +325,27 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
 
             # Accessibility options
             accessibility = place.get("accessibilityOptions", {})
-            access_info = [
-                "wheelchair accessible parking" for k, v in accessibility.items() if k == "wheelchairAccessibleParking" and v
-            ] + [
-                "wheelchair accessible entrance" for k, v in accessibility.items() if k == "wheelchairAccessibleEntrance" and v
-            ]
-            if access_info:
-                item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
+            if accessibility:
+                access_info = [
+                    "wheelchair accessible parking" for k, v in accessibility.items() if k == "wheelchairAccessibleParking" and v
+                ] + [
+                    "wheelchair accessible entrance" for k, v in accessibility.items() if k == "wheelchairAccessibleEntrance" and v
+                ]
+                if access_info:
+                    item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
 
             # Payment options
             payment = place.get("paymentOptions", {})
-            payment_methods = [
-                "credit cards" for k, v in payment.items() if k == "acceptsCreditCards" and v
-            ] + [
-                "debit cards" for k, v in payment.items() if k == "acceptsDebitCards" and v
-            ] + [
-                "cash only" for k, v in payment.items() if k == "acceptsCashOnly" and v
-            ]
-
-            if payment_methods:
-                item_lines.append(f"💳 Accepts {', '.join(payment_methods)}")
+            if payment:
+                payment_methods = [
+                    "credit cards" for k, v in payment.items() if k == "acceptsCreditCards" and v
+                ] + [
+                    "debit cards" for k, v in payment.items() if k == "acceptsDebitCards" and v
+                ] + [
+                    "cash only" for k, v in payment.items() if k == "acceptsCashOnly" and v
+                ]
+                if payment_methods:
+                    item_lines.append(f"💳 Accepts {', '.join(payment_methods)}")
 
             # Dining options
             dining_options = []
