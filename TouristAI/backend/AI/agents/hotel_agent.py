@@ -271,10 +271,10 @@ def get_hotels_from_google(city: str, budget: str, travelers: int) -> str | None
 
             item_lines.append(f"📍 Address: {address}")
 
-            if latitude and longitude:
-                item_lines.append(
-                    f"🌎 Coordinates: {latitude}, {longitude}"
-                )
+            # if latitude and longitude:
+            #     item_lines.append(
+            #         f"🌎 Coordinates: {latitude}, {longitude}"
+            #     )
 
             if primary_type:
                 item_lines.append(

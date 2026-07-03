@@ -336,7 +336,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
                 <span>{phoneText}</span>
               </div>
             )}
-            {paymentText && (
+            {/* {paymentText && (
               <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
                 <FaCreditCard className="flex-shrink-0 text-gray-400 text-[10px]" />
                 <span>{paymentText}</span>
@@ -349,7 +349,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
                   dangerouslySetInnerHTML={{ __html: inlineMd(accessibilityText) }}
                 />
               </div>
-            )}
+            )} */}
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-2">
