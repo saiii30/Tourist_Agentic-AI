@@ -100,7 +100,7 @@ function ImageSlider({ images }: { images: string[] }) {
 // Map" button next to an outlined "Visit Website" button.
 // ==========================================================
 function PlaceCard({ lines }: { lines: string[] }) {
-  const [tab, setTab] = useState<"overview" | "amenities" | "accessibility" | "parkingOptions" | "paymentOptions" | "dining">("overview");
+  const [tab, setTab] = useState<"overview" | "info" | "accessibility" | "parkingOptions" | "paymentOptions" | "dining">("overview");
   const [hoursOpen, setHoursOpen] = useState(false);
 
   const title = lines[0] || "";
@@ -146,7 +146,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
       l !== parkingLine
   );
 
-  const diningKeywords = /breakfast|lunch|dinner|beer|wine|vegetarian|takeout|delivery|dine-in|🍽️|🍳|🥗|🍺|🍷|🥦|🥡|🚚|🍴/i;
+  const diningKeywords = /(serves|available|serves breakfast|serves lunch|serves dinner|serves beer|serves wine|serves vegetarian|takeout|delivery|dine-in|breakfast restaurant|🍽️|🍳|🥗|🍺|🍷|🥦|🥡|🚚|🍴)/i;
   const diningLines = remaining.filter(l => diningKeywords.test(l));
 
 
@@ -310,14 +310,14 @@ function PlaceCard({ lines }: { lines: string[] }) {
             Overview
           </button>
           <button
-            onClick={() => setTab("amenities")}
+            onClick={() => setTab("info")}
             className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${
-              tab === "amenities"
+              tab === "info"
                 ? "text-gray-900 border-b-2 border-[#1D9E75]"
                 : "text-gray-400 border-b-2 border-transparent"
             }`}
           >
-            Amenities
+            Information
           </button>
           {accessibilityText && (
             <button
@@ -344,7 +344,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
                   : "text-gray-400 border-b-2 border-transparent"
               }`}
             >
-              Payment Options
+              Payment 
             </button>
           )}
           {parkingLine && (
@@ -356,7 +356,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
                   : "text-gray-400 border-b-2 border-transparent"
               }`}
             >
-              Parking Options
+              Parking 
             </button>
           )}
           {diningLines.length > 0 && (
@@ -403,7 +403,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
               </div>
             )}
           </div>
-        ) : tab === "amenities" ? (
+        ) : tab === "info" ? (
           <div className="grid grid-cols-2 gap-2">
             {amenityLines.map((line, i) => (
               <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
