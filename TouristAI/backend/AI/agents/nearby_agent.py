@@ -346,29 +346,27 @@ def get_places_from_google(city: str, interests: str) -> str | None:
 
                 # Accessibility options
                 accessibility = place.get("accessibilityOptions", {})
-                if accessibility:
-                    access_features = []
-                    if accessibility.get("wheelchairAccessibleParking"):
-                        access_features.append("Wheelchair parking")
-                    if accessibility.get("wheelchairAccessibleEntrance"):
-                        access_features.append("Wheelchair entrance")
-                    if access_features:
-                        item_lines.append(f"♿ {', '.join(access_features)}")
+            access_info = [
+                "wheelchair accessible parking" for k, v in accessibility.items() if k == "wheelchairAccessibleParking" and v
+            ] + [
+                "wheelchair accessible entrance" for k, v in accessibility.items() if k == "wheelchairAccessibleEntrance" and v
+            ]
+            if access_info:
+                item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
 
                 # Payment options
                 payment = place.get("paymentOptions", {})
-                if payment:
-                    payment_methods = []
-                    if payment.get("acceptsCreditCards"):
-                        payment_methods.append("Credit cards")
-                    if payment.get("acceptsDebitCards"):
-                        payment_methods.append("Debit cards")
-                    if payment.get("acceptsNfc"):
-                        payment_methods.append("NFC")
-                    if payment_methods:
-                        item_lines.append(f"💳 {', '.join(payment_methods)}")
+            payment_methods = [
+                "credit cards" for k, v in payment.items() if k == "acceptsCreditCards" and v
+            ] + [
+                "debit cards" for k, v in payment.items() if k == "acceptsDebitCards" and v
+            ] + [
+                "cash only" for k, v in payment.items() if k == "acceptsCashOnly" and v
+            ]
 
-                
+            if payment_methods:
+                item_lines.append(f"💳 Accepts {', '.join(payment_methods)}")
+
 
                 
 

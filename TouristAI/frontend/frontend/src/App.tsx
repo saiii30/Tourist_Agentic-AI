@@ -13,6 +13,7 @@ import {
   FaBuilding,
   FaCog,
   FaSearch,
+  FaParking,
   FaStar,
   FaChevronLeft,
   FaChevronRight,
@@ -98,7 +99,7 @@ function ImageSlider({ images }: { images: string[] }) {
 // Map" button next to an outlined "Visit Website" button.
 // ==========================================================
 function PlaceCard({ lines }: { lines: string[] }) {
-  const [tab, setTab] = useState<"overview" | "amenities">("overview");
+  const [tab, setTab] = useState<"overview" | "amenities" | "accessibility" | "parkingOptions" | "paymentOptions">("overview");
   const [hoursOpen, setHoursOpen] = useState(false);
 
   const title = lines[0] || "";
@@ -121,6 +122,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
   const hoursLines = otherDetails.filter(l => /🕒/.test(l));
   const phoneLine = otherDetails.find(l => /📞|phone/i.test(l));
   const paymentLine = otherDetails.find(l => /💳/.test(l));
+  const parkingLine = otherDetails.find(l => /🅿/.test(l));
   const accessibilityLine = otherDetails.find(l => /♿/.test(l));
   const priceLine = otherDetails.find(
     l =>
@@ -139,7 +141,8 @@ function PlaceCard({ lines }: { lines: string[] }) {
       l !== phoneLine &&
       !hoursLines.includes(l) &&
       l !== paymentLine &&
-      l !== accessibilityLine
+      l !== accessibilityLine &&
+      l !== parkingLine
   );
 
   const descriptionLines = remaining.filter(l => l.replace(/^\W+/, "").length > 45);
@@ -183,6 +186,10 @@ function PlaceCard({ lines }: { lines: string[] }) {
 
   const paymentText = paymentLine
     ? paymentLine.replace(/💳/g, "").trim()
+    : "";
+
+  const parkingText = parkingLine
+    ? parkingLine.replace(/🅿/g, "").trim()
     : "";
 
   const accessibilityText = accessibilityLine
@@ -307,12 +314,53 @@ function PlaceCard({ lines }: { lines: string[] }) {
           >
             Amenities
           </button>
+          {accessibilityText && (
+            <button
+
+              onClick={() => setTab("accessibility")}
+              className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${
+                tab === "accessibility"
+
+                  ? "text-gray-900 border-b-2 border-[#1D9E75]"
+                  : "text-gray-400 border-b-2 border-transparent"
+              }`}
+            >
+              Accessibility
+            </button>
+          )}
+          {paymentLine && (
+            <button
+
+              onClick={() => setTab("paymentOptions")}
+              className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${
+                tab === "paymentOptions"
+
+                  ? "text-gray-900 border-b-2 border-[#1D9E75]"
+                  : "text-gray-400 border-b-2 border-transparent"
+              }`}
+            >
+              Payment Options
+            </button>
+          )}
+          {parkingLine && (
+            <button
+              onClick={() => setTab("parkingOptions")}
+              className={`flex-1 py-2 text-[11px] font-semibold transition-colors truncate ${
+                tab === "parkingOptions"
+                  ? "text-gray-900 border-b-2 border-[#1D9E75]"
+                  : "text-gray-400 border-b-2 border-transparent"
+              }`}
+            >
+              Parking Options
+            </button>
+          )}
+          
         </div>
       )}
 
       {/* Panel content */}
       <div className="px-3.5 py-2.5">
-        {tab === "overview" || !hasAmenities ? (
+        {tab === "overview" ? (
           <div className="space-y-2 text-left">
             {descriptionLines.map((line, i) => (
               <p
@@ -336,22 +384,8 @@ function PlaceCard({ lines }: { lines: string[] }) {
                 <span>{phoneText}</span>
               </div>
             )}
-            {/* {paymentText && (
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                <FaCreditCard className="flex-shrink-0 text-gray-400 text-[10px]" />
-                <span>{paymentText}</span>
-              </div>
-            )}
-            {accessibilityText && (
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                <FaWheelchair className="flex-shrink-0 text-gray-400 text-[10px]" />
-                <span
-                  dangerouslySetInnerHTML={{ __html: inlineMd(accessibilityText) }}
-                />
-              </div>
-            )} */}
           </div>
-        ) : (
+        ) : tab === "amenities" ? (
           <div className="grid grid-cols-2 gap-2">
             {amenityLines.map((line, i) => (
               <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
@@ -364,6 +398,25 @@ function PlaceCard({ lines }: { lines: string[] }) {
               </div>
             ))}
           </div>
+        ) : tab === "accessibility" ? (
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <FaWheelchair className="flex-shrink-0 text-gray-400 text-[10px]" />
+            <span
+              dangerouslySetInnerHTML={{ __html: inlineMd(accessibilityText) }}
+            />
+          </div>
+        ) : tab === "paymentOptions" ? (
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <FaCreditCard className="flex-shrink-0 text-gray-400 text-[10px]" />
+            <span>{paymentText}</span>
+          </div>
+        ) : tab === "parkingOptions" ? (
+          <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <FaParking className="flex-shrink-0 text-gray-400 text-[10px]" />
+            <span>{parkingText}</span>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">No details available.</p>
         )}
       </div>
 
