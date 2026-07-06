@@ -116,14 +116,87 @@ def clear_guided_state():
     conn.close()
 
 def extract_query_details(question: str) -> dict:
+    # First try regex-based extraction for train queries
+    # Normalize the query by replacing underscores with spaces
+    normalized_question = question.replace('_', ' ')
+    question_lower = normalized_question.lower()
+    
+    # Check for train-related queries
+    if any(kw in question_lower for kw in ["train", "railway", "rail", "irctc"]):
+        # Extract date first
+        date_pattern = r'(?:on|in|)\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}|\d{4}-\d{1,2}-\d{1,2}|tomorrow|today|next\s+\w+)'
+        date_match = re.search(date_pattern, question_lower)
+        travel_date = date_match.group(1).strip() if date_match else "None"
+        
+        # Remove "train" keyword to avoid confusion
+        query_clean = re.sub(r'train|railway|rail|irctc', '', question_lower).strip()
+        
+        # Split by "to" to separate source and destination parts
+        if ' to ' in query_clean:
+            parts = query_clean.split(' to ', 1)
+            source_part = parts[0].strip()
+            dest_part = parts[1].strip()
+            
+            # Extract source from the part before "to"
+            # Look for "from X" pattern or just take the city name
+            if source_part.startswith('from '):
+                source = source_part.replace('from', '').strip()
+            else:
+                source = source_part
+            
+            # Extract destination from the part after "to", removing any date
+            destination = re.sub(date_pattern, '', dest_part).strip()
+            
+            # Clean up any extra words
+            source = re.sub(r'\b(from|the|a|an)\b', '', source).strip()
+            destination = re.sub(r'\b(the|a|an)\b', '', destination).strip()
+            
+            # Check if destination is empty or just noise after date removal
+            if not destination or len(destination) < 2 or destination.isdigit():
+                # Try to extract destination from the original query using a different pattern
+                # Look for patterns like "to [city] on [date]"
+                alt_pattern = r'to\s+([a-z]{2,}(?:\s+[a-z]{2,})?)\s+(?:on|in)?\s*' + date_pattern
+                alt_match = re.search(alt_pattern, question_lower)
+                if alt_match:
+                    destination = alt_match.group(1).strip()
+                else:
+                    # If still no destination, try to get it from the part before date
+                    # Pattern: "to [destination] [date]" where date might be attached
+                    to_index = query_clean.find(' to ')
+                    if to_index != -1:
+                        after_to = query_clean[to_index + 4:].strip()
+                        # Split by date pattern
+                        parts_by_date = re.split(date_pattern, after_to)
+                        if parts_by_date and parts_by_date[0].strip():
+                            destination = parts_by_date[0].strip()
+            
+            # Validate that we have both source and destination
+            if source and destination and len(destination) >= 2 and not destination.isdigit():
+                return {
+                    "city": source.title(),
+                    "destination": destination.title(),
+                    "travel_date": travel_date,
+                    "days": 3,
+                    "requires_city": True
+                }
+            else:
+                # Missing destination - print helpful message and fall back to LLM
+                print(f"⚠️ Could not extract destination from query: '{question}'. Please specify both source and destination cities.")
+                print(f"   Example: 'train from Chennai to Bangalore on 30-11-2026'")
+    
+    # Fallback to LLM for other queries
     prompt = (
         "Analyze the following user query and extract: \n"
-        "1. The destination city or location (e.g. 'Chennai', 'Madurai', 'Ooty').\n"
-        "2. The duration of the trip (number of days as an integer, default to 3 if not specified).\n"
-        "3. A boolean flag 'requires_city' indicating if the user's intent is to get location-specific trip plans/itineraries, weather reports, hotel recommendations, restaurant recommendations, or sightseeing attractions (which require a location to be resolved).\n\n"
+        "1. The primary city or source location (e.g., 'Chennai' in 'weather in Chennai' or 'Dindigul' in 'train from Dindigul to Trichy').\n"
+        "2. The destination city, if one is mentioned (e.g., 'Trichy' in 'train from Dindigul to Trichy').\n"
+        "3. The travel date, if mentioned (e.g., 'July 30' or 'tomorrow').\n"
+        "4. The duration of the trip (number of days as an integer, default to 3 if not specified for trip plans).\n"
+        "5. A boolean flag 'requires_city' indicating if the user's intent is to get location-specific information (trip plans, weather, hotels, restaurants, attractions).\n\n"
         "Return the output strictly in the following JSON format and nothing else:\n"
         "{\n"
-        "  \"city\": \"Name of the city (or 'None' if not specified or unclear)\",\n"
+        "  \"city\": \"Name of the primary/source city (or 'None' if not specified)\",\n"
+        "  \"destination\": \"Name of the destination city (or 'None' if not specified)\",\n"
+        "  \"travel_date\": \"The travel date (or 'None' if not specified)\",\n"
         "  \"days\": 3,\n"
         "  \"requires_city\": true\n"
         "}\n\n"
@@ -151,12 +224,20 @@ def extract_query_details(question: str) -> dict:
             city = "None"
         return {
             "city": city,
+            "destination": data.get("destination", "None"),
+            "travel_date": data.get("travel_date", "None"),
             "days": int(data.get("days", 3)),
             "requires_city": bool(data.get("requires_city", True))
         }
     except Exception as e:
         print(f"Error in extract_query_details: {e}")
-        return {"city": "None", "days": 3, "requires_city": True}
+        return {
+            "city": "None",
+            "destination": "None",
+            "travel_date": "None",
+            "days": 3,
+            "requires_city": True
+        }
 
 def extract_all_opening_details(question: str) -> dict:
     prompt = (

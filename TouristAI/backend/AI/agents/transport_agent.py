@@ -54,7 +54,7 @@ def get_trains(source, destination, date):
         print("⚠️ RAPIDAPI_KEY not found. Skipping train search.")
         return None
 
-    url = "https://irctc1.p.rapidapi.com/api/v1/train/searchTrain"
+    url = "https://irctc1.p.rapidapi.com/api/v3/trainBetweenStations"
 
     headers = {
         "X-RapidAPI-Key": RAPIDAPI_KEY,
@@ -64,9 +64,9 @@ def get_trains(source, destination, date):
     # The API expects station codes. We'll pass full names and let it handle it.
     # A more robust solution would map city names to station codes first.
     params = {
-        "fromCity": source,
-        "toCity": destination,
-        "date": date
+        "fromStationCode": source,
+        "toStationCode": destination,
+        "dateOfJourney": date
     }
 
     try:
@@ -129,18 +129,18 @@ def format_transport(flights, trains, buses):
 
     output = []
 
-    # Flights
-    output.append("✈️ Flights")
-    output.append("--------------------------------")
+    # # Flights
+    # output.append("✈️ Flights")
+    # output.append("--------------------------------")
 
-    if flights and flights.get("data"):
-        for item in flights["data"][:5]:
-            # Customize flight output based on actual API response structure
-            output.append(json.dumps(item, indent=2))
-    else:
-        output.append("No Flights Found")
+    # if flights and flights.get("data"):
+    #     for item in flights["data"][:5]:
+    #         # Customize flight output based on actual API response structure
+    #         output.append(json.dumps(item, indent=2))
+    # else:
+    #     output.append("No Flights Found")
 
-    output.append("")
+    # output.append("")
 
 
     # Trains
@@ -167,17 +167,17 @@ def format_transport(flights, trains, buses):
 
     output.append("")
 
-    # Buses
-    output.append("🚌 Buses")
-    output.append("--------------------------------")
+    # # Buses
+    # output.append("🚌 Buses")
+    # output.append("--------------------------------")
 
-    if buses:
-        if buses.get("data"):
-            for item in buses["data"][:5]:
-                # Customize bus output based on actual API response structure
-                output.append(json.dumps(item, indent=2))
-    else:
-        output.append("No Buses Found")
+    # if buses:
+    #     if buses.get("data"):
+    #         for item in buses["data"][:5]:
+    #             # Customize bus output based on actual API response structure
+    #             output.append(json.dumps(item, indent=2))
+    # else:
+    #     output.append("No Buses Found")
 
     return "\n".join(output)
 
@@ -203,16 +203,18 @@ def transport_agent(question,
 
     # 2. Search APIs
     print("ℹ️ No cache hit. Calling transport APIs.")
-    flights = get_flights(source, destination, date)
+    # flights = get_flights(source, destination, date)
     trains = get_trains(source, destination, date)
-    buses = get_buses(source, destination, date)
+    # buses = get_buses(source, destination, date)
 
     # If all APIs fail, use a final LLM fallback
-    if not flights and not trains and not buses:
+    # if not flights and not trains and not buses:
+    if not trains:
         print("⚠️ All transport APIs failed. Falling back to Groq LLM.")
         return get_answer(question) # This will call Groq and save to RAG
 
-    answer = format_transport(flights, trains, buses)
+    # answer = format_transport(flights, trains, buses)
+    answer = format_transport(None, trains, None)
 
     # 3. Save
     try:
@@ -225,4 +227,3 @@ def transport_agent(question,
         "source": "transport_api",
         "answer": answer
     }
-

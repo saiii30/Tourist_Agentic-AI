@@ -73,6 +73,8 @@ def supervisor_node(state):
         return {
             **state,
             "city": "None",
+            "destination": "None",
+            "travel_date": "None",
             "days": 3,
             "budget": "None",
             "travelers": 1,
@@ -112,6 +114,8 @@ def supervisor_node(state):
     return {
         **state,
         "city": details.get("city", "None"),
+        "destination": details.get("destination", "None"),
+        "travel_date": details.get("travel_date", "None"),
         "days": details.get("days", 3),
         "budget": "None",
         "travelers": 1,
