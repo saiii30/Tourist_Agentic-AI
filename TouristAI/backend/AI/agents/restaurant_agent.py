@@ -127,15 +127,22 @@ def get_image_from_website(url, max_images=20):
         return []
 
         
-def get_restaurants_from_google(city: str, budget: str, interests: str) -> str | None:
+def get_restaurants_from_google(question: str, city: str, budget: str, interests: str) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
     if not api_key:
         print("❌ GOOGLE_PLACES_API_KEY not found.")
         return None
 
-    # Build search query
+    # Build a more specific search query
     query_parts = [f"best restaurants in {city}"]
+
+    # Add dietary preferences from the original question
+    question_lower = question.lower()
+    if "veg" in question_lower or "vegetarian" in question_lower:
+        query_parts.append("vegetarian")
+    elif "non-veg" in question_lower or "non vegetarian" in question_lower:
+        query_parts.append("non-vegetarian")
 
     if interests and interests.lower() != "none":
         query_parts.append(interests)
@@ -385,7 +392,7 @@ def restaurant_agent(
     # 2. If RAG is empty, try the Google Places API
     print("ℹ️ No results in RAG. Checking Google Places API for restaurants.")
     google_results = get_restaurants_from_google(
-        city, budget, interests
+        question, city, budget, interests
     )
     if google_results:
         # Save the successful Google response to RAG for future queries
@@ -405,5 +412,3 @@ def restaurant_agent(
     except Exception as e:
         print(f"❌ Final fallback to Groq failed: {e}")
         return {"message": f"Sorry, I'm having trouble finding restaurant recommendations for {city} right now."}
-
-
