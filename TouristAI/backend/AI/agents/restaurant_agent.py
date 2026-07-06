@@ -14,39 +14,6 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, quote
 
 
-def get_wikipedia_images(place_name, max_images=5):
-    """
-    Get image(s) from Wikipedia.
-    """
-    try:
-        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(place_name)}"
-
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
-
-        response = requests.get(url, headers=headers, timeout=10)
-
-        if response.status_code != 200:
-            return []
-
-        data = response.json()
-
-        images = []
-
-        if "originalimage" in data:
-            images.append(data["originalimage"]["source"])
-        elif "thumbnail" in data:
-            images.append(data["thumbnail"]["source"])
-
-        return images[:max_images]
-
-    except Exception as e:
-        print("Wikipedia image error:", e)
-        return []
-
-
-
 def get_image_from_website(url, max_images=20):
     """
     Returns up to max_images image URLs from a website.
@@ -159,29 +126,6 @@ def get_image_from_website(url, max_images=20):
         print("Website image error:", e)
         return []
 
-def get_place_photo(photo_name: str, api_key: str):
-    uri_url = (
-        f"https://places.googleapis.com/v1/{photo_name}/media"
-        f"?maxHeightPx=400"
-        f"&skipHttpRedirect=true"
-        f"&key={api_key}"
-    )
-    try:
-        with urllib.request.urlopen(uri_url) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            photo_uri = data.get("photoUri")
-
-        if not photo_uri:
-            print("⚠️ No photoUri in response")
-            return None
-
-        with urllib.request.urlopen(photo_uri) as response:
-            image_data = response.read()
-            return f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
-
-    except Exception as e:
-        print("Photo Error:", e)
-        return None
         
 def get_restaurants_from_google(city: str, budget: str, interests: str) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
@@ -290,9 +234,6 @@ def get_restaurants_from_google(city: str, budget: str, interests: str) -> str |
                 photo_urls = get_image_from_website(website, max_images=20)
                 print("Images:", photo_urls)
 
-            if not photo_urls:
-                print(f"No website images found. Trying Wikipedia for {name}")
-                photo_urls = get_wikipedia_images(name)
 
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
@@ -466,15 +407,3 @@ def restaurant_agent(
         return {"message": f"Sorry, I'm having trouble finding restaurant recommendations for {city} right now."}
 
 
-# Test directly
-if __name__ == "__main__":
-    result = restaurant_agent(
-        question="Best restaurants in Chennai",
-        city="Chennai",
-        interests="South Indian Food",
-        budget="Budget"
-    )
-
-    print("\n========== FINAL RESULT ==========")
-    print(result)
-    print("==================================")

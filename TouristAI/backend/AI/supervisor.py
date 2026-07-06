@@ -352,7 +352,7 @@ def matches_keywords(question, keywords):
     question_lower = question.lower()
     for kw in keywords:
         kw_lower = kw.lower()
-        pattern = r'\b' + re.escape(kw_lower) + r'\b'
+        pattern = r'\b' + re.escape(kw_lower) + r's?\b' # Allow optional 's' for plurals
         if re.search(pattern, question_lower):
             return True
     return False
@@ -435,6 +435,12 @@ def route_question(state, details=None):
     # Default stateless routing
 
     routes = []
+
+    # Train Agent
+    if matches_keywords(question_lower, [
+        "train", "railway", "rail", "irctc", "station", "platform"
+    ]):
+        routes.append("train")
 
     # Restaurant Agent
     if matches_keywords(question_lower, [

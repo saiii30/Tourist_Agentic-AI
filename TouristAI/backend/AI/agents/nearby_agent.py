@@ -128,99 +128,8 @@ def get_image_from_website(url, max_images=20):
         print("Website image error:", e)
         return []
 
-def get_place_photo(photo_name: str, api_key: str):
-    # First, get the photo URI from Google
-    uri_url = (
-        f"https://places.googleapis.com/v1/{photo_name}/media"
-        f"?maxHeightPx=400"
-        f"&skipHttpRedirect=true"
-        f"&key={api_key}"
-    )
-    try:
-        with urllib.request.urlopen(uri_url) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            photo_uri = data.get("photoUri")
-        
-        if not photo_uri:
-            return None
-            
-        # Then, download the image data from the URI and encode it as Base64
-        with urllib.request.urlopen(photo_uri) as response:
-            image_data = response.read()
-            # Return a data URI that the browser can render directly
-            return f"data:image/jpeg;base64,{base64.b64encode(image_data).decode('utf-8')}"
-    except Exception as e:
-        print("Photo Error:", e)
-        return None
 
-def get_places_from_foursquare(city: str, interests: str) -> str | None:
-    """
-    Fetches nearby places from the Foursquare API.
-    """
-    api_key = os.getenv("FOURSQUARE_API_KEY")
-    if not api_key:
-        print("⚠️ FOURSQUARE_API_KEY not found. Skipping Foursquare search.")
-        return None
 
-    query_parts = [interests] if interests and interests.lower() != "none" else ["tourist attractions"]
-    query = " ".join(query_parts)
-
-    url = "https://api.foursquare.com/v3/places/search"
-    params = {
-        "query": query,
-        "near": city,
-        "limit": 10,
-        "fields": "fsq_id,name,location,rating,website,photos"
-    }
-    headers = {
-        "Accept": "application/json",
-        "Authorization": api_key
-    }
-
-    try:
-        req = urllib.request.Request(f"{url}?{urllib.parse.urlencode(params)}", headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode('utf-8'))
-
-        if data and data.get("results"):
-            print("✅ Foursquare API call successful, found nearby places.")
-            lines = []
-            for i, place in enumerate(data["results"][:5], 1): # Use enumerate
-                name = place.get("name", "N/A")
-                # Foursquare rating is out of 10, convert to 5-star scale
-                rating = round(place.get("rating", 0) / 2, 1) if "rating" in place else "N/A"
-                address = place.get("location", {}).get("formatted_address", "Address not available")
-                website = place.get("website", "Not available")
-                photo_urls = []
-
-            if website:
-                print(f"Getting images from: {website}")
-                photo_urls = get_image_from_website(website, max_images=20)
-                print("Images:", photo_urls)
-
-                item_lines = [f"**{name}**"]
-                item_lines.append(f"⭐ Rating: {rating}") # Foursquare doesn't provide review counts in basic search
-                item_lines.append(f"📍 Address: {address}")
-
-                if address != "Address not available":
-                    map_query = urllib.parse.quote_plus(f"{name}, {address}")
-                    map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
-                    item_lines.append(f"[View Map]({map_url})") # No emoji
-
-                if website != "Not available":
-                    item_lines.append(f"[Visit Website]({website})") # No emoji
-                if photo_urls:
-                    for photo in photo_urls:
-                        item_lines.append(f"![{name}]({photo})")
-
-                lines.append(f"{i}. {chr(10).join(item_lines)}") # Append as numbered item
-            return "\n".join(lines)
-        else:
-            return None
-    except Exception as e:
-        print(f"❌ Foursquare API Error: {e}")
-        return None
-        
 def get_places_from_google(city: str, interests: str) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
     if not api_key:
@@ -296,14 +205,6 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                 address = place.get("formattedAddress", "Address not available")
                 website = place.get("websiteUri", "Not available")
                 photo_url = None
-
-                # if website != "Not available":
-                #     photo_url = get_image_from_website(website)
-
-                photos = place.get("photos")
-                if not photo_url and photos:
-                    photo_name = photos[0].get("name")
-                    photo_url = get_place_photo(photo_name, api_key)
 
                 item_lines = [f"**{name}**"]
                 item_lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
@@ -407,14 +308,8 @@ def nearby_agent(question, city="None", interests="None"):
     except Exception as e:
         print(f"⚠️ Error checking RAG for nearby places: {e}")
 
-    # 2. Try Foursquare API
-    print("ℹ️ Checking Foursquare API for nearby places.")
-    foursquare_results = get_places_from_foursquare(city, interests)
-    if foursquare_results:
-        print("✅ Found results from Foursquare.")
-        return {"source": "foursquare", "answer": foursquare_results}
 
-    # 3. If Foursquare fails, try the Google Places API
+    # 2. If  fails, try the Google Places API
     print("⚠️ Foursquare failed. Checking Google Places API for nearby places.")
     google_results = get_places_from_google(city, interests)
     if google_results:

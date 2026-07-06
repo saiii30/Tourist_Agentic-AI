@@ -10,6 +10,7 @@ from agents.nearby_agent import nearby_agent
 from agents.weather_agent import weather_agent
 from agents.general_agent import general_agent
 from agents.calendar_agent import calendar_agent
+from agents.transport_agent import transport_agent
 from rag_service import client
 
 
@@ -184,6 +185,30 @@ def general_node(state):
         ]
     }
 
+def transport_node(state):
+    # Extract source, destination, and date from the state if available
+    # The supervisor logic for guided trips populates these.
+    # For stateless queries, we can enhance `extract_query_details` to find them.
+    source_city = state.get("city", "None") # 'city' is often used as the primary location/source
+    destination_city = state.get("destination", "None")
+    travel_date = state.get("travel_date", "None")
+
+    answer = transport_agent(
+        state["question"],
+        source=source_city,
+        destination=destination_city,
+        date=travel_date
+    )
+    
+    # The transport_agent can return a string or a dict. We need to handle both.
+    text = answer.get("answer") if isinstance(answer, dict) else str(answer)
+    source = answer.get("source", "transport_api") if isinstance(answer, dict) else "Groq"
+
+    return {
+        "responses": [
+            f"Transport options:\n{text}\n[SOURCE:{source}]"
+        ]
+    }
 
 def calendar_node(state):
     answer = calendar_agent(
@@ -310,6 +335,11 @@ builder.add_node(
     nearby_node
 )
 
+builder.add_node(
+    "train",
+    transport_node
+)
+
 
 builder.add_node(
     "weather",
@@ -369,6 +399,12 @@ builder.add_edge(
     "merge"
 )
 
+builder.add_edge(
+    "train",
+    "merge"
+)
+
+
 
 builder.add_edge(
     "weather",
@@ -380,6 +416,7 @@ builder.add_edge(
     "general",
     "merge"
 )
+
 
 
 builder.add_edge(

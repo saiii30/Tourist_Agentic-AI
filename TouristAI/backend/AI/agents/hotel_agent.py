@@ -464,13 +464,3 @@ def hotel_agent(question, city="None", budget="None", travelers=1):
         return {"message": f"Sorry, I'm having trouble finding hotel recommendations for {city} right now."}
 
 
-# Example
-if __name__ == "__main__":
-    result = hotel_agent(
-        question="Suggest hotels in Madurai",
-        city="Madurai",
-        budget="medium",
-        travelers=2
-    )
-
-    print(json.dumps(result, indent=4))
