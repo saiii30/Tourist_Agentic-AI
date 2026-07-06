@@ -127,6 +127,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
   const accessibilityLine = otherDetails.find(l => /♿/.test(l));
   const priceLine = otherDetails.find(
     l =>
+      !/compare prices/i.test(l) &&
       (/₹/.test(l) || /price level/i.test(l) || /💰/.test(l)) &&
       l !== ratingLine &&
       l !== locationLine
@@ -134,6 +135,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
 
   // Description = longer free-text lines (e.g. "📝 Tasting menu of...")
   // Amenities = short tag-like lines (e.g. "✅ Open", "🧒 Good for children")
+  const otaLine = otherDetails.find(l => /🔎|compare prices/i.test(l));
   const remaining = otherDetails.filter(
     l =>
       l !== ratingLine &&
@@ -143,7 +145,8 @@ function PlaceCard({ lines }: { lines: string[] }) {
       !hoursLines.includes(l) &&
       l !== paymentLine &&
       l !== accessibilityLine &&
-      l !== parkingLine
+      l !== parkingLine &&
+      l !== otaLine
   );
 
   const diningKeywords = /(serves|available|serves breakfast|serves lunch|serves dinner|serves beer|serves wine|serves vegetarian|takeout|delivery|dine-in|breakfast restaurant|🍽️|🍳|🥗|🍺|🍷|🥦|🥡|🚚|🍴)/i;
@@ -218,6 +221,20 @@ function PlaceCard({ lines }: { lines: string[] }) {
   const isOpen = /open/i.test(todayHours) || amenityLines.some(l => /✅|open now/i.test(l));
 
   const hasAmenities = amenityLines.length > 0;
+
+  const otaLinks = otaLine
+    ? Array.from(otaLine.matchAll(/\[(.*?)\]\((.*?)\)/g)).map(match => ({
+        name: match[1],
+        url: match[2],
+        logo: `https://www.google.com/s2/favicons?sz=64&domain=${
+          match[1]
+            .toLowerCase()
+            .replace(/\s/g, "")
+            .replace(".com", "")
+            .trim()
+        }.com`,
+      }))
+    : [];
 
   return (
     <div className="bg-white border border-black/[0.07] rounded-2xl shadow-sm overflow-hidden my-4 text-left max-w-md">
@@ -402,6 +419,25 @@ function PlaceCard({ lines }: { lines: string[] }) {
                 <span>{phoneText}</span>
               </div>
             )}
+            {otaLinks.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-black/[0.07]">
+                <p className="text-[11px] font-semibold text-gray-700 mb-2">Compare prices:</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {otaLinks.map(link => (
+                    <a
+                      key={link.name}
+                      href={link.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md border border-black/[0.08] bg-gray-50/50 hover:bg-gray-100/80 transition-colors"
+                    >
+                      <img src={link.logo} alt={link.name} className="w-3.5 h-3.5" />
+                      <span className="text-[10px] font-medium text-gray-600">{link.name}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : tab === "info" ? (
           <div className="grid grid-cols-2 gap-2">
@@ -457,6 +493,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
         ) : (
           <p className="text-xs text-gray-400">No details available.</p>
         )}
+
       </div>
 
       {/* Footer buttons */}
