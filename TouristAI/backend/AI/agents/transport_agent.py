@@ -7,8 +7,7 @@ import re
 
 
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
-RAILRADAR_API_KEY = os.getenv("RAILRADAR_API_KEY")
-BASE_URL = "https://api.railradar.in"
+BASE_URL = "https://irctc1.p.rapidapi.com"
 
 
 # -----------------------------
@@ -54,36 +53,79 @@ def get_station_code(name):
     # Clean up the name: remove spaces, convert to uppercase
     cleaned_name = re.sub(r'\s+', '', name).upper()
     
+    print(f"🔍 Looking up station code for: '{name}' (cleaned: '{cleaned_name}')")
+    
     # If it's already a valid station code (2-4 uppercase letters), use it directly
     if len(cleaned_name) >= 2 and len(cleaned_name) <= 4 and cleaned_name.isalpha():
         print(f"🔍 '{name}' appears to be a station code, using '{cleaned_name}' directly")
         return cleaned_name
     
-    # Otherwise, look it up via the API
-    url = f"{BASE_URL}/v1/stations/search"
-    headers = {
-        "Authorization": f"Bearer {RAILRADAR_API_KEY}"
+    # Common city name to station code mapping (fallback)
+    city_to_code = {
+        'CHENNAI': 'MAS',
+        'MADRURAI': 'MDU',
+        'MADURAI': 'MDU',
+        'COIMBATORE': 'CBE',
+        'BANGALORE': 'SBC',
+        'BENGALURU': 'SBC',
+        'DELHI': 'NDLS',
+        'MUMBAI': 'BCT',
+        'KOLKATA': 'HWH',
+        'HYDERABAD': 'HYD',
+        'SALEM': 'SA',
+        'TRICHY': 'TPJ',
+        'TIRUCHIRAPPALLI': 'TPJ',
+        'TIRUNELVELI': 'TEN',
     }
-    params = {"q": name}
+    
+    # Check if the cleaned name matches a known city
+    if cleaned_name in city_to_code:
+        code = city_to_code[cleaned_name]
+        print(f"🔍 Found station code for '{cleaned_name}': {code}")
+        return code
+    
+    # Try partial match
+    for city, code in city_to_code.items():
+        if cleaned_name in city or city in cleaned_name:
+            print(f"🔍 Partial match: '{cleaned_name}' -> '{city}' -> {code}")
+            return code
+    
+    # Otherwise, look it up via the API
+    url = f"{BASE_URL}/findstations.php"
+    headers = {
+        "x-rapidapi-host": "indianrailways.p.rapidapi.com",
+        "x-rapidapi-key": RAPIDAPI_KEY
+    }
+    params = {"station": name}
     
     try:
+        print(f"🔍 Calling API: {url} with params: {params}")
         res = requests.get(url, headers=headers, params=params)
+        print(f"🔍 API Response Status: {res.status_code}")
+        
         if res.status_code != 200:
             print(f"⚠️ Station lookup failed for '{name}': {res.status_code}")
+            print(f"🔍 Response: {res.text[:300]}")
             # Try using the cleaned name as a fallback
             if cleaned_name != name.upper():
                 print(f"🔍 Trying with cleaned name '{cleaned_name}'...")
-                params["q"] = cleaned_name
+                params["station"] = cleaned_name
                 res = requests.get(url, headers=headers, params=params)
                 if res.status_code == 200:
                     data = res.json()
-                    if data and len(data) > 0:
-                        return data[0].get("code")
+                    print(f"🔍 API Response Data: {data}")
+                    if "Station" in data and len(data["Station"]) > 0:
+                        code = data["Station"][0]["StationCode"]
+                        print(f"🔍 Found code via API: {code}")
+                        return code
             return None
         
         data = res.json()
-        if data and len(data) > 0:
-            return data[0].get("code")
+        print(f"🔍 API Response Data: {data}")
+        if "Station" in data and len(data["Station"]) > 0:
+            code = data["Station"][0]["StationCode"]
+            print(f"🔍 Found code via API: {code}")
+            return code
         return None
     except Exception as e:
         print(f"❌ Station lookup error for '{name}': {e}")
@@ -116,8 +158,8 @@ def format_date(date_str):
 def get_trains(source, destination, date):
     print(f"Searching trains from {source} to {destination} on {date}...")
 
-    if not RAILRADAR_API_KEY:
-        print("⚠️ Missing RAILRADAR_API_KEY")
+    if not RAPIDAPI_KEY:
+        print("⚠️ Missing RAPIDAPI_KEY")
         return None
 
     # Convert city names to station codes
@@ -134,12 +176,16 @@ def get_trains(source, destination, date):
     formatted_date = format_date(date)
     print(f"🔍 Formatted date: {formatted_date}")
 
-    url = f"{BASE_URL}/v1/trains/between/{from_code}/{to_code}"
+    url = f"{BASE_URL}/api/v3/trainBetweenStations"
     headers = {
-        "Authorization": f"Bearer {RAILRADAR_API_KEY}"
+        "x-rapidapi-host": "irctc1.p.rapidapi.com",
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "Content-Type": "application/json"
     }
     params = {
-        "date": formatted_date
+        "fromStationCode": from_code,
+        "toStationCode": to_code,
+        "dateOfJourney": formatted_date
     }
 
     try:
@@ -198,67 +244,67 @@ def get_buses(source, destination, date):
 # -----------------------------
 # Format Response
 # -----------------------------
-def format_transport(flights, trains, buses):
+def format_transport(flights, trains, buses, date=""):
     output = []
 
     # Trains - format as numbered lists for PlaceCard component
     if trains:
-        # Handle railradar API response structure: {success: true, data: {trains: [...]}}
-        if isinstance(trains, dict) and "data" in trains and "trains" in trains["data"]:
-            train_list = trains["data"]["trains"]
-            if isinstance(train_list, list) and len(train_list) > 0:
-                for idx, t in enumerate(train_list[:5], 1):
-                    train_name = t.get('train', {}).get('name', 'Unknown')
-                    train_number = t.get('train', {}).get('number', '')
-                    from_name = t.get('from', {}).get('name', '')
-                    to_name = t.get('to', {}).get('name', '')
-                    departure = t.get('from', {}).get('departure', '')
-                    arrival = t.get('to', {}).get('arrival', '')
-                    duration = t.get('duration', '')
-                    train_type = t.get('train', {}).get('type', '')
-                    
-                    # Format duration from minutes to hours:minutes
-                    duration_hours = duration // 60
-                    duration_mins = duration % 60
-                    duration_str = f"{duration_hours}h {duration_mins}m" if duration_hours > 0 else f"{duration_mins}m"
-                    
-                    output.append(f"{idx}. **{train_name} ({train_number})**")
-                    output.append(f"- 🚂 Type: {train_type}")
-                    output.append(f"- 📍 From: {from_name}")
-                    output.append(f"- 📍 To: {to_name}")
-                    output.append(f"- ⏰ Departure: {departure}")
-                    output.append(f"- ⏰ Arrival: {arrival}")
-                    output.append(f"- ⏱️ Duration: {duration_str}")
-                    output.append("")
-            else:
-                output.append("No trains found in response")
-        # Handle list response (direct list of trains)
-        elif isinstance(trains, list) and len(trains) > 0:
-            for idx, t in enumerate(trains[:5], 1):
-                train_name = t.get('trainName', 'Unknown')
-                train_number = t.get('trainNumber', '')
-                from_name = t.get('fromStationName', '')
-                to_name = t.get('toStationName', '')
-                departure = t.get('departureTime', '')
-                arrival = t.get('arrivalTime', '')
-                duration = t.get('duration', '')
-                
-                output.append(f"{idx}. **{train_name} ({train_number})**")
-                output.append(f"- 📍 From: {from_name}")
-                output.append(f"- 📍 To: {to_name}")
-                output.append(f"- ⏰ Departure: {departure}")
-                output.append(f"- ⏰ Arrival: {arrival}")
-                output.append(f"- ⏱️ Duration: {duration}")
-                output.append("")
-        # Handle dict with "data" key (old API format)
-        elif isinstance(trains, dict) and "data" in trains and isinstance(trains["data"], list) and len(trains["data"]) > 0:
+        # Handle IRCTC1 API response structure: {status: true, data: [...]}
+        if isinstance(trains, dict) and "data" in trains and isinstance(trains["data"], list) and len(trains["data"]) > 0:
             for idx, t in enumerate(trains["data"][:5], 1):
                 train_name = t.get('train_name', 'Unknown')
                 train_number = t.get('train_number', '')
                 from_name = t.get('from_station_name', '')
                 to_name = t.get('to_station_name', '')
-                departure = t.get('from_time', '')
-                arrival = t.get('to_time', '')
+                from_code = t.get('from', '')
+                to_code = t.get('to', '')
+                departure = t.get('from_std', '')
+                arrival = t.get('to_std', '')
+                duration = t.get('duration', '')
+                train_type = t.get('train_type', '')
+                class_type = t.get('class_type', [])
+                
+                # Format duration (already in hours:minutes format from API)
+                duration_str = duration
+                
+                # Format class types
+                classes_str = ", ".join(class_type) if isinstance(class_type, list) else str(class_type)
+                
+                # IRCTC booking URL with date
+                irctc_url = f"https://www.irctc.co.in/nget/train-search?fromStation={from_code}&toStation={to_code}&journeyDate={date}"
+                
+                output.append(f"{idx}. **{train_name} ({train_number})**")
+                output.append(f"- 🚂 Type: {train_type}")
+                output.append(f"- 📍 From: {from_name} ({from_code})")
+                output.append(f"- 📍 To: {to_name} ({to_code})")
+                output.append(f"- ⏰ Departure: {departure}")
+                output.append(f"- ⏰ Arrival: {arrival}")
+                output.append(f"- ⏱️ Duration: {duration_str}")
+                if classes_str:
+                    output.append(f"- 🎫 Classes: {classes_str}")
+                # Add run days
+                run_days = t.get('run_days', [])
+                if run_days and isinstance(run_days, list):
+                    output.append(f"- 📅 Runs: {', '.join(run_days)}")
+                # Add train date
+                train_date = t.get('train_date', '')
+                if train_date:
+                    output.append(f"- 🗓️ Date: {train_date}")
+                # Add special train flag
+                special_train = t.get('special_train', False)
+                if special_train:
+                    output.append(f"- ⭐ Special Train")
+                output.append(f"[Visit Website]({irctc_url})")
+                output.append("")
+        # Handle list response (direct list of trains)
+        elif isinstance(trains, list) and len(trains) > 0:
+            for idx, t in enumerate(trains[:5], 1):
+                train_name = t.get('train_name', t.get('trainName', 'Unknown'))
+                train_number = t.get('train_number', t.get('trainNumber', ''))
+                from_name = t.get('from_station_name', t.get('fromStationName', ''))
+                to_name = t.get('to_station_name', t.get('toStationName', ''))
+                departure = t.get('from_time', t.get('departureTime', ''))
+                arrival = t.get('to_time', t.get('arrivalTime', ''))
                 duration = t.get('duration', '')
                 
                 output.append(f"{idx}. **{train_name} ({train_number})**")
