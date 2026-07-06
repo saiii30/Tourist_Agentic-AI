@@ -13,3 +13,4 @@ class AgentState(TypedDict):
     travelers: int
     travel_style: str
     interests: str
+    discover: list

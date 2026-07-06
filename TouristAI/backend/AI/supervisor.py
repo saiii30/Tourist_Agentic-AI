@@ -479,6 +479,36 @@ def route_question(state, details=None):
     ]):
         routes.append("calendar")
 
+    if matches_keywords(question_lower, [
+
+    "hidden gem",
+    "hidden gems",
+    "secret places",
+    "less crowded",
+    "offbeat",
+    "underrated",
+    "unknown places",
+    "discover",
+    "places to visit",
+    "tourist places",
+    "tourist attractions",
+    "recommend places",
+    "where should i go",
+    "places near",
+    "must visit",
+    "things to do",
+    "weekend trip",
+    "explore",
+    "hidden gem",
+    "hidden gems",
+    "less crowded",
+    "offbeat",
+    "peaceful places"
+
+]):
+     routes.append("discover")   
+     
+
     # Remove duplicates
     routes = list(set(routes))
 

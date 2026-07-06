@@ -10,11 +10,34 @@ from agents.nearby_agent import nearby_agent
 from agents.weather_agent import weather_agent
 from agents.general_agent import general_agent
 from agents.calendar_agent import calendar_agent
+# from agents.hidden_gems_agent import hidden_gems_agent
+from agents.discover_agent import discover_agent
 from rag_service import client
+from utils.travel_parser import parse_query
 
 
 
 builder = StateGraph(AgentState)
+
+def parser_node(state):
+
+    parsed = parse_query(state["question"])
+
+    return {
+        **state,
+        "parsed": parsed,
+
+        "city": parsed.get("destination"),
+        "days": parsed.get("days") or 3,
+        "budget": parsed.get("budget") or "None",
+
+        "discover": parsed.get("discover"),
+        "weather": parsed.get("weather"),
+        "hotel": parsed.get("hotel"),
+        "food": parsed.get("food"),
+        "calendar": parsed.get("calendar"),
+        "nearby": parsed.get("nearby")
+    }
 
 
 def supervisor_node(state):
@@ -162,6 +185,19 @@ def weather_node(state):
         ]
     }
 
+# def hidden_gems_node(state):
+
+#     answer = hidden_gems_agent(
+#         state["question"],
+#         state.get("city", "")
+#     )
+
+#     return {
+#         "responses": [answer]
+#     }
+def discover_node(state):
+    answer = discover_agent(state["question"],state.get("city",""))
+    return{"responses":[answer]}
 
 def general_node(state):
     answer = general_agent(state["question"])
@@ -304,6 +340,15 @@ builder.add_node(
     weather_node
 )
 
+# builder.add_node(
+#     "hidden_gems",
+#     hidden_gems_node
+# )
+
+builder.add_node(
+    "discover",
+    discover_node
+)
 
 builder.add_node(
     "general",
@@ -363,6 +408,13 @@ builder.add_edge(
     "merge"
 )
 
+# builder.add_edge(
+#     "hidden_gems",
+#     "merge"
+# )
+
+builder.add_edge("discover","merge")
+
 
 builder.add_edge(
     "general",
@@ -381,3 +433,9 @@ builder.add_edge(
 )
 
 graph = builder.compile()
+
+# Save graph as Mermaid text
+png = graph.get_graph(xray=True).draw_mermaid_png()
+
+with open("travel_graph.png", "wb") as f:
+    f.write(png)

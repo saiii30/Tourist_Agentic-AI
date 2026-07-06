@@ -6,6 +6,10 @@ from fastapi import FastAPI, Response
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from graph import graph
+from routes.crowd_api import router as crowd_router
+from intelligence.place_details import get_place_details
+from routes.nearby_api import router as nearby_router
+
 
 app = FastAPI()
 
@@ -15,6 +19,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+app.include_router(crowd_router)
+app.include_router(nearby_router)
 
 def init_calendar_db():
     db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tourist_ai.db"))
@@ -150,3 +157,7 @@ def export_calendar(trip_name: str):
     except Exception as e:
         print(f"Error exporting calendar: {e}")
         return Response(f"Error exporting calendar: {str(e)}", status_code=500)
+    
+@app.get("/api/place")
+def place(name: str, city: str):
+    return get_place_details(name, city)    

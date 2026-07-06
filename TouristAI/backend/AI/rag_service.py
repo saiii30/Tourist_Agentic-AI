@@ -9,7 +9,7 @@ import threading
 load_dotenv()
 
 db_lock = threading.Lock()
-
+print("GROQ KEY =", os.getenv("GROQ_API_KEY"))
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
