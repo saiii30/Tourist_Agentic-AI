@@ -721,6 +721,8 @@ function getBadgeInfo(route: string) {
       return { label: "Restaurant Agent", icon: <FaUtensils className="text-[9px]" />, bg: "rgba(239, 68, 68, 0.07)", color: "#dc2626", borderColor: "rgba(239, 68, 68, 0.12)" };
     case "nearby":
       return { label: "Attractions Agent", icon: <FaMapMarkerAlt className="text-[9px]" />, bg: "rgba(167, 139, 250, 0.07)", color: "#7c3aed", borderColor: "rgba(167, 139, 250, 0.12)" };
+    case "transport":
+      return { label: "Transport Agent", icon: <FaSearch className="text-[9px]" />, bg: "rgba(99, 102, 241, 0.07)", color: "#6366f1", borderColor: "rgba(99, 102, 241, 0.12)" };
     default:
       return { label: "General Chat", icon: <FaRobot className="text-[9px]" />, bg: "rgba(156, 163, 175, 0.07)", color: "#4b5563", borderColor: "rgba(156, 163, 175, 0.12)" };
   }

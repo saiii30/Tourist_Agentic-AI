@@ -1,10 +1,14 @@
 import os
 import json
 import requests
+from datetime import datetime
 from rag_service import get_answer, save_to_rag, client
+import re
 
 
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAILRADAR_API_KEY = os.getenv("RAILRADAR_API_KEY")
+BASE_URL = "https://api.railradar.in"
 
 
 # -----------------------------
@@ -44,48 +48,117 @@ def get_flights(source, destination, date):
 
 
 # -----------------------------
+# Get station code
+# -----------------------------
+def get_station_code(name):
+    # Clean up the name: remove spaces, convert to uppercase
+    cleaned_name = re.sub(r'\s+', '', name).upper()
+    
+    # If it's already a valid station code (2-4 uppercase letters), use it directly
+    if len(cleaned_name) >= 2 and len(cleaned_name) <= 4 and cleaned_name.isalpha():
+        print(f"🔍 '{name}' appears to be a station code, using '{cleaned_name}' directly")
+        return cleaned_name
+    
+    # Otherwise, look it up via the API
+    url = f"{BASE_URL}/v1/stations/search"
+    headers = {
+        "Authorization": f"Bearer {RAILRADAR_API_KEY}"
+    }
+    params = {"q": name}
+    
+    try:
+        res = requests.get(url, headers=headers, params=params)
+        if res.status_code != 200:
+            print(f"⚠️ Station lookup failed for '{name}': {res.status_code}")
+            # Try using the cleaned name as a fallback
+            if cleaned_name != name.upper():
+                print(f"🔍 Trying with cleaned name '{cleaned_name}'...")
+                params["q"] = cleaned_name
+                res = requests.get(url, headers=headers, params=params)
+                if res.status_code == 200:
+                    data = res.json()
+                    if data and len(data) > 0:
+                        return data[0].get("code")
+            return None
+        
+        data = res.json()
+        if data and len(data) > 0:
+            return data[0].get("code")
+        return None
+    except Exception as e:
+        print(f"❌ Station lookup error for '{name}': {e}")
+        return None
+
+
+# -----------------------------
+# Format date
+# -----------------------------
+def format_date(date_str):
+    # Handle various date formats: DD-MM-YYYY, DD/MM/YYYY, YYYY-MM-DD
+    try:
+        if "-" in date_str:
+            parts = date_str.split("-")
+            if len(parts[0]) == 4:  # YYYY-MM-DD
+                return date_str  # Already in correct format
+            elif len(parts[2]) == 4:  # DD-MM-YYYY
+                return datetime.strptime(date_str, "%d-%m-%Y").strftime("%Y-%m-%d")
+        elif "/" in date_str:
+            return datetime.strptime(date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+        return date_str
+    except Exception as e:
+        print(f"⚠️ Date format error for '{date_str}': {e}")
+        return date_str
+
+
+# -----------------------------
 # Train Search
 # -----------------------------
 def get_trains(source, destination, date):
-
     print(f"Searching trains from {source} to {destination} on {date}...")
 
-    if not RAPIDAPI_KEY:
-        print("⚠️ RAPIDAPI_KEY not found. Skipping train search.")
+    if not RAILRADAR_API_KEY:
+        print("⚠️ Missing RAILRADAR_API_KEY")
         return None
 
-    url = "https://irctc1.p.rapidapi.com/api/v3/trainBetweenStations"
+    # Convert city names to station codes
+    from_code = get_station_code(source)
+    to_code = get_station_code(destination)
 
+    if not from_code or not to_code:
+        print(f"⚠️ Could not find station codes for '{source}' or '{destination}'")
+        return None
+
+    print(f"🔍 Station codes: {from_code} → {to_code}")
+
+    # Format date to YYYY-MM-DD
+    formatted_date = format_date(date)
+    print(f"🔍 Formatted date: {formatted_date}")
+
+    url = f"{BASE_URL}/v1/trains/between/{from_code}/{to_code}"
     headers = {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": "irctc1.p.rapidapi.com"
+        "Authorization": f"Bearer {RAILRADAR_API_KEY}"
     }
-    
-    # The API expects station codes. We'll pass full names and let it handle it.
-    # A more robust solution would map city names to station codes first.
     params = {
-        "fromStationCode": source,
-        "toStationCode": destination,
-        "dateOfJourney": date
+        "date": formatted_date
     }
 
     try:
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=20
-        )
-
+        response = requests.get(url, headers=headers, params=params)
+        print(f"🔍 API Response Status: {response.status_code}")
+        
         if response.status_code == 200:
             print("✅ Train API call successful.")
             return response.json()
-
+        elif response.status_code == 429:
+            print("⚠️ API quota exceeded")
+            return {"message": "Quota exceeded"}
+        else:
+            print(f"⚠️ API returned status code {response.status_code}")
+            print(f"🔍 Response: {response.text[:300]}")
+            return None
     except Exception as e:
-        print(f"Train API error: {e}")
-
-    return None
-
+        print(f"❌ Train API error: {e}")
+        return None
 
 # -----------------------------
 # Bus Search
@@ -126,58 +199,81 @@ def get_buses(source, destination, date):
 # Format Response
 # -----------------------------
 def format_transport(flights, trains, buses):
-
     output = []
 
-    # # Flights
-    # output.append("✈️ Flights")
-    # output.append("--------------------------------")
-
-    # if flights and flights.get("data"):
-    #     for item in flights["data"][:5]:
-    #         # Customize flight output based on actual API response structure
-    #         output.append(json.dumps(item, indent=2))
-    # else:
-    #     output.append("No Flights Found")
-
-    # output.append("")
-
-
-    # Trains
-    output.append("🚆 Trains")
-    output.append("--------------------------------")
-
+    # Trains - format as numbered lists for PlaceCard component
     if trains:
-
-        if trains.get("status") and trains.get("data"):
-            for train in trains["data"][:5]:
-                train_line = (
-                    f"**{train.get('train_name')} ({train.get('train_number')})**\n"
-                    f"  - Departs: {train.get('from_station_name')} at {train.get('from_time')}\n"
-                    f"  - Arrives: {train.get('to_station_name')} at {train.get('to_time')}\n"
-                    f"  - Duration: {train.get('duration')}\n"
-                    f"  - Classes: {', '.join(train.get('class_type', []))}"
-                )
-                output.append(train_line)
-        elif "message" in trains:
+        # Handle railradar API response structure: {success: true, data: {trains: [...]}}
+        if isinstance(trains, dict) and "data" in trains and "trains" in trains["data"]:
+            train_list = trains["data"]["trains"]
+            if isinstance(train_list, list) and len(train_list) > 0:
+                for idx, t in enumerate(train_list[:5], 1):
+                    train_name = t.get('train', {}).get('name', 'Unknown')
+                    train_number = t.get('train', {}).get('number', '')
+                    from_name = t.get('from', {}).get('name', '')
+                    to_name = t.get('to', {}).get('name', '')
+                    departure = t.get('from', {}).get('departure', '')
+                    arrival = t.get('to', {}).get('arrival', '')
+                    duration = t.get('duration', '')
+                    train_type = t.get('train', {}).get('type', '')
+                    
+                    # Format duration from minutes to hours:minutes
+                    duration_hours = duration // 60
+                    duration_mins = duration % 60
+                    duration_str = f"{duration_hours}h {duration_mins}m" if duration_hours > 0 else f"{duration_mins}m"
+                    
+                    output.append(f"{idx}. **{train_name} ({train_number})**")
+                    output.append(f"- 🚂 Type: {train_type}")
+                    output.append(f"- 📍 From: {from_name}")
+                    output.append(f"- 📍 To: {to_name}")
+                    output.append(f"- ⏰ Departure: {departure}")
+                    output.append(f"- ⏰ Arrival: {arrival}")
+                    output.append(f"- ⏱️ Duration: {duration_str}")
+                    output.append("")
+            else:
+                output.append("No trains found in response")
+        # Handle list response (direct list of trains)
+        elif isinstance(trains, list) and len(trains) > 0:
+            for idx, t in enumerate(trains[:5], 1):
+                train_name = t.get('trainName', 'Unknown')
+                train_number = t.get('trainNumber', '')
+                from_name = t.get('fromStationName', '')
+                to_name = t.get('toStationName', '')
+                departure = t.get('departureTime', '')
+                arrival = t.get('arrivalTime', '')
+                duration = t.get('duration', '')
+                
+                output.append(f"{idx}. **{train_name} ({train_number})**")
+                output.append(f"- 📍 From: {from_name}")
+                output.append(f"- 📍 To: {to_name}")
+                output.append(f"- ⏰ Departure: {departure}")
+                output.append(f"- ⏰ Arrival: {arrival}")
+                output.append(f"- ⏱️ Duration: {duration}")
+                output.append("")
+        # Handle dict with "data" key (old API format)
+        elif isinstance(trains, dict) and "data" in trains and isinstance(trains["data"], list) and len(trains["data"]) > 0:
+            for idx, t in enumerate(trains["data"][:5], 1):
+                train_name = t.get('train_name', 'Unknown')
+                train_number = t.get('train_number', '')
+                from_name = t.get('from_station_name', '')
+                to_name = t.get('to_station_name', '')
+                departure = t.get('from_time', '')
+                arrival = t.get('to_time', '')
+                duration = t.get('duration', '')
+                
+                output.append(f"{idx}. **{train_name} ({train_number})**")
+                output.append(f"- 📍 From: {from_name}")
+                output.append(f"- 📍 To: {to_name}")
+                output.append(f"- ⏰ Departure: {departure}")
+                output.append(f"- ⏰ Arrival: {arrival}")
+                output.append(f"- ⏱️ Duration: {duration}")
+                output.append("")
+        elif isinstance(trains, dict) and "message" in trains:
             output.append(trains["message"])
-
+        else:
+            output.append("No train data found in response")
     else:
         output.append("No Trains Found")
-
-    output.append("")
-
-    # # Buses
-    # output.append("🚌 Buses")
-    # output.append("--------------------------------")
-
-    # if buses:
-    #     if buses.get("data"):
-    #         for item in buses["data"][:5]:
-    #             # Customize bus output based on actual API response structure
-    #             output.append(json.dumps(item, indent=2))
-    # else:
-    #     output.append("No Buses Found")
 
     return "\n".join(output)
 

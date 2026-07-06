@@ -121,6 +121,9 @@ def extract_query_details(question: str) -> dict:
     normalized_question = question.replace('_', ' ')
     question_lower = normalized_question.lower()
     
+    print(f"🔍 Original query: '{question}'")
+    print(f"🔍 Normalized query: '{normalized_question}'")
+    
     # Check for train-related queries
     if any(kw in question_lower for kw in ["train", "railway", "rail", "irctc"]):
         # Extract date first
@@ -130,12 +133,16 @@ def extract_query_details(question: str) -> dict:
         
         # Remove "train" keyword to avoid confusion
         query_clean = re.sub(r'train|railway|rail|irctc', '', question_lower).strip()
+        print(f"🔍 Query after removing train keywords: '{query_clean}'")
         
         # Split by "to" to separate source and destination parts
         if ' to ' in query_clean:
             parts = query_clean.split(' to ', 1)
             source_part = parts[0].strip()
             dest_part = parts[1].strip()
+            
+            print(f"🔍 Source part: '{source_part}'")
+            print(f"🔍 Dest part: '{dest_part}'")
             
             # Extract source from the part before "to"
             # Look for "from X" pattern or just take the city name
@@ -147,9 +154,16 @@ def extract_query_details(question: str) -> dict:
             # Extract destination from the part after "to", removing any date
             destination = re.sub(date_pattern, '', dest_part).strip()
             
-            # Clean up any extra words
+            # Clean up any extra words and normalize spacing
             source = re.sub(r'\b(from|the|a|an)\b', '', source).strip()
             destination = re.sub(r'\b(the|a|an)\b', '', destination).strip()
+            
+            # Remove extra spaces and normalize
+            source = re.sub(r'\s+', ' ', source).strip()
+            destination = re.sub(r'\s+', ' ', destination).strip()
+            
+            print(f"🔍 Extracted source: '{source}'")
+            print(f"🔍 Extracted destination: '{destination}'")
             
             # Check if destination is empty or just noise after date removal
             if not destination or len(destination) < 2 or destination.isdigit():
@@ -171,18 +185,40 @@ def extract_query_details(question: str) -> dict:
                             destination = parts_by_date[0].strip()
             
             # Validate that we have both source and destination
-            if source and destination and len(destination) >= 2 and not destination.isdigit():
+            # Accept either full city names (2+ chars) or valid station codes (2-4 uppercase letters)
+            def is_valid_location(name):
+                if not name or len(name) < 2:
+                    return False
+                if name.isdigit():
+                    return False
+                # Accept station codes (2-4 uppercase letters)
+                if len(name) <= 4 and name.isalpha():
+                    return True
+                # Accept city names (2+ chars)
+                if len(name) >= 2:
+                    return True
+                return False
+            
+            if is_valid_location(source) and is_valid_location(destination):
+                # Clean up station codes: remove spaces for short codes
+                source_clean = re.sub(r'\s+', '', source).upper() if len(source) <= 4 else source.title()
+                dest_clean = re.sub(r'\s+', '', destination).upper() if len(destination) <= 4 else destination.title()
+                
+                print(f"🔍 Final cleaned source: '{source_clean}'")
+                print(f"🔍 Final cleaned destination: '{dest_clean}'")
+                
                 return {
-                    "city": source.title(),
-                    "destination": destination.title(),
+                    "city": source_clean,
+                    "destination": dest_clean,
                     "travel_date": travel_date,
                     "days": 3,
                     "requires_city": True
                 }
             else:
-                # Missing destination - print helpful message and fall back to LLM
-                print(f"⚠️ Could not extract destination from query: '{question}'. Please specify both source and destination cities.")
-                print(f"   Example: 'train from Chennai to Bangalore on 30-11-2026'")
+                # Missing or invalid destination - print helpful message and fall back to LLM
+                print(f"⚠️ Could not extract valid city names from query: '{question}'")
+                print(f"   Extracted - Source: '{source}', Destination: '{destination}'")
+                print(f"   Please specify full city names or station codes (e.g., 'train from Chennai to Bangalore on 30-11-2026' or 'train from MAS to SA on 30-11-2026')")
     
     # Fallback to LLM for other queries
     prompt = (
