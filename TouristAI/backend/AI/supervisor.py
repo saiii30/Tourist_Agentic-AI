@@ -573,8 +573,9 @@ def route_question(state, details=None):
 
     # Nearby Places Agent
     if matches_keywords(question_lower, [
-        "nearby", "place", "tourist", "visit", "attraction", "temple", "sightseeing"
-    ]):
+        "nearby", "place", "tourist", "visit", "attraction", "temple", "sightseeing",
+        "things to do", "places to see"
+    ]) and not routes: # Only run if no other specific agent (like hotel/restaurant) has been triggered
         routes.append("nearby")
 
     # Weather Agent

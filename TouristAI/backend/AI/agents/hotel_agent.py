@@ -431,11 +431,6 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
             # -----------------------
             # Opening / closing hours
             # -----------------------
-            hours_info = place.get("regularOpeningHours") or place.get("currentOpeningHours")
-            hours_text = "Hours not available"
-            if hours_info and hours_info.get("weekdayDescriptions"):
-                hours_text = "; ".join(hours_info["weekdayDescriptions"])
-
             # -----------------------
             # Parking (from Google, when Google has it)
             # -----------------------
@@ -460,7 +455,15 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
             item_lines.append(f"📍 Address: {address}")
-            item_lines.append(f"🕐 Hours: {hours_text}")
+
+            hours = (
+                place.get("currentOpeningHours", {}).get("weekdayDescriptions")
+                or place.get("regularOpeningHours", {}).get("weekdayDescriptions")
+                or []
+            )
+            if hours:
+                for h in hours:
+                    item_lines.append(f"🕒 {h}")
 
             # Parking: prefer Google's structured flag, else scraped mention
             if google_parking_text:
