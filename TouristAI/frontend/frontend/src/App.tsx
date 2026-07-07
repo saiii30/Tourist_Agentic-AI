@@ -1,14 +1,3 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
-import { TravelPlannerProvider } from "./context/TravelPlannerContext";
-import Navigation from "./components/layout/Navigation";
-import TopBar from "./components/layout/TopBar";
-import Home from "./pages/Home";
-import AIChat from "./pages/AIChat";
-import TripPlanner from "./pages/TripPlanner";
-import SavedTrips from "./pages/SavedTrips";
-import Profile from "./pages/Profile";
-
-function AppContent() {
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
@@ -364,195 +353,70 @@ lonStr ? Number(lonStr) : null;
 };
 
   return (
-    <div className="h-screen flex bg-[#F5F4F0] text-[#1a1a1a] font-sans">
-
-      {/* ── Sidebar ── */}
-      <aside className="w-64 bg-white border-r border-black/[0.08] flex flex-col flex-shrink-0">
-
-        {/* Logo */}
-        <div className="p-5 border-b border-black/[0.07]">
-          <div className="inline-flex items-center gap-2 bg-gradient-to-r from-[#1D9E75] to-[#185FA5] rounded-full px-4 py-2">
-            <FaMapMarkerAlt className="text-white text-sm" />
-            <span className="text-white text-sm font-medium tracking-wide">
-              Tourist AI
-            </span>
-          </div>
+    <div className="flex h-screen bg-white text-gray-900">
+      <aside className="w-64 border-r border-black/10 p-4 flex flex-col gap-4">
+        <div className="flex items-center gap-2 font-semibold">
+          <FaRobot /> Tourist AI
         </div>
-
-        {/* New Chat */}
-        <div className="p-3">
-          <button
-            onClick={() => setMessages([])}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg border border-black/10 text-sm text-gray-600 hover:bg-gray-50 hover:border-black/20 transition-all duration-150"
-          >
-            <FaPlus className="text-xs text-gray-400" />
-            New chat
-          </button>
+        <button onClick={() => setMessages([])}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-black/10 text-sm text-gray-600 hover:bg-gray-50">
+          <FaPlus /> New chat
+        </button>
+        <div className="text-xs uppercase text-gray-400 tracking-wide">Try asking</div>
+        <div className="flex flex-col gap-1">
+          {EXAMPLES.map((ex) => (
+            <button key={ex.text} onClick={() => askAI(ex.text)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-gray-600 hover:bg-gray-50 text-left">
+              {ex.icon}{ex.text}
+            </button>
+          ))}
         </div>
-
-        {/* Examples */}
-        <div className="px-4 pb-2">
-          <p className="text-[10px] font-medium text-gray-400 uppercase tracking-widest mb-2">
-            Try asking
-          </p>
-          <div className="space-y-1">
-            {EXAMPLES.map((ex) => (
-              <button
-                key={ex.text}
-                onClick={() => askAI(ex.text)}
-                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border border-black/[0.06] text-xs text-gray-500 hover:bg-gray-50 hover:text-gray-800 hover:border-black/10 transition-all duration-150 text-left"
-              >
-                <span className="text-[#1D9E75] text-xs flex-shrink-0">
-                  {ex.icon}
-                </span>
-                {ex.text}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="mt-auto p-4 border-t border-black/[0.07] flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full bg-gray-100 border border-black/10 flex items-center justify-center">
-            <FaUser className="text-[11px] text-gray-400" />
-          </div>
-          <span className="text-xs text-gray-500 flex-1">Traveller</span>
-          <FaCog className="text-xs text-gray-300 cursor-pointer hover:text-gray-400 transition-colors" />
+        <div className="mt-auto text-xs text-gray-500 flex items-center gap-2">
+          <FaUser /> Traveller
         </div>
       </aside>
 
-      {/* ── Main ── */}
-      <div className="flex-1 flex flex-col min-w-0">
-
-        {/* Topbar */}
-        <header className="h-14 bg-white border-b border-black/[0.07] flex items-center justify-between px-5 flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-[#1D9E75] flex-shrink-0" />
-            <div>
-              <p className="text-sm font-medium text-gray-800">
-                Tourist AI Assistant
-              </p>
-              <p className="text-[11px] text-gray-400">
-                Powered by AI · Tamil Nadu & beyond
-              </p>
-            </div>
+      <main className="flex-1 flex flex-col">
+        <header className="px-6 py-4 border-b border-black/10 flex items-center gap-3">
+          <FaRobot className="text-xl text-gray-700" />
+          <div>
+            <div className="font-semibold">Tourist AI Assistant</div>
+            <div className="text-xs text-gray-500">Powered by AI · Tamil Nadu & beyond</div>
           </div>
-          <FaRobot className="text-gray-300 text-base" />
         </header>
 
-        {/* Chat */}
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4">
+        <section className="flex-1 overflow-y-auto px-6 py-6 space-y-4">
           {messages.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center py-16">
-              <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-                   style={{ background: "linear-gradient(135deg, rgba(29,158,117,0.1) 0%, rgba(24,95,165,0.1) 100%)", border: "1px solid rgba(29,158,117,0.2)" }}>
-                <FaMapMarkerAlt className="text-2xl text-[#1D9E75]" />
-              </div>
-              <h1 className="text-2xl font-medium text-gray-800 mb-2">
-                Where to next?
-              </h1>
-              <p className="text-sm text-gray-400 max-w-xs leading-relaxed">
+            <div className="text-center mt-16">
+              <FaSearch className="mx-auto text-3xl text-gray-400" />
+              <div className="text-xl font-semibold mt-3">Where to next?</div>
+              <div className="text-sm text-gray-500 mt-1">
                 Ask about hotels, restaurants, weather, or full trip plans — anywhere in India.
-              </p>
+              </div>
             </div>
           ) : (
             messages.map((msg, i) => (
-              <div
-                key={i}
-                className={`flex gap-2.5 ${
-                  msg.role === "user" ? "flex-row-reverse" : ""
-                }`}
-              >
-                {/* Avatar */}
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    msg.role === "assistant"
-                      ? "text-white"
-                      : "bg-gray-100 border border-black/10"
-                  }`}
-                  style={
-                    msg.role === "assistant"
-                      ? { background: "linear-gradient(135deg, #1D9E75 0%, #185FA5 100%)" }
-                      : {}
-                  }
-                >
-                  {msg.role === "assistant" ? (
-                    <FaRobot className="text-[11px]" />
-                  ) : (
-                    <FaUser className="text-[11px] text-gray-400" />
-                  )}
+              <div key={i} className="flex gap-3">
+                <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 flex-shrink-0">
+                  {msg.role === "assistant" ? <FaRobot /> : <FaUser />}
                 </div>
-
-                {/* Bubble */}
-                <div
-                  className={`max-w-[72%] px-4 py-3 text-sm leading-relaxed ${
-                    msg.role === "user"
-                      ? "text-white rounded-2xl rounded-br-[4px]"
-                      : "bg-white border border-black/[0.07] text-gray-800 rounded-2xl rounded-bl-[4px]"
-                  }`}
-                  style={
-                    msg.role === "user"
-                      ? { background: "linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%)" }
-                      : {}
-                  }
-                >
+                <div className="flex-1">
                   {msg.role === "user" ? (
-                    msg.text
+                    <p className="text-sm">{msg.text}</p>
                   ) : (
                     <>
-                      <MarkdownContent text={msg.text} />
-                      {msg.routes && msg.routes.filter(r => r !== "merge" && r !== "general").length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-3 pt-2 border-t border-black/[0.05]">
-                          {msg.routes.filter(r => r !== "merge" && r !== "general").map((route) => {
-                            const badgeInfo = getBadgeInfo(route);
+                      <MarkdownContent text={msg.text} onPlaceClick={openPlace} />
+                      {msg.routes && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {msg.routes.filter((r) => r !== "merge" && r !== "general").map((r) => {
+                            const b = getBadgeInfo(r);
                             return (
-                              <span
-                                key={route}
-                                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium border"
-                                style={{
-                                  backgroundColor: badgeInfo.bg,
-                                  color: badgeInfo.color,
-                                  borderColor: badgeInfo.borderColor,
-                                }}
-                              >
-                                {badgeInfo.icon}
-                                {badgeInfo.label}
+                              <span key={r} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full"
+                                    style={{ background: `${b.color}15`, color: b.color }}>
+                                {b.icon} {b.label}
                               </span>
                             );
                           })}
-                        </div>
-                      )}
-                      
-                      {msg.routes && msg.routes.includes("calendar") && (
-                        <div className="mt-3 pt-2 border-t border-black/[0.05] flex items-center gap-2 flex-wrap">
-                          {!savedTrips[i] && (
-                            <button
-                              onClick={() => saveItinerary(i, msg.text)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-black/10 text-[10px] font-medium text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer"
-                            >
-                              <FaPlus className="text-[8px]" /> Save Itinerary to Calendar
-                            </button>
-                          )}
-                          {savedTrips[i] && savedTrips[i].loading && (
-                            <span className="text-[10px] font-medium text-gray-500 animate-pulse">
-                              ⏳ Saving to database...
-                            </span>
-                          )}
-                          {savedTrips[i] && !savedTrips[i].loading && (
-                            <>
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600">
-                                ✓ Saved: "{savedTrips[i].tripName}"
-                              </span>
-                              <a
-                                href={`http://localhost:8000/calendar/export?trip_name=${encodeURIComponent(savedTrips[i].tripName)}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700 transition-colors ml-2"
-                              >
-                                Download Calendar (.ics)
-                              </a>
-                            </>
-                          )}
                         </div>
                       )}
                     </>
@@ -561,100 +425,81 @@ lonStr ? Number(lonStr) : null;
               </div>
             ))
           )}
-
-          {/* Thinking indicator */}
-          {loading && (
-            <div className="flex gap-2.5">
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 text-white"
-                style={{ background: "linear-gradient(135deg, #1D9E75 0%, #185FA5 100%)" }}
-              >
-                <FaRobot className="text-[11px]" />
-              </div>
-              <div className="bg-white border border-black/[0.07] px-4 py-3 rounded-2xl rounded-bl-[4px] flex flex-col gap-1.5 min-w-[220px]">
-                <div className="flex items-center gap-1.5 mb-1">
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="w-1.5 h-1.5 rounded-full bg-[#1D9E75] animate-bounce"
-                      style={{ animationDelay: `${i * 0.15}s` }}
-                    />
-                  ))}
-                </div>
-                <div className="space-y-1 text-xs">
-                  {PROGRESS_STEPS.map((step, idx) => {
-                    if (progressStep < idx) return null;
-                    const isDone = progressStep > idx;
-                    return (
-                      <div
-                        key={idx}
-                        className={`flex items-center gap-1.5 transition-opacity duration-300 ${
-                          isDone ? "text-emerald-600 font-medium" : "text-gray-500 animate-pulse"
-                        }`}
-                      >
-                        <span>{isDone ? step.done : step.current}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-
+          {loading && <div className="text-sm text-gray-500">Thinking…</div>}
           <div ref={chatEndRef} />
-        </div>
+        </section>
 
-        {/* Input */}
-        <div className="bg-white border-t border-black/[0.07] p-4 flex-shrink-0">
-          <div className="max-w-3xl mx-auto">
-            <div className="flex items-center gap-2 bg-gray-50 border border-black/[0.09] rounded-xl px-3 py-2 focus-within:border-[#1D9E75] focus-within:ring-1 focus-within:ring-[#1D9E75]/20 transition-all duration-150">
-              <FaSearch className="text-gray-300 text-xs flex-shrink-0" />
-              <input
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") askAI(); }}
-                placeholder="Ask about your trip…"
-                className="flex-1 bg-transparent outline-none text-sm text-gray-800 placeholder-gray-400"
-              />
-              <button
-                onClick={startVoice}
-                className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all duration-150 ${
-                  isListening
-                    ? "bg-red-50 text-red-500 animate-pulse"
-                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                }`}
-                aria-label="Voice input"
-              >
-                <FaMicrophone className="text-xs" />
-              </button>
-              <button
-                onClick={() => askAI()}
-                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 text-white transition-opacity hover:opacity-85"
-                style={{ background: "linear-gradient(135deg, #1D9E75 0%, #185FA5 100%)" }}
-                aria-label="Send"
-              >
-                <FaPaperPlane className="text-xs" />
-              </button>
+        <footer className="p-4 border-t border-black/10">
+          <div className="flex items-center gap-2 px-3 py-2 border border-black/10 rounded-xl">
+            <FaSearch className="text-gray-400" />
+            <input value={question} onChange={(e) => setQuestion(e.target.value)}
+                   onKeyDown={(e) => e.key === "Enter" && askAI()}
+                   placeholder="Ask about your trip…"
+                   className="flex-1 bg-transparent outline-none text-sm" />
+            <button onClick={startVoice} className={`w-8 h-8 rounded-lg flex items-center justify-center ${isListening ? "text-red-500" : "text-gray-500"}`}>
+              <FaMicrophone />
+            </button>
+            <button onClick={() => askAI()}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-white"
+                    style={{ background: "linear-gradient(135deg,#1D9E75 0%,#185FA5 100%)" }}>
+              <FaPaperPlane />
+            </button>
+          </div>
+        </footer>
+      </main>
+      {/* Nearby Explorer Sidebar */}
+<aside className="w-[360px] border-l border-gray-200 bg-gray-50 overflow-y-auto">
+  <NearbyExplorer />
+</aside>
+
+      {modal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setModal(null)}>
+          <div className="bg-white rounded-2xl w-[90%] max-w-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between p-4 border-b border-black/10">
+              <div>
+                <h2 className="text-lg font-semibold">{modal.name}</h2>
+                {modal.city && <p className="text-xs text-gray-500">{modal.city}</p>}
+              </div>
+              <button onClick={() => setModal(null)} className="text-gray-500 hover:text-gray-800"><FaTimes /></button>
             </div>
-            <p className="text-center text-[11px] text-gray-400 mt-2">
-              {isListening
-                ? "🎤 Listening…"
-                : "Click the microphone to speak, or type your question"}
-            </p>
+
+            <div className="h-64 w-full">
+              {modal.lat != null && modal.lon != null ? (
+                <MapContainer center={[modal.lat, modal.lon]} zoom={14} style={{ height: "100%", width: "100%" }}>
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                             attribution='&copy; OpenStreetMap' />
+                  <Marker position={[modal.lat, modal.lon]}>
+                    <Popup>{modal.name}</Popup>
+                  </Marker>
+                </MapContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-sm text-gray-500">Location unavailable</div>
+              )}
+            </div>
+
+            <div className="p-4 overflow-y-auto">
+              <h3 className="font-semibold mb-2">History</h3>
+              {modal.loading ? (
+                <p className="text-sm text-gray-500">Loading…</p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{modal.history}</p>
+                  {modal.source === "llm" && (
+  <small className="text-amber-600">⚠ AI-generated, verify.</small>
+)}
+                  {modal.wikiUrl && (
+                    <a href={modal.wikiUrl} target="_blank" rel="noreferrer"
+                       className="inline-block mt-3 text-sm text-blue-600 hover:underline">
+                      Read more on Wikipedia →
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
-  );
-}
-
-function App() {
-  return (
-    <TravelPlannerProvider>
-      <Router>
-        <AppContent />
-      </Router>
-    </TravelPlannerProvider>
   );
 }
 
