@@ -14,3 +14,8 @@ class AgentState(TypedDict):
     travel_style: str
     interests: str
     discover: list
+    trip_id: str
+    user_action: str
+    start_date: str
+    reminder_minutes: int
+    google_auth_url: str
