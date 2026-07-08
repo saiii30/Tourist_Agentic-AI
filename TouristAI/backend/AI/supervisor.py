@@ -116,14 +116,123 @@ def clear_guided_state():
     conn.close()
 
 def extract_query_details(question: str) -> dict:
+    # First try regex-based extraction for train queries
+    # Normalize the query by replacing underscores with spaces
+    normalized_question = question.replace('_', ' ')
+    question_lower = normalized_question.lower()
+    
+    print(f"🔍 Original query: '{question}'")
+    print(f"🔍 Normalized query: '{normalized_question}'")
+    
+    # Check for train-related queries
+    if any(kw in question_lower for kw in ["train", "railway", "rail", "irctc"]):
+        # Extract date first
+        date_pattern = r'(?:on|in|)\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}[-/]\d{1,2}|\d{4}-\d{1,2}-\d{1,2}|tomorrow|today|next\s+\w+)'
+        date_match = re.search(date_pattern, question_lower)
+        travel_date = date_match.group(1).strip() if date_match else "None"
+        
+        # Remove "train" keyword to avoid confusion
+        query_clean = re.sub(r'train|railway|rail|irctc', '', question_lower).strip()
+        print(f"🔍 Query after removing train keywords: '{query_clean}'")
+        
+        # Split by "to" to separate source and destination parts
+        if ' to ' in query_clean:
+            parts = query_clean.split(' to ', 1)
+            source_part = parts[0].strip()
+            dest_part = parts[1].strip()
+            
+            print(f"🔍 Source part: '{source_part}'")
+            print(f"🔍 Dest part: '{dest_part}'")
+            
+            # Extract source from the part before "to"
+            # Look for "from X" pattern or just take the city name
+            if source_part.startswith('from '):
+                source = source_part.replace('from', '').strip()
+            else:
+                source = source_part
+            
+            # Extract destination from the part after "to", removing any date
+            destination = re.sub(date_pattern, '', dest_part).strip()
+            
+            # Clean up any extra words and normalize spacing
+            source = re.sub(r'\b(from|the|a|an)\b', '', source).strip()
+            destination = re.sub(r'\b(the|a|an)\b', '', destination).strip()
+            
+            # Remove extra spaces and normalize
+            source = re.sub(r'\s+', ' ', source).strip()
+            destination = re.sub(r'\s+', ' ', destination).strip()
+            
+            print(f"🔍 Extracted source: '{source}'")
+            print(f"🔍 Extracted destination: '{destination}'")
+            
+            # Check if destination is empty or just noise after date removal
+            if not destination or len(destination) < 2 or destination.isdigit():
+                # Try to extract destination from the original query using a different pattern
+                # Look for patterns like "to [city] on [date]"
+                alt_pattern = r'to\s+([a-z]{2,}(?:\s+[a-z]{2,})?)\s+(?:on|in)?\s*' + date_pattern
+                alt_match = re.search(alt_pattern, question_lower)
+                if alt_match:
+                    destination = alt_match.group(1).strip()
+                else:
+                    # If still no destination, try to get it from the part before date
+                    # Pattern: "to [destination] [date]" where date might be attached
+                    to_index = query_clean.find(' to ')
+                    if to_index != -1:
+                        after_to = query_clean[to_index + 4:].strip()
+                        # Split by date pattern
+                        parts_by_date = re.split(date_pattern, after_to)
+                        if parts_by_date and parts_by_date[0].strip():
+                            destination = parts_by_date[0].strip()
+            
+            # Validate that we have both source and destination
+            # Accept either full city names (2+ chars) or valid station codes (2-4 uppercase letters)
+            def is_valid_location(name):
+                if not name or len(name) < 2:
+                    return False
+                if name.isdigit():
+                    return False
+                # Accept station codes (2-4 uppercase letters)
+                if len(name) <= 4 and name.isalpha():
+                    return True
+                # Accept city names (2+ chars)
+                if len(name) >= 2:
+                    return True
+                return False
+            
+            if is_valid_location(source) and is_valid_location(destination):
+                # Clean up station codes: remove spaces for short codes
+                source_clean = re.sub(r'\s+', '', source).upper() if len(source) <= 4 else source.title()
+                dest_clean = re.sub(r'\s+', '', destination).upper() if len(destination) <= 4 else destination.title()
+                
+                print(f"🔍 Final cleaned source: '{source_clean}'")
+                print(f"🔍 Final cleaned destination: '{dest_clean}'")
+                
+                return {
+                    "city": source_clean,
+                    "destination": dest_clean,
+                    "travel_date": travel_date,
+                    "days": 3,
+                    "requires_city": True
+                }
+            else:
+                # Missing or invalid destination - print helpful message and fall back to LLM
+                print(f"⚠️ Could not extract valid city names from query: '{question}'")
+                print(f"   Extracted - Source: '{source}', Destination: '{destination}'")
+                print(f"   Please specify full city names or station codes (e.g., 'train from Chennai to Bangalore on 30-11-2026' or 'train from MAS to SA on 30-11-2026')")
+    
+    # Fallback to LLM for other queries
     prompt = (
         "Analyze the following user query and extract: \n"
-        "1. The destination city or location (e.g. 'Chennai', 'Madurai', 'Ooty').\n"
-        "2. The duration of the trip (number of days as an integer, default to 3 if not specified).\n"
-        "3. A boolean flag 'requires_city' indicating if the user's intent is to get location-specific trip plans/itineraries, weather reports, hotel recommendations, restaurant recommendations, or sightseeing attractions (which require a location to be resolved).\n\n"
+        "1. The primary city or source location (e.g., 'Chennai' in 'weather in Chennai' or 'Dindigul' in 'train from Dindigul to Trichy').\n"
+        "2. The destination city, if one is mentioned (e.g., 'Trichy' in 'train from Dindigul to Trichy').\n"
+        "3. The travel date, if mentioned (e.g., 'July 30' or 'tomorrow').\n"
+        "4. The duration of the trip (number of days as an integer, default to 3 if not specified for trip plans).\n"
+        "5. A boolean flag 'requires_city' indicating if the user's intent is to get location-specific information (trip plans, weather, hotels, restaurants, attractions).\n\n"
         "Return the output strictly in the following JSON format and nothing else:\n"
         "{\n"
-        "  \"city\": \"Name of the city (or 'None' if not specified or unclear)\",\n"
+        "  \"city\": \"Name of the primary/source city (or 'None' if not specified)\",\n"
+        "  \"destination\": \"Name of the destination city (or 'None' if not specified)\",\n"
+        "  \"travel_date\": \"The travel date (or 'None' if not specified)\",\n"
         "  \"days\": 3,\n"
         "  \"requires_city\": true\n"
         "}\n\n"
@@ -151,12 +260,20 @@ def extract_query_details(question: str) -> dict:
             city = "None"
         return {
             "city": city,
+            "destination": data.get("destination", "None"),
+            "travel_date": data.get("travel_date", "None"),
             "days": int(data.get("days", 3)),
             "requires_city": bool(data.get("requires_city", True))
         }
     except Exception as e:
         print(f"Error in extract_query_details: {e}")
-        return {"city": "None", "days": 3, "requires_city": True}
+        return {
+            "city": "None",
+            "destination": "None",
+            "travel_date": "None",
+            "days": 3,
+            "requires_city": True
+        }
 
 def extract_all_opening_details(question: str) -> dict:
     prompt = (
@@ -216,18 +333,7 @@ def extract_single_field(field_key: str, user_response: str) -> str:
     
     # --- Local Rule-Based / Regex Parsing ---
     if field_key == "destination":
-        # Check if the response matches any city in our json database
-        db_path = os.path.join(os.path.dirname(__file__), "agents", "locations_data.json")
-        if os.path.exists(db_path):
-            try:
-                with open(db_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                for city in data.keys():
-                    if city in user_response_clean:
-                        return city.title()
-            except Exception:
-                pass
-                
+        pass # This is now fully handled by the LLM fallback for better accuracy
     elif field_key == "travel_date":
         # If response is simple/short, just return it title-cased
         words = user_response_clean.split()
@@ -363,7 +469,7 @@ def matches_keywords(question, keywords):
     question_lower = question.lower()
     for kw in keywords:
         kw_lower = kw.lower()
-        pattern = r'\b' + re.escape(kw_lower) + r'\b'
+        pattern = r'\b' + re.escape(kw_lower) + r's?\b' # Allow optional 's' for plurals
         if re.search(pattern, question_lower):
             return True
     return False
@@ -388,29 +494,6 @@ def route_question(state, details=None):
     question = state["question"].strip()
     question_lower = question.lower()
 
-    # Escape guided planning if a new single-topic query is asked
-    is_single_topic = any(kw in question_lower for kw in ["weather", "forecast", "climate", "temperature", "rain", "hotel", "stay", "resort", "restaurant", "food", "eat", "cafe", "attraction", "sightseeing", "places to visit", "things to do"])
-    if is_single_topic:
-        update_guided_state("is_active", "0")
-
-    g_state = get_guided_state()
-    
-    # 1. Google Calendar Sync Response Routing
-    if g_state.get("awaiting_google_sync") == "1":
-        return ["google_calendar"]
-
-    # 2. Preview Action Response Routing
-    if g_state.get("awaiting_preview_action") == "1":
-        if question_lower in ["1", "save", "save itinerary", "yes", "yep", "sure", "please"]:
-            return ["save_itinerary"]
-        elif question_lower in ["3", "regenerate", "regenerate itinerary", "different", "another", "redo"]:
-            return ["regenerate_itinerary"]
-        elif question_lower in ["delete", "delete itinerary", "delete trip", "discard"]:
-            return ["delete_itinerary"]
-        else:
-            # Default to modify for natural language modification inputs (like replacing attractions)
-            return ["modify_itinerary"]
-
     # Move general question check to the very top to bypass planning triggers
     if details and not details.get("requires_city", True):
         return ["general"]
@@ -420,14 +503,6 @@ def route_question(state, details=None):
         "trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"
     ]
     is_start = matches_keywords(question_lower, start_keywords)
-    
-    if not is_start:
-        is_single_topic = any(kw in question_lower for kw in ["weather", "forecast", "climate", "temperature", "rain", "hotel", "stay", "resort", "restaurant", "food", "eat", "cafe", "attraction", "sightseeing", "places to visit", "things to do"])
-        if not is_single_topic:
-            if details is None:
-                details = extract_query_details(question)
-            if details.get("city") != "None" and details.get("requires_city", True):
-                is_start = True
     
     g_state = get_guided_state()
     is_active = g_state.get("is_active") == "1"
@@ -478,6 +553,12 @@ def route_question(state, details=None):
 
     routes = []
 
+    # Train Agent
+    if matches_keywords(question_lower, [
+        "train", "railway", "rail", "irctc", "station", "platform"
+    ]):
+        routes.append("train")
+
     # Restaurant Agent
     if matches_keywords(question_lower, [
         "restaurant", "food", "eat", "idli", "dosa", "breakfast", "lunch", "dinner"
@@ -492,8 +573,9 @@ def route_question(state, details=None):
 
     # Nearby Places Agent
     if matches_keywords(question_lower, [
-        "nearby", "place", "tourist", "visit", "attraction", "temple", "sightseeing"
-    ]):
+        "nearby", "place", "tourist", "visit", "attraction", "temple", "sightseeing",
+        "things to do", "places to see"
+    ]) and not routes: # Only run if no other specific agent (like hotel/restaurant) has been triggered
         routes.append("nearby")
 
     # Weather Agent

@@ -10,6 +10,7 @@ from agents.nearby_agent import nearby_agent
 from agents.weather_agent import weather_agent
 from agents.general_agent import general_agent
 from agents.calendar_agent import calendar_agent
+from agents.transport_agent import transport_agent
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "graph"))
@@ -29,6 +30,48 @@ builder = StateGraph(AgentState)
 
 
 def supervisor_node(state):
+    g_state = get_guided_state()
+    
+    # Check if we are waiting for a save confirmation
+    if g_state.get("awaiting_save_confirmation") == "1":
+        from supervisor import update_guided_state, save_itinerary_to_db
+        update_guided_state("awaiting_save_confirmation", "0")
+        
+        question_lower = state["question"].strip().lower()
+        
+        # Check if the user confirmed
+        if any(yes_kw in question_lower for yes_kw in ["yes", "yeah", "sure", "ok", "save", "yep", "please"]):
+            last_itinerary = g_state.get("last_itinerary", "")
+            if last_itinerary:
+                res = save_itinerary_to_db(last_itinerary)
+                if res.get("success"):
+                    msg = (
+                        f"✅ **Itinerary Saved Successfully!**\n\n"
+                        f"I have saved the activities for '{res.get('trip_name')}' to your local database. "
+                        f"You can now download the `.ics` calendar file from the menu options to sync it with Google Calendar or Apple Calendar!"
+                    )
+                else:
+                    msg = f"❌ **Error Saving Itinerary:** {res.get('message')}"
+            else:
+                msg = "I couldn't find the last generated itinerary to save. Please request a new trip plan first."
+                
+            return {
+                **state,
+                "answer": msg,
+                "responses": [],
+                "routes": ["merge"]
+            }
+            
+        elif any(no_kw in question_lower for no_kw in ["no", "nope", "don't", "cancel", "nay"]):
+            return {
+                **state,
+                "answer": "No problem! I won't save this itinerary. Let me know if you want to plan another trip or need any other details.",
+                "responses": [],
+                "routes": ["merge"]
+            }
+        else:
+            # Clear flag and fall through to normal execution
+            pass
 
     # Route first to update database state
     routes = route_question(state)
@@ -41,6 +84,8 @@ def supervisor_node(state):
         return {
             **state,
             "city": "None",
+            "destination": "None",
+            "travel_date": "None",
             "days": 3,
             "budget": "None",
             "travelers": 1,
@@ -80,6 +125,8 @@ def supervisor_node(state):
     return {
         **state,
         "city": details.get("city", "None"),
+        "destination": details.get("destination", "None"),
+        "travel_date": details.get("travel_date", "None"),
         "days": details.get("days", 3),
         "budget": "None",
         "travelers": 1,
@@ -92,21 +139,30 @@ def supervisor_node(state):
 def restaurant_node(state):
     answer = restaurant_agent(state["question"], state.get("city", "None"), state.get("interests", "None"), state.get("budget", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
+    source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
 
     return {
         "responses": [
-            f"Restaurant suggestions:\n{text}"
+            f"Restaurant suggestions:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
 
 def hotel_node(state):
     answer = hotel_agent(state["question"], state.get("city", "None"), state.get("budget", "None"), state.get("travelers", 1))
-    text = answer.get("answer") if isinstance(answer, dict) else answer
+    
+    # The hotel_agent returns a dictionary with different keys based on the source.
+    # We need to extract the relevant text from 'hotels' or 'answer'.
+    if isinstance(answer, dict):
+        text = answer.get("hotels") or answer.get("answer") or answer.get("message", "Could not retrieve hotel info.")
+        source = answer.get("source", "Groq")
+    else:
+        text = str(answer)
+        source = "Groq"
 
     return {
         "responses": [
-            f"Hotel suggestions:\n{text}"
+            f"Hotel suggestions:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
@@ -114,10 +170,11 @@ def hotel_node(state):
 def nearby_node(state):
     answer = nearby_agent(state["question"], state.get("city", "None"), state.get("interests", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
+    source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
 
     return {
         "responses": [
-            f"Nearby Places to visit:\n{text}"
+            f"Nearby Places to visit:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
@@ -125,6 +182,7 @@ def nearby_node(state):
 def weather_node(state):
     answer = weather_agent(state["question"], state.get("city", "None"))
 
+    # Weather agent response is a string with source info already inside
     return {
         "responses": [
             f"Weather:\n{answer}"
@@ -133,14 +191,39 @@ def weather_node(state):
 
 
 def general_node(state):
-    answer = general_agent(state["question"])
+    answer = general_agent(state)
 
+    # General agent now returns a dict with 'answer' and 'source'
     return {
         "responses": [
-            f"{answer}"
+            f"{answer.get('answer')}\n[SOURCE:{answer.get('source', 'Groq')}]"
         ]
     }
 
+def transport_node(state):
+    # Extract source, destination, and date from the state if available
+    # The supervisor logic for guided trips populates these.
+    # For stateless queries, we can enhance `extract_query_details` to find them.
+    source_city = state.get("city", "None") # 'city' is often used as the primary location/source
+    destination_city = state.get("destination", "None")
+    travel_date = state.get("travel_date", "None")
+
+    answer = transport_agent(
+        state["question"],
+        source=source_city,
+        destination=destination_city,
+        date=travel_date
+    )
+    
+    # The transport_agent can return a string or a dict. We need to handle both.
+    text = answer.get("answer") if isinstance(answer, dict) else str(answer)
+    source = answer.get("source", "transport_api") if isinstance(answer, dict) else "Groq"
+
+    return {
+        "responses": [
+            f"Transport options:\n{text}\n[SOURCE:{source}]"
+        ]
+    }
 
 def calendar_node(state):
     answer = calendar_agent(
@@ -160,14 +243,19 @@ def calendar_node(state):
 
 
 def merge_node(state):
-    # If there is only one response, return directly
+    # If there is only one response, we can return it directly to save time.
+    # This ensures general queries or individual agent warnings are returned directly.
     if len(state["responses"]) <= 1:
         context = "\n\n".join(state["responses"])
         if not context.strip():
-            return {"answer": state.get("answer", "")}
-        return {"answer": context}
+            return {
+                "answer": state.get("answer", "")
+            }
+        return {
+            "answer": context
+        }
 
-    # If the destination city is not specified
+    # If the destination city is not specified and multiple agents ran, politely ask the user to specify it
     if state.get("city", "None") == "None":
         return {
             "answer": (
@@ -321,6 +409,11 @@ builder.add_node(
     nearby_node
 )
 
+builder.add_node(
+    "train",
+    transport_node
+)
+
 
 builder.add_node(
     "weather",
@@ -384,6 +477,12 @@ builder.add_edge(
     "nearby",
     "merge"
 )
+
+builder.add_edge(
+    "train",
+    "merge"
+)
+
 
 
 builder.add_edge(
