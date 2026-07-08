@@ -1,4 +1,5 @@
 import os
+os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 import json
 import logging
 from typing import Optional, Dict, Any
@@ -114,25 +115,71 @@ class GoogleCalendarService:
             state=trip_id,
             prompt='consent'
         )
+        
+        # Save code_verifier to a file to be retrieved during callback
+        verifier_path = os.path.join(BASE_DIR, f"verifier_{trip_id}.json")
+        try:
+            with open(verifier_path, "w") as f:
+                json.dump({"code_verifier": flow.code_verifier}, f)
+            logger.info(f"Successfully saved code verifier to {verifier_path}")
+            print(f"DEBUG: Saved code verifier {flow.code_verifier} to {verifier_path}")
+        except Exception as e:
+            logger.error(f"Failed to save code verifier to {verifier_path}: {e}")
+            print(f"DEBUG: Failed to save code verifier: {e}")
+            
         return authorization_url
 
-    def save_credentials_from_code(self, code: str) -> None:
+    def save_credentials_from_code(self, code: str, trip_id: Optional[str] = None) -> None:
         """
         Exchanges code for credentials and saves them to the user token file.
         """
         client_config = self._get_client_config()
         redirect_uri = client_config["web"]["redirect_uris"][0]
         
+        code_verifier = None
+        if trip_id:
+            verifier_path = os.path.join(BASE_DIR, f"verifier_{trip_id}.json")
+            print(f"DEBUG: Checking for code verifier at {verifier_path}")
+            if os.path.exists(verifier_path):
+                try:
+                    with open(verifier_path, "r") as f:
+                        data = json.load(f)
+                        code_verifier = data.get("code_verifier")
+                    print(f"DEBUG: Loaded code verifier: {code_verifier}")
+                except Exception as e:
+                    logger.error(f"Failed to read code verifier from {verifier_path}: {e}")
+                    print(f"DEBUG: Failed to read code verifier: {e}")
+                finally:
+                    # Clean up the verifier file
+                    try:
+                        os.remove(verifier_path)
+                        print(f"DEBUG: Removed temporary verifier file {verifier_path}")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to remove temporary file: {e}")
+            else:
+                print(f"DEBUG: Verifier file {verifier_path} does not exist!")
+        
         flow = Flow.from_client_config(
             client_config,
             scopes=SCOPES,
-            redirect_uri=redirect_uri
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier,
+            autogenerate_code_verifier=False if code_verifier else True
         )
-        flow.fetch_token(code=code)
+        
+        if code_verifier:
+            flow.code_verifier = code_verifier
+            print(f"DEBUG: Passing code_verifier {code_verifier} to fetch_token")
+            flow.fetch_token(code=code, code_verifier=code_verifier)
+        else:
+            print("DEBUG: Calling fetch_token without code_verifier")
+            flow.fetch_token(code=code)
+            
         creds = flow.credentials
         
         with open(self.token_path, "w") as token_file:
             token_file.write(creds.to_json())
+        print(f"DEBUG: Successfully stored credentials to {self.token_path}")
 
     def get_calendar_service(self) -> Any:
         """
@@ -168,3 +215,20 @@ class GoogleCalendarService:
         except Exception as e:
             logger.error(f"Error deleting Google Calendar event {event_id}: {e}")
             raise e
+
+    def get_event(self, event_id: str) -> Optional[dict]:
+        """
+        Retrieves details of a Google Calendar event.
+        """
+        service = self.get_calendar_service()
+        try:
+            return service.events().get(calendarId='primary', eventId=event_id).execute()
+        except Exception:
+            return None
+
+    def patch_event(self, event_id: str, event_body: Dict[str, Any]) -> None:
+        """
+        Patches an event in the primary Google Calendar.
+        """
+        service = self.get_calendar_service()
+        service.events().patch(calendarId='primary', eventId=event_id, body=event_body).execute()

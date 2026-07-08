@@ -13,6 +13,8 @@ class ItineraryItem(BaseModel):
     restaurant: Optional[str] = Field(None, description="Name of restaurant if category is Food")
     hotel: Optional[str] = Field(None, description="Name of hotel if staying here")
     notes: Optional[str] = Field(None, description="Additional context or descriptions")
+    activity_id: Optional[str] = None
+    google_event_id: Optional[str] = None
 
 class Trip(BaseModel):
     trip_id: str
@@ -23,7 +25,8 @@ class Trip(BaseModel):
     travel_style: str
     travelers: int
     interests: str
-    status: str = "draft"
+    status: str = "GENERATED"
+    travel_date: Optional[str] = None
     created_at: str
     updated_at: str
 

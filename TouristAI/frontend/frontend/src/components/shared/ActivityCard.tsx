@@ -7,13 +7,15 @@ interface ActivityCardProps {
   onDelete: (id: string) => void;
   onFavoriteToggle: (id: string) => void;
   onReplace?: (id: string) => void;
+  onViewOnMap?: (location: string, title: string) => void;
 }
 
 export const ActivityCard: React.FC<ActivityCardProps> = ({
   activity,
   onDelete,
   onFavoriteToggle,
-  onReplace
+  onReplace,
+  onViewOnMap
 }) => {
   
   const getCategoryColor = (cat: Activity["category"]) => {
@@ -115,15 +117,27 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
         </button>
 
         {/* Navigate Map Link */}
-        <a
-          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.location + " " + activity.title)}`}
-          target="_blank"
-          rel="noreferrer"
-          className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-teal-600 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-colors"
-          aria-label="Get Directions"
-        >
-          <ExternalLink className="w-4 h-4" />
-        </a>
+        {onViewOnMap ? (
+          <button
+            onClick={() => onViewOnMap(activity.location, activity.title)}
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-teal-600 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-colors"
+            title="View on Map"
+            aria-label="View on Map"
+          >
+            <MapPin className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+          </button>
+        ) : (
+          <a
+            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.location + " " + activity.title)}`}
+            target="_blank"
+            rel="noreferrer"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-450 hover:text-teal-600 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-colors"
+            title="Open in Google Maps"
+            aria-label="Get Directions"
+          >
+            <ExternalLink className="w-4 h-4" />
+          </a>
+        )}
 
         {/* Replace Button */}
         {onReplace && (

@@ -392,24 +392,7 @@ def route_question(state, details=None):
     is_single_topic = any(kw in question_lower for kw in ["weather", "forecast", "climate", "temperature", "rain", "hotel", "stay", "resort", "restaurant", "food", "eat", "cafe", "attraction", "sightseeing", "places to visit", "things to do"])
     if is_single_topic:
         update_guided_state("is_active", "0")
-
-    g_state = get_guided_state()
-    
-    # 1. Google Calendar Sync Response Routing
-    if g_state.get("awaiting_google_sync") == "1":
-        return ["google_calendar"]
-
-    # 2. Preview Action Response Routing
-    if g_state.get("awaiting_preview_action") == "1":
-        if question_lower in ["1", "save", "save itinerary", "yes", "yep", "sure", "please"]:
-            return ["save_itinerary"]
-        elif question_lower in ["3", "regenerate", "regenerate itinerary", "different", "another", "redo"]:
-            return ["regenerate_itinerary"]
-        elif question_lower in ["delete", "delete itinerary", "delete trip", "discard"]:
-            return ["delete_itinerary"]
-        else:
-            # Default to modify for natural language modification inputs (like replacing attractions)
-            return ["modify_itinerary"]
+        update_guided_state("awaiting_preview_action", "0")
 
     # Move general question check to the very top to bypass planning triggers
     if details and not details.get("requires_city", True):
@@ -422,13 +405,12 @@ def route_question(state, details=None):
     is_start = matches_keywords(question_lower, start_keywords)
     
     if not is_start:
-        is_single_topic = any(kw in question_lower for kw in ["weather", "forecast", "climate", "temperature", "rain", "hotel", "stay", "resort", "restaurant", "food", "eat", "cafe", "attraction", "sightseeing", "places to visit", "things to do"])
         if not is_single_topic:
             if details is None:
                 details = extract_query_details(question)
             if details.get("city") != "None" and details.get("requires_city", True):
                 is_start = True
-    
+
     g_state = get_guided_state()
     is_active = g_state.get("is_active") == "1"
 
@@ -452,7 +434,24 @@ def route_question(state, details=None):
         else:
             # Everything provided in the first sentence
             update_guided_state("is_active", "0")
+            update_guided_state("awaiting_preview_action", "1")
             return ["hotel", "restaurant", "nearby", "weather", "calendar"]
+
+    # 2. Google Calendar Sync Response Routing
+    if g_state.get("awaiting_google_sync") == "1":
+        return ["google_calendar"]
+
+    # 3. Preview Action Response Routing (only checked if not starting a new trip)
+    if g_state.get("awaiting_preview_action") == "1":
+        if question_lower in ["1", "save", "save itinerary", "yes", "yep", "sure", "please"]:
+            return ["save_itinerary"]
+        elif question_lower in ["3", "regenerate", "regenerate itinerary", "different", "another", "redo"]:
+            return ["regenerate_itinerary"]
+        elif question_lower in ["delete", "delete itinerary", "delete trip", "discard"]:
+            return ["delete_itinerary"]
+        else:
+            # Default to modify for natural language modification inputs (like replacing attractions)
+            return ["modify_itinerary"]
             
     elif is_active:
         # User is answering questions
@@ -472,6 +471,7 @@ def route_question(state, details=None):
         else:
             # Complete!
             update_guided_state("is_active", "0")
+            update_guided_state("awaiting_preview_action", "1")
             return ["hotel", "restaurant", "nearby", "weather", "calendar"]
 
     # Default stateless routing
