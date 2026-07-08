@@ -1,9 +1,415 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun } from "lucide-react";
+import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Navigation, Pagination } from "swiper/modules";
+import "swiper/css";
+import "swiper/css/navigation";
+import "swiper/css/pagination";
 import { useTravelPlanner } from "../context/TravelPlannerContext";
 import type { TripDetails } from "../context/TravelPlannerContext";
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const stripMarkdown = (value: string) =>
+  value
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*(.*?)\*/g, "$1")
+    .replace(/`(.*?)`/g, "$1")
+    .replace(/\[(.*?)\]\((.*?)\)/g, "$1");
+
+const formatInlineMarkdown = (value: string) => {
+  let html = escapeHtml(value);
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\*(.+?)\*/g, "<em>$1</em>");
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-teal-600 underline decoration-teal-500/50 underline-offset-2">$1</a>');
+  html = html.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-teal-600 underline decoration-teal-500/50 underline-offset-2">$1</a>');
+  return html.replace(/\n/g, "<br />");
+};
+
+function ImageSlider({ images }: { images: string[] }) {
+  const swiperRef = useRef<any>(null);
+  const showNav = images.length > 3;
+
+  return (
+    <div className="my-2 flex justify-center px-3">
+      <div className="relative w-full max-w-[400px]">
+        <Swiper
+          modules={[Navigation, Pagination]}
+          onSwiper={(swiper) => (swiperRef.current = swiper)}
+          slidesPerView={3}
+          spaceBetween={6}
+          pagination={{ clickable: true }}
+          loop={showNav}
+        >
+          {images.map((img, index) => (
+            <SwiperSlide key={index}>
+              <img src={img} alt={`Photo ${index + 1}`} className="h-24 w-full rounded-lg object-cover" loading="lazy" />
+            </SwiperSlide>
+          ))}
+        </Swiper>
+
+        {showNav && (
+          <>
+            <button
+              onClick={() => swiperRef.current?.slidePrev()}
+              aria-label="Previous"
+              className="absolute left-0 top-1/2 z-10 flex h-6 w-6 -translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white text-gray-600 shadow-md hover:bg-gray-50"
+            >
+              <ChevronLeft className="text-[9px]" />
+            </button>
+            <button
+              onClick={() => swiperRef.current?.slideNext()}
+              aria-label="Next"
+              className="absolute right-0 top-1/2 z-10 flex h-6 w-6 translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white text-gray-600 shadow-md hover:bg-gray-50"
+            >
+              <ChevronRight className="text-[9px]" />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlaceCard({ lines }: { lines: string[] }) {
+  const [tab, setTab] = useState<"overview" | "info" | "accessibility" | "paymentOptions" | "parkingOptions" | "dining">("overview");
+  const [hoursOpen, setHoursOpen] = useState(false);
+
+  const title = stripMarkdown(lines[0] || "").replace(/^\d+\.\s*/, "").trim();
+  const details = lines.slice(1).filter(Boolean);
+  const imageRegex = /!\[.*?\]\((.*?)\)/;
+  const mapRegex = /\[View Map\]\((.*?)\)/;
+  const websiteRegex = /\[Visit Website\]\((.*?)\)/;
+
+  const images = details.map((line) => line.match(imageRegex)?.[1]).filter(Boolean) as string[];
+  const mapUrl = details.find((line) => mapRegex.test(line))?.match(mapRegex)?.[1];
+  const websiteUrl = details.find((line) => websiteRegex.test(line))?.match(websiteRegex)?.[1];
+
+  const otherDetails = details.filter((line) => !imageRegex.test(line) && !mapRegex.test(line) && !websiteRegex.test(line));
+  const ratingLine = otherDetails.find((l) => /⭐|★/.test(l));
+  const locationLine = otherDetails.find((l) => /📍/.test(l));
+  const hoursLines = otherDetails.filter((l) => /🕒/.test(l));
+  const phoneLine = otherDetails.find((l) => /📞|phone/i.test(l));
+  const paymentLine = otherDetails.find((l) => /💳/.test(l));
+  const parkingLine = otherDetails.find((l) => /🅿/.test(l));
+  const accessibilityLine = otherDetails.find((l) => /♿/.test(l));
+  const priceLine = otherDetails.find((l) => !/compare prices/i.test(l) && (/₹/.test(l) || /price level/i.test(l) || /💰/.test(l)) && l !== ratingLine && l !== locationLine);
+  const otaLine = otherDetails.find((l) => /🔎|compare prices/i.test(l));
+
+  const remaining = otherDetails.filter((l) => l !== ratingLine && l !== locationLine && l !== priceLine && l !== phoneLine && !hoursLines.includes(l) && l !== paymentLine && l !== accessibilityLine && l !== parkingLine && l !== otaLine);
+  const diningKeywords = /(serves|available|serves breakfast|serves lunch|serves dinner|serves beer|serves wine|serves vegetarian|takeout|delivery|dine-in|breakfast restaurant|🍽️|🍳|🥗|🍺|🍷|🥦|🥡|🚚|🍴)/i;
+  const diningLines = remaining.filter((l) => diningKeywords.test(l));
+  const descriptionLines = remaining.filter((l) => l.replace(/^\W+/, "").length > 45);
+  const amenityLines = remaining.filter((l) => !descriptionLines.includes(l) && !diningLines.includes(l));
+
+  let ratingValue = "";
+  let reviewCount = "";
+  if (ratingLine) {
+    const ratingMatch = ratingLine.match(/(\d+(?:\.\d+)?)/);
+    ratingValue = ratingMatch ? ratingMatch[1] : "";
+    const reviewMatch = ratingLine.match(/(\d+)\s*review/i);
+    reviewCount = reviewMatch ? reviewMatch[1] : "";
+  }
+
+  const PRICE_LEVEL_MAP: Record<string, string> = {
+    FREE: "Free",
+    INEXPENSIVE: "Inexpensive",
+    MODERATE: "Moderate",
+    EXPENSIVE: "Expensive",
+    VERY_EXPENSIVE: "Very Expensive",
+  };
+
+  let priceValue = "";
+  const priceSource = priceLine || ratingLine || "";
+  const rupeeMatch = priceSource.match(/₹+/);
+  if (rupeeMatch) {
+    priceValue = rupeeMatch[0];
+  } else {
+    const levelMatch = priceSource.match(/PRICE_LEVEL_([A-Z_]+)/i);
+    if (levelMatch) {
+      priceValue = PRICE_LEVEL_MAP[levelMatch[1].toUpperCase()] || levelMatch[1];
+    }
+  }
+
+  const locationText = locationLine ? stripMarkdown(locationLine).replace(/📍/g, "").replace(/^\s*Address:\s*/i, "").trim() : "";
+  const phoneText = phoneLine ? stripMarkdown(phoneLine).replace(/📞/g, "").replace(/^\s*Phone:\s*/i, "").trim() : "";
+  const paymentText = paymentLine ? stripMarkdown(paymentLine).replace(/💳/g, "").trim() : "";
+  const parkingText = parkingLine ? stripMarkdown(parkingLine).replace(/🅿/g, "").trim() : "";
+  const accessibilityText = accessibilityLine ? stripMarkdown(accessibilityLine).replace(/♿/g, "").trim() : "";
+
+  let websiteDomain = "";
+  try {
+    websiteDomain = websiteUrl ? new URL(websiteUrl).hostname : "";
+  } catch {
+    websiteDomain = "";
+  }
+  const websiteLogo = websiteDomain ? `https://www.google.com/s2/favicons?sz=128&domain=${websiteDomain}` : "";
+
+  const todayHours = hoursLines[0] ? hoursLines[0].replace(/🕒\s*Hours?:?\s*/i, "") : "";
+  const isOpen = /open/i.test(todayHours) || amenityLines.some((l) => /✅|open now/i.test(l));
+  const hasAmenities = amenityLines.length > 0;
+
+  const otaLinks = otaLine
+    ? Array.from(otaLine.matchAll(/\[(.*?)\]\((.*?)\)/g)).map((match) => ({
+        name: match[1],
+        url: match[2],
+        logo: `https://www.google.com/s2/favicons?sz=64&domain=${match[1].toLowerCase().replace(/\s/g, "").replace(".com", "").trim()}.com`,
+      }))
+    : [];
+
+  return (
+    <div className="my-4 max-w-[420px] overflow-hidden rounded-2xl border border-black/[0.07] bg-white text-left shadow-sm">
+      <div className="p-3.5 text-left">
+        <div className="flex items-start justify-between gap-2.5">
+          <div className="min-w-0 flex-1 text-left">
+            <h3 className="text-left text-sm font-semibold leading-snug text-gray-900" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(title) }} />
+            {(ratingValue || priceValue) && (
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-600">
+                {ratingValue && (
+                  <>
+                    <Star className="h-3 w-3 fill-current text-yellow-400" />
+                    <span className="font-semibold text-gray-800">{ratingValue}</span>
+                  </>
+                )}
+                {ratingValue && priceValue && <span className="text-gray-300">|</span>}
+                {priceValue && <span className="font-semibold text-[#1D9E75]">{priceValue}</span>}
+                {(ratingValue || priceValue) && reviewCount && <span className="text-gray-300">|</span>}
+                {reviewCount && <span>{reviewCount} Reviews</span>}
+              </div>
+            )}
+
+            {hoursLines.length > 0 && (
+              <button
+                onClick={() => setHoursOpen(!hoursOpen)}
+                className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${isOpen ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}
+              >
+                {todayHours || "Hours"}
+                <ChevronDown className={`text-[9px] transition-transform ${hoursOpen ? "rotate-180" : ""}`} />
+              </button>
+            )}
+            {hoursOpen && hoursLines.length > 0 && (
+              <div className="mt-1.5 space-y-0.5 pl-1 text-[11px] leading-relaxed text-gray-500">
+                {hoursLines.map((line, idx) => (
+                  <div key={idx}>{stripMarkdown(line).replace(/🕒\s*Hours?:?\s*/i, "")}</div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {websiteUrl && (
+            <a href={websiteUrl} target="_blank" rel="noreferrer" className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm">
+              {websiteLogo ? <img src={websiteLogo} alt="Website" className="h-6 w-6 object-contain" /> : <ExternalLink className="h-4 w-4 text-gray-500" />}
+            </a>
+          )}
+        </div>
+      </div>
+
+      {images.length > 0 && (
+        <>
+          <div className="border-t border-black/[0.07]" />
+          <div className="bg-gray-50/50">
+            <ImageSlider images={images} />
+          </div>
+        </>
+      )}
+
+      {hasAmenities && (
+        <div className="flex border-t border-black/[0.07]">
+          <button onClick={() => setTab("overview")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "overview" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+            Overview
+          </button>
+          <button onClick={() => setTab("info")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "info" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+            Information
+          </button>
+          {accessibilityText && (
+            <button onClick={() => setTab("accessibility")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "accessibility" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+              Accessibility
+            </button>
+          )}
+          {paymentLine && (
+            <button onClick={() => setTab("paymentOptions")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "paymentOptions" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+              Payment
+            </button>
+          )}
+          {parkingLine && (
+            <button onClick={() => setTab("parkingOptions")} className={`flex-1 truncate py-2 text-[11px] font-semibold transition-colors ${tab === "parkingOptions" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+              Parking
+            </button>
+          )}
+          {diningLines.length > 0 && (
+            <button onClick={() => setTab("dining")} className={`flex-1 truncate py-2 text-[11px] font-semibold transition-colors ${tab === "dining" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+              Dining
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="px-3.5 py-2.5">
+        {tab === "overview" ? (
+          <div className="space-y-2 text-left">
+            {descriptionLines.map((line, i) => (
+              <p key={i} className="text-left text-[11.5px] leading-relaxed text-gray-500" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(line)) }} />
+            ))}
+            {locationText && (
+              <div className="flex items-start gap-1.5 text-[11px] text-gray-500">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                <span className="flex-1" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(locationText) }} />
+              </div>
+            )}
+            {phoneText && (
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                <Phone className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+                <span>{phoneText}</span>
+              </div>
+            )}
+            {otaLinks.length > 0 && (
+              <div className="mt-3 border-t border-black/[0.07] pt-3">
+                <p className="mb-2 text-[11px] font-semibold text-gray-700">Compare prices:</p>
+                <div className="grid grid-cols-3 gap-2">
+                  {otaLinks.map((link) => (
+                    <a key={link.name} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 rounded-md border border-black/[0.08] bg-gray-50/50 px-2 py-1.5 transition-colors hover:bg-gray-100/80">
+                      <img src={link.logo} alt={link.name} className="h-3.5 w-3.5" />
+                      <span className="text-[10px] font-medium text-gray-600">{link.name}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : tab === "info" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {amenityLines.map((line, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
+                <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(line.replace(/^[^\w]+/, "").trim())) }} />
+              </div>
+            ))}
+          </div>
+        ) : tab === "accessibility" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {accessibilityText.split(",").map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <Accessibility className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
+                <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(item.trim()) }} />
+              </div>
+            ))}
+          </div>
+        ) : tab === "paymentOptions" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {paymentText.replace(/^Accepts\s/i, "").split(",").map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <CreditCard className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
+                <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(item.trim()) }} />
+              </div>
+            ))}
+          </div>
+        ) : tab === "parkingOptions" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {parkingText.replace(/^Parking:\s/i, "").split(",").map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
+                <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(item.trim()) }} />
+              </div>
+            ))}
+          </div>
+        ) : tab === "dining" ? (
+          <div className="grid grid-cols-2 gap-2">
+            {diningLines.map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <Utensils className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
+                <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(item.replace(/^[^\w]+/, "").trim())) }} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-gray-400">No details available.</p>
+        )}
+      </div>
+
+      {(mapUrl || websiteUrl) && (
+        <>
+          <div className="border-t border-black/[0.07]" />
+          <div className="flex items-center gap-2 p-2.5">
+            {mapUrl && (
+              <a href={mapUrl} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "#1D9E75" }}>
+                <MapPin className="h-3 w-3" /> View Map
+              </a>
+            )}
+            {websiteUrl && (
+              <a href={websiteUrl} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-[11px] font-semibold transition-colors hover:bg-[#1D9E75]/5" style={{ borderColor: "#1D9E75", color: "#1D9E75" }}>
+                <ExternalLink className="h-3 w-3" /> Visit Website
+              </a>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function renderStructuredMessage(text: string) {
+  const lines = (text || "").split(/\r?\n/);
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i].trim();
+
+    if (!line) {
+      i += 1;
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const cardLines: string[] = [];
+      cardLines.push(line.replace(/^\d+\.\s+/, ""));
+      i += 1;
+      while (i < lines.length && lines[i].trim() && !/^\d+\.\s+/.test(lines[i].trim())) {
+        cardLines.push(lines[i].trim());
+        i += 1;
+      }
+      elements.push(<PlaceCard key={`card-${i}`} lines={cardLines} />);
+      continue;
+    }
+
+    if (/^#{1,3}\s+/.test(line)) {
+      const headingLevel = line.match(/^#+/)?.[0].length || 1;
+      const headingClass = headingLevel === 1 ? "mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100" : "mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500";
+      elements.push(<div key={`h-${i}`} className={headingClass}>{line.replace(/^#{1,3}\s+/, "")}</div>);
+      i += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      const bullets: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        bullets.push(lines[i].trim().replace(/^[-*]\s+/, ""));
+        i += 1;
+      }
+      elements.push(
+        <ul key={`ul-${i}`} className="ml-4 mt-2 list-disc space-y-1 text-sm text-slate-700 dark:text-slate-300">
+          {bullets.map((b, idx) => (
+            <li key={idx} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(b)) }} />
+          ))}
+        </ul>
+      );
+      continue;
+    }
+
+    elements.push(<p key={`p-${i}`} className="text-sm leading-relaxed text-slate-700 dark:text-slate-300" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(line)) }} />);
+    i += 1;
+  }
+
+  return <div className="space-y-1">{elements}</div>;
+}
 
 // Import all dialogs to support buttons inside chat attachment card
 import { ModifyDrawer } from "../components/dialogs/ModifyDrawer";
@@ -224,16 +630,12 @@ export const AIChat: React.FC = () => {
                       }`}
                     >
                       {/* Message Content */}
-                      <p
-                        className="text-xs sm:text-sm whitespace-pre-line font-medium leading-relaxed"
-                        dangerouslySetInnerHTML={{
-                          __html: msg.text
-                            .replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
-                            .replace(/^# (.*)/gm, '<h3 class="font-heading text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 mt-2 mb-1">$1</h3>')
-                            .replace(/^## (.*)/gm, '<h4 class="font-heading text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 mt-2 mb-1">$1</h4>')
-                            .replace(/^- (.*)/gm, '<li class="ml-4 list-disc text-xs">$1</li>')
-                        }}
-                      />
+                      {!isUser && renderStructuredMessage(msg.text)}
+                      {isUser && (
+                        <p className="text-xs sm:text-sm whitespace-pre-line font-medium leading-relaxed">
+                          {msg.text}
+                        </p>
+                      )}
 
                       {/* Timestamps */}
                       <span className={`block text-[9px] mt-2 text-right ${isUser ? "text-slate-200/80" : "text-slate-400"}`}>
