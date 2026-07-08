@@ -61,14 +61,14 @@ function ImageSlider({ images }: { images: string[] }) {
             <button
               onClick={() => swiperRef.current?.slidePrev()}
               aria-label="Previous"
-              className="absolute left-0 top-1/2 z-10 flex h-6 w-6 -translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white text-gray-600 shadow-md hover:bg-gray-50"
+              className="absolute left-0 top-1/2 z-10 flex h-6 w-6 -translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 shadow-md hover:bg-slate-700"
             >
               <ChevronLeft className="text-[9px]" />
             </button>
             <button
               onClick={() => swiperRef.current?.slideNext()}
               aria-label="Next"
-              className="absolute right-0 top-1/2 z-10 flex h-6 w-6 translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-black/10 bg-white text-gray-600 shadow-md hover:bg-gray-50"
+              className="absolute right-0 top-1/2 z-10 flex h-6 w-6 translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 shadow-md hover:bg-slate-700"
             >
               <ChevronRight className="text-[9px]" />
             </button>
@@ -166,22 +166,22 @@ function PlaceCard({ lines }: { lines: string[] }) {
     : [];
 
   return (
-    <div className="my-4 max-w-[420px] overflow-hidden rounded-2xl border border-black/[0.07] bg-white text-left shadow-sm">
+    <div className="my-4 max-w-[420px] overflow-hidden rounded-2xl border border-slate-700/70 bg-slate-900 text-left shadow-sm">
       <div className="p-3.5 text-left">
         <div className="flex items-start justify-between gap-2.5">
           <div className="min-w-0 flex-1 text-left">
-            <h3 className="text-left text-sm font-semibold leading-snug text-gray-900" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(title) }} />
+            <h3 className="text-left text-sm font-semibold leading-snug text-slate-100" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(title) }} />
             {(ratingValue || priceValue) && (
-              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-400">
                 {ratingValue && (
                   <>
                     <Star className="h-3 w-3 fill-current text-yellow-400" />
-                    <span className="font-semibold text-gray-800">{ratingValue}</span>
+                    <span className="font-semibold text-slate-100">{ratingValue}</span>
                   </>
                 )}
-                {ratingValue && priceValue && <span className="text-gray-300">|</span>}
-                {priceValue && <span className="font-semibold text-[#1D9E75]">{priceValue}</span>}
-                {(ratingValue || priceValue) && reviewCount && <span className="text-gray-300">|</span>}
+                {ratingValue && priceValue && <span className="text-slate-600">|</span>}
+                {priceValue && <span className="font-semibold text-emerald-400">{priceValue}</span>}
+                {(ratingValue || priceValue) && reviewCount && <span className="text-slate-600">|</span>}
                 {reviewCount && <span>{reviewCount} Reviews</span>}
               </div>
             )}
@@ -189,14 +189,14 @@ function PlaceCard({ lines }: { lines: string[] }) {
             {hoursLines.length > 0 && (
               <button
                 onClick={() => setHoursOpen(!hoursOpen)}
-                className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${isOpen ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}
+                className={`mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${isOpen ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-800 text-slate-300"}`}
               >
                 {todayHours || "Hours"}
                 <ChevronDown className={`text-[9px] transition-transform ${hoursOpen ? "rotate-180" : ""}`} />
               </button>
             )}
             {hoursOpen && hoursLines.length > 0 && (
-              <div className="mt-1.5 space-y-0.5 pl-1 text-[11px] leading-relaxed text-gray-500">
+              <div className="mt-1.5 space-y-0.5 pl-1 text-[11px] leading-relaxed text-slate-400">
                 {hoursLines.map((line, idx) => (
                   <div key={idx}>{stripMarkdown(line).replace(/🕒\s*Hours?:?\s*/i, "")}</div>
                 ))}
@@ -205,8 +205,8 @@ function PlaceCard({ lines }: { lines: string[] }) {
           </div>
 
           {websiteUrl && (
-            <a href={websiteUrl} target="_blank" rel="noreferrer" className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-black/10 bg-white shadow-sm">
-              {websiteLogo ? <img src={websiteLogo} alt="Website" className="h-6 w-6 object-contain" /> : <ExternalLink className="h-4 w-4 text-gray-500" />}
+            <a href={websiteUrl} target="_blank" rel="noreferrer" className="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-700 bg-slate-800 shadow-sm">
+              {websiteLogo ? <img src={websiteLogo} alt="Website" className="h-6 w-6 object-contain" /> : <ExternalLink className="h-4 w-4 text-slate-300" />}
             </a>
           )}
         </div>
@@ -214,38 +214,38 @@ function PlaceCard({ lines }: { lines: string[] }) {
 
       {images.length > 0 && (
         <>
-          <div className="border-t border-black/[0.07]" />
-          <div className="bg-gray-50/50">
+          <div className="border-t border-slate-700/70" />
+          <div className="bg-slate-800/60">
             <ImageSlider images={images} />
           </div>
         </>
       )}
 
       {hasAmenities && (
-        <div className="flex border-t border-black/[0.07]">
-          <button onClick={() => setTab("overview")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "overview" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+        <div className="flex border-t border-slate-700/70">
+          <button onClick={() => setTab("overview")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "overview" ? "border-b-2 border-[#1D9E75] text-slate-100" : "border-b-2 border-transparent text-slate-500"}`}>
             Overview
           </button>
-          <button onClick={() => setTab("info")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "info" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+          <button onClick={() => setTab("info")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "info" ? "border-b-2 border-[#1D9E75] text-slate-100" : "border-b-2 border-transparent text-slate-500"}`}>
             Information
           </button>
           {accessibilityText && (
-            <button onClick={() => setTab("accessibility")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "accessibility" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+            <button onClick={() => setTab("accessibility")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "accessibility" ? "border-b-2 border-[#1D9E75] text-slate-100" : "border-b-2 border-transparent text-slate-500"}`}>
               Accessibility
             </button>
           )}
           {paymentLine && (
-            <button onClick={() => setTab("paymentOptions")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "paymentOptions" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+            <button onClick={() => setTab("paymentOptions")} className={`flex-1 py-2 text-[11px] font-semibold transition-colors ${tab === "paymentOptions" ? "border-b-2 border-[#1D9E75] text-slate-100" : "border-b-2 border-transparent text-slate-500"}`}>
               Payment
             </button>
           )}
           {parkingLine && (
-            <button onClick={() => setTab("parkingOptions")} className={`flex-1 truncate py-2 text-[11px] font-semibold transition-colors ${tab === "parkingOptions" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+            <button onClick={() => setTab("parkingOptions")} className={`flex-1 truncate py-2 text-[11px] font-semibold transition-colors ${tab === "parkingOptions" ? "border-b-2 border-[#1D9E75] text-slate-100" : "border-b-2 border-transparent text-slate-500"}`}>
               Parking
             </button>
           )}
           {diningLines.length > 0 && (
-            <button onClick={() => setTab("dining")} className={`flex-1 truncate py-2 text-[11px] font-semibold transition-colors ${tab === "dining" ? "border-b-2 border-[#1D9E75] text-gray-900" : "border-b-2 border-transparent text-gray-400"}`}>
+            <button onClick={() => setTab("dining")} className={`flex-1 truncate py-2 text-[11px] font-semibold transition-colors ${tab === "dining" ? "border-b-2 border-[#1D9E75] text-slate-100" : "border-b-2 border-transparent text-slate-500"}`}>
               Dining
             </button>
           )}
@@ -256,28 +256,28 @@ function PlaceCard({ lines }: { lines: string[] }) {
         {tab === "overview" ? (
           <div className="space-y-2 text-left">
             {descriptionLines.map((line, i) => (
-              <p key={i} className="text-left text-[11.5px] leading-relaxed text-gray-500" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(line)) }} />
+              <p key={i} className="text-left text-[11.5px] leading-relaxed text-slate-400" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(line)) }} />
             ))}
             {locationText && (
-              <div className="flex items-start gap-1.5 text-[11px] text-gray-500">
-                <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+              <div className="flex items-start gap-1.5 text-[11px] text-slate-400">
+                <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-slate-500" />
                 <span className="flex-1" dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(locationText) }} />
               </div>
             )}
             {phoneText && (
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
-                <Phone className="h-3.5 w-3.5 flex-shrink-0 text-gray-400" />
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                <Phone className="h-3.5 w-3.5 flex-shrink-0 text-slate-500" />
                 <span>{phoneText}</span>
               </div>
             )}
             {otaLinks.length > 0 && (
-              <div className="mt-3 border-t border-black/[0.07] pt-3">
-                <p className="mb-2 text-[11px] font-semibold text-gray-700">Compare prices:</p>
+              <div className="mt-3 border-t border-slate-700/70 pt-3">
+                <p className="mb-2 text-[11px] font-semibold text-slate-200">Compare prices:</p>
                 <div className="grid grid-cols-3 gap-2">
                   {otaLinks.map((link) => (
-                    <a key={link.name} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 rounded-md border border-black/[0.08] bg-gray-50/50 px-2 py-1.5 transition-colors hover:bg-gray-100/80">
+                    <a key={link.name} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-1.5 rounded-md border border-slate-700 bg-slate-800/80 px-2 py-1.5 transition-colors hover:bg-slate-700/80">
                       <img src={link.logo} alt={link.name} className="h-3.5 w-3.5" />
-                      <span className="text-[10px] font-medium text-gray-600">{link.name}</span>
+                      <span className="text-[10px] font-medium text-slate-300">{link.name}</span>
                     </a>
                   ))}
                 </div>
@@ -287,7 +287,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
         ) : tab === "info" ? (
           <div className="grid grid-cols-2 gap-2">
             {amenityLines.map((line, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-slate-300">
                 <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
                 <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(line.replace(/^[^\w]+/, "").trim())) }} />
               </div>
@@ -296,7 +296,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
         ) : tab === "accessibility" ? (
           <div className="grid grid-cols-2 gap-2">
             {accessibilityText.split(",").map((item, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-slate-300">
                 <Accessibility className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
                 <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(item.trim()) }} />
               </div>
@@ -305,7 +305,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
         ) : tab === "paymentOptions" ? (
           <div className="grid grid-cols-2 gap-2">
             {paymentText.replace(/^Accepts\s/i, "").split(",").map((item, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-slate-300">
                 <CreditCard className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
                 <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(item.trim()) }} />
               </div>
@@ -314,7 +314,7 @@ function PlaceCard({ lines }: { lines: string[] }) {
         ) : tab === "parkingOptions" ? (
           <div className="grid grid-cols-2 gap-2">
             {parkingText.replace(/^Parking:\s/i, "").split(",").map((item, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-slate-300">
                 <MapPin className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
                 <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(item.trim()) }} />
               </div>
@@ -323,20 +323,20 @@ function PlaceCard({ lines }: { lines: string[] }) {
         ) : tab === "dining" ? (
           <div className="grid grid-cols-2 gap-2">
             {diningLines.map((item, i) => (
-              <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div key={i} className="flex items-center gap-1.5 text-[11px] text-slate-300">
                 <Utensils className="h-3.5 w-3.5 flex-shrink-0 text-[#1D9E75]" />
                 <span dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(item.replace(/^[^\w]+/, "").trim())) }} />
               </div>
             ))}
           </div>
         ) : (
-          <p className="text-xs text-gray-400">No details available.</p>
+          <p className="text-xs text-slate-500">No details available.</p>
         )}
       </div>
 
       {(mapUrl || websiteUrl) && (
         <>
-          <div className="border-t border-black/[0.07]" />
+          <div className="border-t border-slate-700/70" />
           <div className="flex items-center gap-2 p-2.5">
             {mapUrl && (
               <a href={mapUrl} target="_blank" rel="noreferrer" className="flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-[11px] font-semibold text-white transition-opacity hover:opacity-90" style={{ background: "#1D9E75" }}>
