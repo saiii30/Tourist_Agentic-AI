@@ -4,6 +4,7 @@ import requests
 from datetime import datetime
 from rag_service import get_answer, save_to_rag, client
 import re
+import urllib.parse
 
 
 RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
@@ -242,9 +243,33 @@ def get_buses(source, destination, date):
 
 
 # -----------------------------
+# Train booking links
+# -----------------------------
+def build_train_booking_links(source_name="", destination_name="", journey_date="", from_code="", to_code=""):
+    links = {
+        "irctc": "https://www.irctc.co.in/nget/train-search",
+        "makemytrip": "https://www.makemytrip.com/railways/",
+        "redbus": "https://www.redbus.in/",
+    }
+
+    if from_code and to_code and journey_date:
+        links["irctc"] = (
+            "https://www.irctc.co.in/nget/train-search"
+            f"?fromStation={from_code}&toStation={to_code}&journeyDate={journey_date}"
+        )
+
+    if source_name and destination_name:
+        query = urllib.parse.quote_plus(f"{source_name} to {destination_name} train")
+        links["makemytrip"] = f"https://www.makemytrip.com/railways/?q={query}"
+        links["redbus"] = f"https://www.redbus.in/search?from={urllib.parse.quote_plus(source_name)}&to={urllib.parse.quote_plus(destination_name)}"
+
+    return links
+
+
+# -----------------------------
 # Format Response
 # -----------------------------
-def format_transport(flights, trains, buses, date=""):
+def format_transport(flights, trains, buses, date="", source_name="", destination_name="", from_code="", to_code=""):
     output = []
 
     # Trains - format as numbered lists for PlaceCard component
@@ -294,7 +319,18 @@ def format_transport(flights, trains, buses, date=""):
                 special_train = t.get('special_train', False)
                 if special_train:
                     output.append(f"- ⭐ Special Train")
-                output.append(f"[Visit Website]({irctc_url})")
+                booking_links = build_train_booking_links(
+                    source_name=source_name,
+                    destination_name=destination_name,
+                    journey_date=date,
+                    from_code=from_code,
+                    to_code=to_code,
+                )
+                output.append(
+                    f"🔎 Book now: [IRCTC]({booking_links['irctc']}) | "
+                    f"[MakeMyTrip]({booking_links['makemytrip']}) | "
+                    f"[RedBus]({booking_links['redbus']})"
+                )
                 output.append("")
         # Handle list response (direct list of trains)
         elif isinstance(trains, list) and len(trains) > 0:
@@ -355,8 +391,20 @@ def transport_agent(question,
         print("⚠️ All transport APIs failed. Falling back to Groq LLM.")
         return get_answer(question) # This will call Groq and save to RAG
 
+    from_code = get_station_code(source)
+    to_code = get_station_code(destination)
+
     # answer = format_transport(flights, trains, buses)
-    answer = format_transport(None, trains, None)
+    answer = format_transport(
+        None,
+        trains,
+        None,
+        date=date,
+        source_name=source,
+        destination_name=destination,
+        from_code=from_code,
+        to_code=to_code,
+    )
 
     # 3. Save
     try:
