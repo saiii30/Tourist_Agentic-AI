@@ -1,23 +1,11 @@
 import re
 import json
 import os
-import sqlite3
+from database.postgres import PostgresDatabase
 from rag_service import client
 
-def get_db_path():
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tourist_ai.db"))
-
 def init_guided_db():
-    conn = sqlite3.connect(get_db_path())
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS guided_trip_state (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
+    PostgresDatabase.initialize()
 
 def save_itinerary_to_db(itinerary_text: str, trip_name: str = None) -> dict:
     prompt = (
@@ -64,18 +52,19 @@ def save_itinerary_to_db(itinerary_text: str, trip_name: str = None) -> dict:
         trip_name = trip_name or data.get("trip_name", "My Travel Trip")
         events = data.get("events", [])
         
-        conn = sqlite3.connect(get_db_path())
+        conn = PostgresDatabase.get_connection()
         cursor = conn.cursor()
         
         # Delete old events for this trip name if they exist, to avoid duplicates
-        cursor.execute("DELETE FROM calendar_events WHERE trip_name = ?", (trip_name,))
+        cursor.execute("DELETE FROM calendar_events WHERE trip_name = %s", (trip_name,))
         
         for ev in events:
             cursor.execute(
-                "INSERT INTO calendar_events (trip_name, day_num, time_slot, time_range, activity, details) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO calendar_events (trip_name, day_num, time_slot, time_range, activity, details) VALUES (%s, %s, %s, %s, %s, %s)",
                 (trip_name, ev.get("day_num"), ev.get("time_slot"), ev.get("time_range"), ev.get("activity"), ev.get("details"))
             )
         conn.commit()
+        cursor.close()
         conn.close()
         
         return {
@@ -92,27 +81,33 @@ def save_itinerary_to_db(itinerary_text: str, trip_name: str = None) -> dict:
 
 def get_guided_state() -> dict:
     init_guided_db()
-    conn = sqlite3.connect(get_db_path())
+    conn = PostgresDatabase.get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT key, value FROM guided_trip_state")
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
     return {row[0]: row[1] for row in rows}
 
 def update_guided_state(key: str, value: str):
     init_guided_db()
-    conn = sqlite3.connect(get_db_path())
+    conn = PostgresDatabase.get_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO guided_trip_state (key, value) VALUES (?, ?)", (key, str(value)))
+    cursor.execute("""
+        INSERT INTO guided_trip_state (key, value) VALUES (%s, %s)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    """, (key, str(value)))
     conn.commit()
+    cursor.close()
     conn.close()
 
 def clear_guided_state():
     init_guided_db()
-    conn = sqlite3.connect(get_db_path())
+    conn = PostgresDatabase.get_connection()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM guided_trip_state")
     conn.commit()
+    cursor.close()
     conn.close()
 
 def extract_query_details(question: str) -> dict:

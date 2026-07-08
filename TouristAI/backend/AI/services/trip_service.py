@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 # Adjust path to import correctly
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.sqlite import SQLiteDatabase
+from database.postgres import PostgresDatabase
 from repositories.trip_repository import TripRepository
 from models.itinerary import Trip, ItineraryItem
 from services.packing_service import PackingService
@@ -25,15 +25,17 @@ class TripService:
         """
         Check SQLite database for an existing matching trip.
         """
-        conn = SQLiteDatabase.get_connection()
-        cursor = conn.cursor()
+        conn = PostgresDatabase.get_connection()
+        import psycopg2.extras
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         
         # Look for matching trip parameters
         cursor.execute(
-            "SELECT * FROM trips WHERE LOWER(city) = ? AND days = ? AND LOWER(budget) = ? AND LOWER(travel_style) = ?",
+            "SELECT * FROM trips WHERE LOWER(city) = %s AND days = %s AND LOWER(budget) = %s AND LOWER(travel_style) = %s",
             (city.strip().lower(), days, budget.strip().lower(), travel_style.strip().lower())
         )
         row = cursor.fetchone()
+        cursor.close()
         conn.close()
         
         if not row:

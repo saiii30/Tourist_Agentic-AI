@@ -1,5 +1,5 @@
 import os
-import sqlite3
+from database.postgres import PostgresDatabase
 import json
 from rag_service import client
 
@@ -43,19 +43,14 @@ def extract_trip_details(question: str) -> tuple[str, int]:
         return "None", 3
 
 def get_db_places(city: str) -> list:
-    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tourist_ai.db"))
     places = []
-    if not os.path.exists(db_path):
-        print(f"Database file not found at {db_path}")
-        return []
-        
     try:
-        conn = sqlite3.connect(db_path)
+        conn = PostgresDatabase.get_connection()
         cursor = conn.cursor()
         
-        # Case insensitive query for city name
+        # Case insensitive query for city name using PostgreSQL %s placeholder
         cursor.execute(
-            "SELECT name, place_type, description, rating FROM places WHERE LOWER(city) = ? OR LOWER(city) LIKE ?",
+            "SELECT name, place_type, description, rating FROM places WHERE LOWER(city) = %s OR LOWER(city) LIKE %s",
             (city.lower(), f"%{city.lower()}%")
         )
         rows = cursor.fetchall()
@@ -66,6 +61,7 @@ def get_db_places(city: str) -> list:
                 "description": row[2],
                 "rating": row[3]
             })
+        cursor.close()
         conn.close()
     except Exception as e:
         print(f"Error querying database for city '{city}': {e}")

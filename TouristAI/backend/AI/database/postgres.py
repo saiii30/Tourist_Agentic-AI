@@ -1,29 +1,65 @@
 import os
-import sqlite3
+import psycopg2
+import psycopg2.extras
+from dotenv import load_dotenv
 
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tourist_ai.db"))
+# Load environmental variables
+load_dotenv()
 
-class SQLiteDatabase:
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_USER = os.getenv("DB_USER", "postgres")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
+DB_NAME = os.getenv("DB_NAME", "tourist_ai")
+
+class PostgresDatabase:
     @staticmethod
-    def get_connection() -> sqlite3.Connection:
+    def get_connection():
         """
-        Returns a sqlite3 connection with Row factory configured.
+        Returns a PostgreSQL connection with DictCursor configured by default.
         """
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            dbname=DB_NAME
+        )
         return conn
 
     @staticmethod
     def initialize() -> None:
         """
-        Initializes database tables for the itinerary lifecycle if they do not exist.
+        Initializes PostgreSQL database tables for the itinerary lifecycle if they do not exist.
+        Auto-creates the database if it doesn't exist yet.
         """
-        conn = SQLiteDatabase.get_connection()
+        # Step 1: Check/Create Database
+        try:
+            conn = PostgresDatabase.get_connection()
+            conn.close()
+        except psycopg2.OperationalError as oe:
+            # If the database does not exist, connect to 'postgres' database and create it
+            if "does not exist" in str(oe):
+                print(f"Database '{DB_NAME}' does not exist. Auto-creating...")
+                temp_conn = psycopg2.connect(
+                    host=DB_HOST,
+                    port=DB_PORT,
+                    user=DB_USER,
+                    password=DB_PASSWORD,
+                    dbname="postgres"
+                )
+                temp_conn.autocommit = True
+                temp_cursor = temp_conn.cursor()
+                temp_cursor.execute(f'CREATE DATABASE "{DB_NAME}"')
+                temp_cursor.close()
+                temp_conn.close()
+                print(f"Database '{DB_NAME}' created successfully.")
+            else:
+                raise oe
+
+        conn = PostgresDatabase.get_connection()
         cursor = conn.cursor()
         
-        # Enable foreign keys
-        cursor.execute("PRAGMA foreign_keys = ON")
-
         # 1. Users table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -51,17 +87,13 @@ class SQLiteDatabase:
             )
         """)
 
-        # Upgrades for Trips table if it existed prior to adding travel_date
-        try:
-            cursor.execute("ALTER TABLE trips ADD COLUMN travel_date TEXT")
-        except sqlite3.OperationalError:
-            # Already exists
-            pass
+        # Alter table upgrades (safely handles existing tables prior to travel_date column)
+        cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS travel_date TEXT")
 
         # 3. Itinerary table (stored as structured records)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS itineraries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 trip_id TEXT,
                 day INTEGER,
                 start_time TEXT,
@@ -78,17 +110,11 @@ class SQLiteDatabase:
             )
         """)
 
-        # Upgrades for Itinerary table if they existed prior
-        try:
-            cursor.execute("ALTER TABLE itineraries ADD COLUMN activity_id TEXT")
-        except sqlite3.OperationalError:
-            pass
-        try:
-            cursor.execute("ALTER TABLE itineraries ADD COLUMN google_event_id TEXT")
-        except sqlite3.OperationalError:
-            pass
+        # Upgrades for itineraries table
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS activity_id TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS google_event_id TEXT")
 
-        # 4. Trip Details metadata table (stores serialized tips, packing lists, weather, emergency, etc.)
+        # 4. Trip Details metadata table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS trip_details (
                 trip_id TEXT PRIMARY KEY,
@@ -115,16 +141,21 @@ class SQLiteDatabase:
             )
         """)
 
-        # 6. SQLite Calendar Mapping table
+        # 6. Calendar Mapping table (Supports both Google Calendar sync columns and legacy chatbot save columns)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS calendar_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 trip_id TEXT,
                 day INTEGER,
                 activity TEXT,
                 google_event_id TEXT,
                 calendar_name TEXT,
                 created_at TEXT,
+                trip_name TEXT,
+                day_num INTEGER,
+                time_slot TEXT,
+                time_range TEXT,
+                details TEXT,
                 FOREIGN KEY (trip_id) REFERENCES trips(trip_id) ON DELETE CASCADE
             )
         """)
@@ -132,7 +163,7 @@ class SQLiteDatabase:
         # 7. Sync History Logs
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sync_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id SERIAL PRIMARY KEY,
                 trip_id TEXT,
                 user_id TEXT,
                 time TEXT,
@@ -144,6 +175,27 @@ class SQLiteDatabase:
                 FOREIGN KEY (trip_id) REFERENCES trips(trip_id) ON DELETE CASCADE
             )
         """)
+        
+        # 8. Places table for fallback searches (referenced by calendar agent)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS places (
+                id SERIAL PRIMARY KEY,
+                city TEXT,
+                name TEXT,
+                place_type TEXT,
+                description TEXT,
+                rating REAL
+            )
+        """)
+
+        # 9. Guided Planning state table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS guided_trip_state (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
 
         conn.commit()
+        cursor.close()
         conn.close()

@@ -1,6 +1,6 @@
 import os
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
-import sqlite3
+from database.postgres import PostgresDatabase
 import json
 import sys
 import uuid
@@ -474,18 +474,18 @@ def save_and_sync(req: SaveAndSyncRequest):
 
 @app.get("/calendar/export")
 def export_calendar(trip_name: str):
-    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tourist_ai.db"))
-    if not os.path.exists(db_path):
-        return Response("Database not found", status_code=404)
-        
     try:
-        conn = sqlite3.connect(db_path)
+        conn = PostgresDatabase.get_connection()
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT day_num, time_slot, time_range, activity, details FROM calendar_events WHERE trip_name = ? ORDER BY day_num, id",
-            (trip_name,)
-        )
+        cursor.execute("""
+            SELECT c.day, 'Morning' as time_slot, '09:00 - 12:00' as time_range, c.activity, c.activity as details
+            FROM calendar_events c
+            JOIN trips t ON c.trip_id = t.trip_id
+            WHERE LOWER(t.city) = LOWER(%s)
+            ORDER BY c.day, c.id
+        """, (trip_name,))
         rows = cursor.fetchall()
+        cursor.close()
         conn.close()
         
         if not rows:
