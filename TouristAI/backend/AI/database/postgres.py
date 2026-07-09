@@ -113,6 +113,18 @@ class PostgresDatabase:
         # Upgrades for itineraries table
         cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS activity_id TEXT")
         cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS google_event_id TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS hotel_id TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS restaurant_id TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS attraction_id TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS latitude REAL")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS longitude REAL")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS start_datetime TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS end_datetime TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS travel_time TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS transport TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS estimated_cost REAL")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS status TEXT")
+
 
         # 4. Trip Details metadata table
         cursor.execute("""

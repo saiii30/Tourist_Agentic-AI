@@ -34,6 +34,14 @@ def supervisor_node(state):
     # Route first to update database state
     routes = route_question(state)
     
+    # Direct routing for active preview lifecycle actions
+    lifecycle_actions = ["save_itinerary", "google_calendar", "modify_itinerary", "regenerate_itinerary", "delete_itinerary"]
+    if len(routes) == 1 and routes[0] in lifecycle_actions:
+        return {
+            **state,
+            "routes": routes
+        }
+
     g_state = get_guided_state()
     is_active = g_state.get("is_active") == "1"
     
@@ -93,42 +101,34 @@ def supervisor_node(state):
 def restaurant_node(state):
     answer = restaurant_agent(state["question"], state.get("city", "None"), state.get("interests", "None"), state.get("budget", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
-
-    return {
-        "responses": [
-            f"Restaurant suggestions:\n{text}"
-        ]
-    }
-
-
-def restaurant_node(state):
-    answer = restaurant_agent(state["question"], state.get("city", "None"), state.get("interests", "None"), state.get("budget", "None"))
-    text = answer.get("answer") if isinstance(answer, dict) else answer
     source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
+    data = answer.get("data", []) if isinstance(answer, dict) else []
 
     return {
         "responses": [
             f"Restaurant suggestions:\n{text}\n[SOURCE:{source}]"
-        ]
+        ],
+        "restaurants_data": data
     }
 
 
 def hotel_node(state):
     answer = hotel_agent(state["question"], state.get("city", "None"), state.get("budget", "None"), state.get("travelers", 1))
     
-    # The hotel_agent returns a dictionary with different keys based on the source.
-    # We need to extract the relevant text from 'hotels' or 'answer'.
     if isinstance(answer, dict):
         text = answer.get("hotels") or answer.get("answer") or answer.get("message", "Could not retrieve hotel info.")
         source = answer.get("source", "Groq")
+        data = answer.get("data", [])
     else:
         text = str(answer)
         source = "Groq"
+        data = []
 
     return {
         "responses": [
             f"Hotel suggestions:\n{text}\n[SOURCE:{source}]"
-        ]
+        ],
+        "hotels_data": data
     }
 
 
@@ -136,21 +136,26 @@ def nearby_node(state):
     answer = nearby_agent(state["question"], state.get("city", "None"), state.get("interests", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
     source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
+    data = answer.get("data", []) if isinstance(answer, dict) else []
 
     return {
         "responses": [
             f"Nearby Places to visit:\n{text}\n[SOURCE:{source}]"
-        ]
+        ],
+        "nearby_data": data
     }
 
 
 def weather_node(state):
     answer = weather_agent(state["question"], state.get("city", "None"))
+    text = answer.get("text") if isinstance(answer, dict) else answer
+    data = answer.get("data", {}) if isinstance(answer, dict) else {}
 
     return {
         "responses": [
-            f"Weather:\n{answer}"
-        ]
+            f"Weather:\n{text}"
+        ],
+        "weather_data": data
     }
 
 
@@ -162,6 +167,7 @@ def general_node(state):
             f"{answer.get('answer')}\n[SOURCE:{answer.get('source', 'Groq')}]"
         ]
     }
+
 
 def transport_node(state):
     # Extract source, destination, and date from the state if available
@@ -190,12 +196,16 @@ def transport_node(state):
 
 def calendar_node(state):
     answer = calendar_agent(
-        state["question"],
-        state.get("city", "None"),
-        state.get("days", 3),
-        state.get("interests", "None"),
-        state.get("travel_style", "None"),
-        state.get("budget", "None")
+        question=state["question"],
+        city=state.get("city", "None"),
+        days=state.get("days", 3),
+        interests=state.get("interests", "None"),
+        travel_style=state.get("travel_style", "None"),
+        budget=state.get("budget", "None"),
+        hotels_data=state.get("hotels_data"),
+        restaurants_data=state.get("restaurants_data"),
+        nearby_data=state.get("nearby_data"),
+        weather_data=state.get("weather_data")
     )
 
     return {
@@ -253,13 +263,17 @@ def merge_node(state):
     # Synchronously call calendar_agent with the combined context from other agents
     from agents.calendar_agent import calendar_agent
     calendar_text = calendar_agent(
-        state["question"], 
-        state.get("city", "None"), 
-        days, 
-        interests, 
-        travel_style, 
-        budget_val, 
-        other_agent_info
+        question=state["question"], 
+        city=state.get("city", "None"), 
+        days=days, 
+        interests=interests, 
+        travel_style=travel_style, 
+        budget=budget_val, 
+        hotels_data=state.get("hotels_data"),
+        restaurants_data=state.get("restaurants_data"),
+        nearby_data=state.get("nearby_data"),
+        weather_data=state.get("weather_data"),
+        other_agent_info=other_agent_info
     )
 
     # Process calendar items
@@ -320,26 +334,20 @@ def merge_node(state):
     synthesis = f"""📍 **{city}**
 
 Great! I've planned a {days}-day {budget_description} {city} trip for {travelers} traveler(s) (style: {travel_style}) who enjoy {interests}.
-This itinerary focuses on {interests} attractions, budget-appropriate stays, and local dining while keeping your total budget {budget_limit_text}.
 
-🌤 **Weather**
+🌤 **Weather in {city}**
 {sections.get('weather', 'Not available')}
 
-🏨 **Hotels**
-{sections.get('hotels', 'Not available')}
-
-🍽 **Restaurants**
-{sections.get('restaurants', 'Not available')}
-
-🗺 **Attractions**
-{sections.get('places', 'Not available')}
+📅 **Itinerary Schedule**
 {calendar_formatted}
+
 💰 **Estimated Budget**
-- Accommodation: Budget appropriate
-- Food & Dining: Budget appropriate
-- Travel & Sightseeing: Budget appropriate
+- Accommodation: {budget_description.title()} stays
+- Food & Dining: {budget_description.title()} dining
 - **Total Estimated**: {budget_limit_text}
-"""
+
+*(Note: You can view details and comparison options for recommended hotels, dining spots, and attractions in the panels below. Select an action to proceed.)*"""
+
     update_guided_state("last_itinerary", synthesis)
 
     return {

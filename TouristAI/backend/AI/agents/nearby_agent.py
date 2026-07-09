@@ -198,13 +198,21 @@ def get_places_from_google(city: str, interests: str) -> str | None:
         if data and data.get("places"):
             print("Google Places API call successful, found nearby places.")
             lines = []
+            places_data = []
+
             for i, place in enumerate(data["places"][:10], 1):
+                attraction_id = place.get("id", f"mock-attraction-{i}")
                 name = place.get("displayName", {}).get("text", "N/A")
                 rating = place.get("rating", "N/A")
                 num_reviews = place.get("userRatingCount", 0)
                 address = place.get("formattedAddress", "Address not available")
                 website = place.get("websiteUri", "Not available")
                 photo_url = None
+
+                # Get coordinates
+                loc = place.get("location", {})
+                lat = loc.get("latitude")
+                lng = loc.get("longitude")
 
                 item_lines = [f"**{name}**"]
                 item_lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
@@ -216,9 +224,9 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                     item_lines.append(f"📞 Phone: {phone}")
 
                 hours = (
-                place.get("currentOpeningHours", {}).get("weekdayDescriptions")
-                or place.get("regularOpeningHours", {}).get("weekdayDescriptions")
-                or []
+                    place.get("currentOpeningHours", {}).get("weekdayDescriptions")
+                    or place.get("regularOpeningHours", {}).get("weekdayDescriptions")
+                    or []
                 )
 
                 if hours:
@@ -247,25 +255,27 @@ def get_places_from_google(city: str, interests: str) -> str | None:
 
                 # Accessibility options
                 accessibility = place.get("accessibilityOptions", {})
-                access_info = [
-                    "wheelchair accessible parking" for k, v in accessibility.items() if k == "wheelchairAccessibleParking" and v
-                ] + [
-                    "wheelchair accessible entrance" for k, v in accessibility.items() if k == "wheelchairAccessibleEntrance" and v
-                ]
-                if access_info:
-                    item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
+                if accessibility:
+                    access_info = [
+                        "wheelchair accessible parking" for k, v in accessibility.items() if k == "wheelchairAccessibleParking" and v
+                    ] + [
+                        "wheelchair accessible entrance" for k, v in accessibility.items() if k == "wheelchairAccessibleEntrance" and v
+                    ]
+                    if access_info:
+                        item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
 
                 # Payment options
                 payment = place.get("paymentOptions", {})
-                payment_methods = [
-                    "credit cards" for k, v in payment.items() if k == "acceptsCreditCards" and v
-                ] + [
-                    "debit cards" for k, v in payment.items() if k == "acceptsDebitCards" and v
-                ] + [
-                    "cash only" for k, v in payment.items() if k == "acceptsCashOnly" and v
-                ]
-                if payment_methods:
-                    item_lines.append(f"💳 Accepts {', '.join(payment_methods)}")
+                if payment:
+                    payment_methods = [
+                        "credit cards" for k, v in payment.items() if k == "acceptsCreditCards" and v
+                    ] + [
+                        "debit cards" for k, v in payment.items() if k == "acceptsDebitCards" and v
+                    ] + [
+                        "cash only" for k, v in payment.items() if k == "acceptsCashOnly" and v
+                    ]
+                    if payment_methods:
+                        item_lines.append(f"💳 Accepts {', '.join(payment_methods)}")
 
                 if address != "Address not available":
                     map_query = urllib.parse.quote_plus(address)
@@ -279,8 +289,22 @@ def get_places_from_google(city: str, interests: str) -> str | None:
                     item_lines.append(f"![{name}]({photo_url})")
 
                 lines.append(f"{i}. {chr(10).join(item_lines)}")
+
+                places_data.append({
+                    "attraction_id": attraction_id,
+                    "name": name,
+                    "rating": rating if isinstance(rating, (int, float)) else 4.2,
+                    "reviews": num_reviews,
+                    "address": address,
+                    "website": website,
+                    "latitude": lat,
+                    "longitude": lng,
+                    "types": place.get("types", []),
+                    "hours": hours,
+                    "editorial": editorial or ""
+                })
             
-            return "\n".join(lines)
+            return {"text": "\n".join(lines), "data": places_data}
         else:
             print(f"Google Places API returned no nearby places. Response: {data}")
             return None
@@ -317,11 +341,11 @@ def nearby_agent(question, city="None", interests="None"):
         # Save the successful Google response to RAG for future queries
         try:
             from rag_service import save_to_rag
-            save_to_rag(question, google_results)
+            save_to_rag(question, google_results["text"])
             print("✅ Saved Google Places response to RAG.")
         except Exception as e:
             print(f"⚠️ Could not save Google response to RAG: {e}")
-        return {"source": "google_places", "answer": google_results}
+        return {"source": "google_places", "answer": google_results["text"], "data": google_results["data"]}
 
     # 4. Final fallback to Groq LLM
     print("⚠️ All place APIs failed. Falling back to Groq LLM.")

@@ -298,19 +298,6 @@ def chat(req: ChatRequest):
         updated_items_json = json.dumps([item.dict() for item in itinerary_items])
         update_guided_state("last_itinerary_items", updated_items_json)
         
-        # 3. Save Trip & ItineraryItems to database immediately
-        calendar_service.save_itinerary(trip_obj, itinerary_items)
-        
-        # 4. Seamless automatic Google Calendar sync if already authenticated (or in simulated mode)!
-        synced = False
-        gcal_service = GoogleCalendarService(user_id=req.user_id or "guest_user")
-        if gcal_service.is_authenticated() or not gcal_service.is_configured():
-            try:
-                sync_res = calendar_service.sync_to_google_calendar(trip_id, start_date_str=travel_date)
-                synced = sync_res.get("success", False)
-            except Exception as e:
-                print(f"Error executing automatic calendar sync on generation: {e}")
-                
         trip_response = {
             "trip_id": trip_id,
             "city": city.title(),
@@ -328,16 +315,10 @@ def chat(req: ChatRequest):
             "restaurants": restaurants,
             "itinerary": real_itinerary,
             "calendar": {
-                "saved": True,
-                "synced": synced
+                "saved": False,
+                "synced": False
             }
         }
-        
-        # Save enriched details metadata
-        calendar_service.repo.save_trip_details(trip_id, trip_response)
-        
-        # Save initial version snapshot
-        calendar_service.repo.save_trip_version(trip_id, 1, updated_items_json)
         
         return {
             "status": "success",

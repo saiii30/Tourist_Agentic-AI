@@ -15,6 +15,18 @@ class ItineraryItem(BaseModel):
     notes: Optional[str] = Field(None, description="Additional context or descriptions")
     activity_id: Optional[str] = None
     google_event_id: Optional[str] = None
+    hotel_id: Optional[str] = None
+    restaurant_id: Optional[str] = None
+    attraction_id: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    start_datetime: Optional[str] = None
+    end_datetime: Optional[str] = None
+    travel_time: Optional[str] = None
+    transport: Optional[str] = None
+    estimated_cost: Optional[float] = None
+    status: Optional[str] = "pending"
+
 
 class Trip(BaseModel):
     trip_id: str
