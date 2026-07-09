@@ -9,6 +9,8 @@ class AgentState(TypedDict):
     answer: str
     city: str
     days: int
+    destination: str
+    travel_date : str
     budget: str
     travelers: int
     travel_style: str

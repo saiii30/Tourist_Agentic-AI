@@ -10,6 +10,7 @@ from agents.nearby_agent import nearby_agent
 from agents.weather_agent import weather_agent
 from agents.general_agent import general_agent
 from agents.calendar_agent import calendar_agent
+from agents.transport_agent import transport_agent
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "graph"))
@@ -100,13 +101,33 @@ def restaurant_node(state):
     }
 
 
-def hotel_node(state):
-    answer = hotel_agent(state["question"], state.get("city", "None"), state.get("budget", "None"), state.get("travelers", 1))
+def restaurant_node(state):
+    answer = restaurant_agent(state["question"], state.get("city", "None"), state.get("interests", "None"), state.get("budget", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
+    source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
 
     return {
         "responses": [
-            f"Hotel suggestions:\n{text}"
+            f"Restaurant suggestions:\n{text}\n[SOURCE:{source}]"
+        ]
+    }
+
+
+def hotel_node(state):
+    answer = hotel_agent(state["question"], state.get("city", "None"), state.get("budget", "None"), state.get("travelers", 1))
+    
+    # The hotel_agent returns a dictionary with different keys based on the source.
+    # We need to extract the relevant text from 'hotels' or 'answer'.
+    if isinstance(answer, dict):
+        text = answer.get("hotels") or answer.get("answer") or answer.get("message", "Could not retrieve hotel info.")
+        source = answer.get("source", "Groq")
+    else:
+        text = str(answer)
+        source = "Groq"
+
+    return {
+        "responses": [
+            f"Hotel suggestions:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
@@ -114,10 +135,11 @@ def hotel_node(state):
 def nearby_node(state):
     answer = nearby_agent(state["question"], state.get("city", "None"), state.get("interests", "None"))
     text = answer.get("answer") if isinstance(answer, dict) else answer
+    source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
 
     return {
         "responses": [
-            f"Nearby Places to visit:\n{text}"
+            f"Nearby Places to visit:\n{text}\n[SOURCE:{source}]"
         ]
     }
 
@@ -133,14 +155,38 @@ def weather_node(state):
 
 
 def general_node(state):
-    answer = general_agent(state["question"])
+    answer = general_agent(state)
 
     return {
         "responses": [
-            f"{answer}"
+            f"{answer.get('answer')}\n[SOURCE:{answer.get('source', 'Groq')}]"
         ]
     }
 
+def transport_node(state):
+    # Extract source, destination, and date from the state if available
+    # The supervisor logic for guided trips populates these.
+    # For stateless queries, we can enhance `extract_query_details` to find them.
+    source_city = state.get("city", "None") # 'city' is often used as the primary location/source
+    destination_city = state.get("destination", "None")
+    travel_date = state.get("travel_date", "None")
+
+    answer = transport_agent(
+        state["question"],
+        source=source_city,
+        destination=destination_city,
+        date=travel_date
+    )
+
+    # The transport_agent can return a string or a dict. We need to handle both.
+    text = answer.get("answer") if isinstance(answer, dict) else str(answer)
+    source = answer.get("source", "transport_api") if isinstance(answer, dict) else "Groq"
+
+    return {
+        "responses": [
+            f"Transport options:\n{text}\n[SOURCE:{source}]"
+        ]
+    }
 
 def calendar_node(state):
     answer = calendar_agent(
@@ -321,6 +367,11 @@ builder.add_node(
     nearby_node
 )
 
+builder.add_node(
+    "train",
+    transport_node
+)
+
 
 builder.add_node(
     "weather",
@@ -382,6 +433,10 @@ builder.add_edge(
 
 builder.add_edge(
     "nearby",
+    "merge"
+)
+builder.add_edge(
+    "train",
     "merge"
 )
 
