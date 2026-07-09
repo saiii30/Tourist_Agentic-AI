@@ -112,30 +112,35 @@ def call_groq(question):
 
     return response.choices[0].message.content
 
-
-def get_answer(question):
+def get_answer(question, check_rag_only=False):
     """
-    Flow:
-    1. Search FAISS
-    2. If found -> return answer
-    3. Else call Groq
-    4. Save response to FAISS
+    If check_rag_only=True:
+        Search only in RAG.
+
+    If check_rag_only=False:
+        Skip RAG and directly call Groq.
     """
 
-    rag_answer = search_data(question)
+    if check_rag_only:
+        rag_answer = search_data(question)
 
-    if rag_answer:
-        print("Answer from RAG")
-        return {"answer": rag_answer, "source": "RAG"}
+        if rag_answer:
+            print("Answer from RAG")
+            return {
+                "answer": rag_answer,
+                "source": "RAG"
+            }
 
-    print("No data in RAG. Calling Groq.")
+        return None
+
+    print("Skipping RAG. Calling Groq.")
 
     answer = call_groq(question)
 
     if answer:
-        save_to_rag(
-            question,
-            answer
-        )
+        save_to_rag(question, answer)
 
-    return {"answer": answer, "source": "Groq"}
+    return {
+        "answer": answer,
+        "source": "Groq"
+    }
