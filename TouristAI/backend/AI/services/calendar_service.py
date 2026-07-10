@@ -216,6 +216,12 @@ class CalendarService:
                 start_dt = datetime(event_date.year, event_date.month, event_date.day, sh, sm)
                 end_dt = datetime(event_date.year, event_date.month, event_date.day, eh, em)
 
+                # Handle events crossing midnight or zero-duration events to avoid Google Calendar timeRangeEmpty errors
+                if end_dt < start_dt:
+                    end_dt += timedelta(days=1)
+                elif end_dt == start_dt:
+                    end_dt += timedelta(minutes=30)
+
                 description = f"{item.notes or ''}"
                 if item.restaurant:
                     description += f"\nRecommended Restaurant: {item.restaurant}"

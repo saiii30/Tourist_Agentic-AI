@@ -25,54 +25,32 @@ def calendar_preview_node(state: Dict[str, Any]) -> Dict[str, Any]:
         trip_id = str(uuid.uuid4())
         update_guided_state("trip_id", trip_id)
 
-    # Get itinerary from database or from last_itinerary
-    last_itinerary = g_state.get("last_itinerary", "")
-    items = calendar_service.repo.get_itinerary_items(trip_id)
-    
+    # Get itinerary from SQLite guided state cache
+    cached_items_json = g_state.get("last_itinerary_items")
+    items = []
+    if cached_items_json:
+        import json
+        try:
+            raw_items = json.loads(cached_items_json)
+            items = [ItineraryItem(**item) for item in raw_items]
+        except Exception as e:
+            print(f"Error loading cached itinerary items: {e}")
+
+    # Fallback to DB if SQLite cache is empty
+    if not items and trip_id:
+        items = calendar_service.repo.get_itinerary_items(trip_id)
+
     if items:
         # Render markdown from structured items to ensure consistency
         itinerary_md = calendar_service.render_itinerary_to_markdown(items)
     else:
-        itinerary_md = last_itinerary
-        # Parse it now to cache structured records in database
-        if itinerary_md:
-            parsed_items = []
-            cached_items_json = g_state.get("last_itinerary_items")
-            if cached_items_json:
-                import json
-                try:
-                    raw_items = json.loads(cached_items_json)
-                    parsed_items = [ItineraryItem(**item) for item in raw_items]
-                except Exception as e:
-                    print(f"Error loading cached itinerary items: {e}")
-                    
-            if parsed_items:
-                trip = Trip(
-                    trip_id=trip_id,
-                    user_id="guest_user",
-                    city=g_state.get("destination", state.get("city", "None")),
-                    days=int(g_state.get("days", state.get("days", 3))),
-                    budget=g_state.get("budget", state.get("budget", "Budget")),
-                    travel_style=g_state.get("travel_style", state.get("travel_style", "Solo")),
-                    travelers=int(g_state.get("travelers", state.get("travelers", 1))),
-                    interests=g_state.get("interests", state.get("interests", "None")),
-                    status="draft",
-                    created_at=datetime.now().isoformat(),
-                    updated_at=datetime.now().isoformat()
-                )
-                calendar_service.save_itinerary(trip, parsed_items)
+        itinerary_md = g_state.get("last_itinerary", "")
 
     # Clean up markdown output
-    preview_message = (
-        f"{itinerary_md}\n\n"
-        "**What would you like to do next?**\n\n"
-        "1. **Save Itinerary**\n"
-        "2. **Modify Itinerary** (e.g. *'Replace Boat House with Avalanche Lake'*, *'Add shopping in evening'*)\n"
-        "3. **Regenerate Itinerary**"
-    )
+    preview_message = itinerary_md
 
     update_guided_state("last_itinerary", itinerary_md)
-    update_guided_state("awaiting_preview_action", "1")
+    update_guided_state("trip_status", "preview")
 
     return {
         "answer": preview_message,
@@ -84,6 +62,13 @@ def modify_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Modifies specific activities in the itinerary based on natural language instructions.
     """
+    if state["question"].strip().lower() in ["2", "modify", "modify itinerary"]:
+        return {
+            "answer": "What would you like to modify in your itinerary? Please specify the change (e.g., *'Replace Charminar with Golconda Fort'*, or *'Add shopping on day 1'*).",
+            "responses": [],
+            "routes": []
+        }
+
     g_state = get_guided_state()
     trip_id = g_state.get("trip_id")
     
@@ -91,39 +76,45 @@ def modify_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
         trip_id = str(uuid.uuid4())
         update_guided_state("trip_id", trip_id)
 
-    items = calendar_service.repo.get_itinerary_items(trip_id)
-    if not items:
-        # Fallback to parsing from cached items
-        cached_items_json = g_state.get("last_itinerary_items")
-        if cached_items_json:
-            import json
-            try:
-                raw_items = json.loads(cached_items_json)
-                items = [ItineraryItem(**item) for item in raw_items]
-            except Exception as e:
-                print(f"Error loading cached itinerary items: {e}")
-                items = []
-        else:
-            items = []
+    # Read from SQLite guided state cache
+    cached_items_json = g_state.get("last_itinerary_items")
+    items = []
+    if cached_items_json:
+        import json
+        try:
+            raw_items = json.loads(cached_items_json)
+            items = [ItineraryItem(**item) for item in raw_items]
+        except Exception as e:
+            print(f"Error loading cached itinerary items: {e}")
+
+    # Fallback to DB
+    if not items and trip_id:
+        items = calendar_service.repo.get_itinerary_items(trip_id)
 
     # Perform natural language modification
     modified_items = itinerary_service.modify_itinerary(items, state["question"])
     
-    # Save modified items
-    trip = Trip(
-        trip_id=trip_id,
-        user_id="guest_user",
-        city=g_state.get("destination", state.get("city", "None")),
-        days=int(g_state.get("days", state.get("days", 3))),
-        budget=g_state.get("budget", state.get("budget", "Budget")),
-        travel_style=g_state.get("travel_style", state.get("travel_style", "Solo")),
-        travelers=int(g_state.get("travelers", state.get("travelers", 1))),
-        interests=g_state.get("interests", state.get("interests", "None")),
-        status="draft",
-        created_at=datetime.now().isoformat(),
-        updated_at=datetime.now().isoformat()
-    )
-    calendar_service.save_itinerary(trip, modified_items)
+    # Convert modified items back to dicts and save to SQLite guided state cache
+    modified_dicts = [item.dict() for item in modified_items]
+    import json
+    update_guided_state("last_itinerary_items", json.dumps(modified_dicts))
+
+    # If the trip was already saved in PostgreSQL, update it there too
+    if trip_id and calendar_service.repo.get_itinerary_items(trip_id):
+        trip = Trip(
+            trip_id=trip_id,
+            user_id="guest_user",
+            city=g_state.get("destination", state.get("city", "None")),
+            days=int(g_state.get("days", state.get("days", 3))),
+            budget=g_state.get("budget", state.get("budget", "Budget")),
+            travel_style=g_state.get("travel_style", state.get("travel_style", "Solo")),
+            travelers=int(g_state.get("travelers", state.get("travelers", 1))),
+            interests=g_state.get("interests", state.get("interests", "None")),
+            status="saved",
+            created_at=datetime.now().isoformat(),
+            updated_at=datetime.now().isoformat()
+        )
+        calendar_service.save_itinerary(trip, modified_items)
 
     # Render modified itinerary back to markdown and preview it
     itinerary_md = calendar_service.render_itinerary_to_markdown(modified_items)
@@ -181,8 +172,7 @@ def save_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
     calendar_service.save_itinerary(trip, items)
     
     # Save confirmation
-    update_guided_state("awaiting_preview_action", "0")
-    update_guided_state("awaiting_google_sync", "1")
+    update_guided_state("trip_status", "calendar_sync")
 
     msg = (
         f"✅ **Itinerary Saved Successfully!**\n\n"
@@ -211,7 +201,7 @@ def google_calendar_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # If the user replies "no" to calendar integration
     question_lower = state["question"].strip().lower()
     if question_lower in ["no", "nope", "don't", "cancel", "nay"]:
-        update_guided_state("awaiting_google_sync", "0")
+        update_guided_state("trip_status", "completed")
         return {
             "answer": "No problem! Your itinerary is saved in the local database. Have a safe trip!",
             "responses": [],
@@ -238,7 +228,7 @@ def google_calendar_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     # Successful sync
-    update_guided_state("awaiting_google_sync", "0")
+    update_guided_state("trip_status", "completed")
     success_msg = (
         "📅 **Google Calendar Sync Successful!**\n\n"
         "I have added all activities of your trip to your primary Google Calendar! "
@@ -261,22 +251,23 @@ def regenerate_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
         trip_id = str(uuid.uuid4())
         update_guided_state("trip_id", trip_id)
 
-    items = calendar_service.repo.get_itinerary_items(trip_id)
-    if not items:
-        cached_items_json = g_state.get("last_itinerary_items")
-        if cached_items_json:
-            import json
-            try:
-                raw_items = json.loads(cached_items_json)
-                items = [ItineraryItem(**item) for item in raw_items]
-            except Exception as e:
-                print(f"Error loading cached itinerary items: {e}")
-                items = []
-        else:
-            items = []
+    # Read from SQLite guided state cache
+    cached_items_json = g_state.get("last_itinerary_items")
+    items = []
+    if cached_items_json:
+        import json
+        try:
+            raw_items = json.loads(cached_items_json)
+            items = [ItineraryItem(**item) for item in raw_items]
+        except Exception as e:
+            print(f"Error loading cached itinerary items: {e}")
+
+    # Fallback to DB
+    if not items and trip_id:
+        items = calendar_service.repo.get_itinerary_items(trip_id)
 
     trip = Trip(
-        trip_id=trip_id,
+        trip_id=trip_id or str(uuid.uuid4()),
         user_id="guest_user",
         city=g_state.get("destination", state.get("city", "None")),
         days=int(g_state.get("days", state.get("days", 3))),
@@ -291,7 +282,11 @@ def regenerate_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # Regenerate a different itinerary
     regenerated_items = itinerary_service.regenerate_itinerary(trip, items)
-    calendar_service.save_itinerary(trip, regenerated_items)
+    
+    # Update SQLite guided state cache
+    regenerated_dicts = [item.dict() for item in regenerated_items]
+    import json
+    update_guided_state("last_itinerary_items", json.dumps(regenerated_dicts))
 
     # Format new draft
     itinerary_md = calendar_service.render_itinerary_to_markdown(regenerated_items)

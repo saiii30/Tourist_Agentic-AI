@@ -221,13 +221,11 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
         print(json.dumps(data, indent=2))
         print("=====================================\n")
 
-        if not data.get("places"):
-            print("⚠️ No restaurants found.")
-            return None
-
         lines = []
+        rests_data = []
 
         for i, place in enumerate(data["places"][:10], 1):
+            rest_id = place.get("id", f"mock-rest-{i}")
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
             reviews = place.get("userRatingCount", 0)
@@ -236,11 +234,15 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
             website = place.get("websiteUri", "Not available")
             photo_urls = []
 
+            # Get coordinates
+            loc = place.get("location", {})
+            lat = loc.get("latitude")
+            lng = loc.get("longitude")
+
             if website:
                 print(f"Getting images from: {website}")
                 photo_urls = get_image_from_website(website, max_images=20)
                 print("Images:", photo_urls)
-
 
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
@@ -318,7 +320,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
                 place.get("currentOpeningHours", {}).get("weekdayDescriptions")
                 or place.get("regularOpeningHours", {}).get("weekdayDescriptions")
                 or []
-                )
+            )
 
             if hours:
                 item_lines.append("🕒 Hours:")
@@ -339,9 +341,26 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
 
             lines.append(f"{i}. {chr(10).join(item_lines)}")
 
+            rests_data.append({
+                "restaurant_id": rest_id,
+                "name": name,
+                "rating": rating if isinstance(rating, (int, float)) else 4.2,
+                "reviews": reviews,
+                "address": address,
+                "website": website,
+                "latitude": lat,
+                "longitude": lng,
+                "price": price,
+                "serves_breakfast": bool(place.get("servesBreakfast")),
+                "serves_lunch": bool(place.get("servesLunch")),
+                "serves_dinner": bool(place.get("servesDinner")),
+                "serves_vegetarian": bool(place.get("servesVegetarianFood")),
+                "hours": hours
+            })
+
         print("✅ Google Places API call successful.")
 
-        return "\n".join(lines)
+        return {"text": "\n".join(lines), "data": rests_data}
 
     except urllib.error.HTTPError as e:
         print("\n========== GOOGLE HTTP ERROR ==========")
@@ -398,11 +417,11 @@ def restaurant_agent(
         # Save the successful Google response to RAG for future queries
         try:
             from rag_service import save_to_rag
-            save_to_rag(question, google_results)
+            save_to_rag(question, google_results["text"])
             print("✅ Saved Google Places response to RAG.")
         except Exception as e:
             print(f"⚠️ Could not save Google response to RAG: {e}")
-        return {"source": "google_places", "answer": google_results}
+        return {"source": "google_places", "answer": google_results["text"], "data": google_results["data"]}
 
     # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
     print("⚠️ Google Places API also failed. Falling back to Groq LLM.")

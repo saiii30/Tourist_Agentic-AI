@@ -99,12 +99,15 @@ class TripRepository:
             for item in items:
                 cursor.execute("""
                     INSERT INTO itineraries 
-                    (trip_id, day, start_time, end_time, activity, location, category, restaurant, hotel, notes, activity_id, google_event_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (trip_id, day, start_time, end_time, activity, location, category, restaurant, hotel, notes, activity_id, google_event_id,
+                     hotel_id, restaurant_id, attraction_id, latitude, longitude, start_datetime, end_datetime, travel_time, transport, estimated_cost, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     trip_id, item.day, item.start_time, item.end_time, item.activity,
                     item.location, item.category, item.restaurant, item.hotel, item.notes,
-                    item.activity_id or str(uuid.uuid4()), item.google_event_id
+                    item.activity_id or str(uuid.uuid4()), item.google_event_id,
+                    item.hotel_id, item.restaurant_id, item.attraction_id, item.latitude, item.longitude,
+                    item.start_datetime, item.end_datetime, item.travel_time, item.transport, item.estimated_cost, item.status
                 ))
             conn.commit()
         except Exception as e:

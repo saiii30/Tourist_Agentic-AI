@@ -379,6 +379,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
     url = "https://places.googleapis.com/v1/places:searchText"
 
     field_mask = (
+        "places.id,"
         "places.displayName,"
         "places.rating,"
         "places.userRatingCount,"
@@ -387,7 +388,8 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
         "places.photos,"
         "places.regularOpeningHours,"
         "places.currentOpeningHours,"
-        "places.parkingOptions"
+        "places.parkingOptions,"
+        "places.location"
     )
 
     payload = {
@@ -419,14 +421,21 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
             return None
 
         lines = []
+        hotels_data = []
 
         for i, place in enumerate(data["places"][:10], 1):
             print(place)
+            hotel_id = place.get("id", f"mock-hotel-{i}")
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
             reviews = place.get("userRatingCount", 0)
             address = place.get("formattedAddress", "Address not available")
             website = place.get("websiteUri", "Not available")
+
+            # Get coordinates
+            loc = place.get("location", {})
+            lat = loc.get("latitude")
+            lng = loc.get("longitude")
 
             # -----------------------
             # Opening / closing hours
@@ -522,9 +531,37 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
 
             lines.append(f"{i}. {chr(10).join(item_lines)}")
 
+            # Budget estimation
+            price_night = 3000
+            if budget:
+                b_low = budget.lower()
+                if "luxury" in b_low:
+                    price_night = 9000
+                elif "budget" in b_low:
+                    price_night = 1500
+                elif "moderate" in b_low:
+                    price_night = 4000
+
+            hotels_data.append({
+                "hotel_id": hotel_id,
+                "name": name,
+                "rating": rating if isinstance(rating, (int, float)) else 4.2,
+                "reviews": reviews,
+                "address": address,
+                "website": website,
+                "latitude": lat,
+                "longitude": lng,
+                "pricePerNight": price_night,
+                "amenities": room_details["amenities"] or ["Free Wi-Fi", "Room Service"],
+                "room_types": room_details["room_types"] or ["Standard Room"],
+                "parking": google_parking_text or room_details["parking"] or "Not specified",
+                "photos": photo_urls,
+                "booking_url": website if website != "Not available" else "https://booking.com"
+            })
+
         print("✅ Hotels fetched successfully.")
 
-        return "\n".join(lines)
+        return {"text": "\n".join(lines), "data": hotels_data}
 
     except urllib.error.HTTPError as e:
         print("Status:", e.code)
@@ -559,11 +596,11 @@ def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None,
         # Save the successful Google response to RAG for future queries
         try:
             from rag_service import save_to_rag
-            save_to_rag(question, google_results)
+            save_to_rag(question, google_results["text"])
             print("✅ Saved Google Places response to RAG.")
         except Exception as e:
             print(f"⚠️ Could not save Google response to RAG: {e}")
-        return {"source": "google_places", "hotels": google_results}
+        return {"source": "google_places", "hotels": google_results["text"], "data": google_results["data"]}
 
     # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
     print("⚠️ Google Places API also failed. Falling back to Groq LLM.")

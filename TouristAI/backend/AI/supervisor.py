@@ -494,6 +494,43 @@ def route_question(state, details=None):
     question = state["question"].strip()
     question_lower = question.lower()
 
+    g_state = get_guided_state()
+    trip_status = g_state.get("trip_status")
+
+    # If active preview lifecycle, handle previews first to avoid keyword collisions
+    if trip_status == "preview":
+        if any(kw in question_lower for kw in ["reset", "start over", "new trip"]):
+            clear_guided_state()
+        elif any(kw in question_lower for kw in ["save", "keep", "1"]):
+            return ["save_itinerary"]
+        elif any(kw in question_lower for kw in ["regenerate", "redo", "recreate", "3"]):
+            return ["regenerate_itinerary"]
+        elif any(kw in question_lower for kw in ["delete", "remove", "cancel", "discard"]):
+            return ["delete_itinerary"]
+        else:
+            # Check if it is a modification request or a standalone informational question
+            modification_verbs = [
+                "replace", "change", "add", "remove", "delete", "swap", 
+                "instead", "modify", "update", "put", "insert", "move", "shift",
+                "prefer", "want", "like to"
+            ]
+            is_modification = any(verb in question_lower for verb in modification_verbs)
+            
+            # If it contains keywords for information search but no modification verb, allow it to fall through to normal agent routing
+            info_keywords = ["list", "show", "find", "suggest", "recommend", "weather", "restaurant", "hotel", "attraction", "place", "how to get", "train", "flight", "bus"]
+            is_info_query = any(kw in question_lower for kw in info_keywords)
+            
+            if not is_modification and is_info_query:
+                pass  # Fall through to normal agent routing
+            else:
+                return ["modify_itinerary"]
+
+    elif trip_status == "calendar_sync":
+        if any(kw in question_lower for kw in ["reset", "start over", "new trip"]):
+            clear_guided_state()
+        else:
+            return ["google_calendar"]
+
     # Move general question check to the very top to bypass planning triggers
     if details and not details.get("requires_city", True):
         return ["general"]
