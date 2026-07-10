@@ -385,6 +385,19 @@ def get_next_missing_field(g_state: dict) -> tuple[str, str]:
     return None, None
 
 def route_question(state, details=None):
+    # changes added discoveagent from this
+    discover_keywords = [
+    "places near",
+    "places to visit",
+    "tourist attractions",
+    "tourist places",
+    "things to do",
+    "must visit",
+    "sightseeing",
+    "explore",
+    "discover"
+]
+    # //changes added discoveragent until this//
     question = state["question"].strip()
     question_lower = question.lower()
 
@@ -414,8 +427,16 @@ def route_question(state, details=None):
     # Move general question check to the very top to bypass planning triggers
     if details and not details.get("requires_city", True):
         return ["general"]
+    
+    #changes added for attractions discoveragent
+    
+    if any(keyword in question_lower for keyword in discover_keywords):
+     print("ROUTING TO DISCOVER AGENT")
+     return ["discover"]
 
+    
     # 1. Start Trip Planning triggers (detect any of these keywords to initiate flow)
+    
     start_keywords = [
         "trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"
     ]
@@ -426,8 +447,22 @@ def route_question(state, details=None):
         if not is_single_topic:
             if details is None:
                 details = extract_query_details(question)
-            if details.get("city") != "None" and details.get("requires_city", True):
-                is_start = True
+                # commented below two lines and changed code for discoveragent
+            # if details.get("city") != "None" and details.get("requires_city", True):
+            #     is_start = True
+            if (details.get("city") != "None" and matches_keywords(
+        question_lower,
+        [
+            "trip",
+            "plan",
+            "itinerary",
+            "vacation",
+            "holiday"
+        ]
+    )
+):
+               is_start = True
+            #    discover agent code changes until this
     
     g_state = get_guided_state()
     is_active = g_state.get("is_active") == "1"

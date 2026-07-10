@@ -19,13 +19,17 @@ import {
   Activity as ActivityIcon, PhoneCall, Wallet, CheckSquare, Square
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import axios from "axios";
+import AttractionsTab from "../components/planner/AttractionsTab";
+import CityCrowdMeter from "../components/CityCrowdMeter";
 
-type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Map" | "Budget" | "Notes";
+
+type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Attractions" | "Map" | "Budget" | "Notes";
 
 export const TripPlanner: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { activeTrip, updateActiveTrip, generateNewMockTrip, saveTrip, syncCalendar } = useTravelPlanner();
+  const { activeTrip, updateActiveTrip, generateNewMockTrip, saveTrip, syncCalendar, overviewCrowdCity } = useTravelPlanner();
 
   // Page load and active workspace tab
   const [activeTab, setActiveTab] = useState<PlannerTab>("Overview");
@@ -44,6 +48,48 @@ export const TripPlanner: React.FC = () => {
 
   // Offline status simulator
   const [isOffline, setIsOffline] = useState(false);
+
+  //added new code for attractions
+  // Attractions tab (discover agent) state
+const [attractionsMd, setAttractionsMd] = useState<string | null>(null);
+const [attractionsLoading, setAttractionsLoading] = useState(false);
+const [, setAttractionsError] = useState<string | null>(null);
+
+useEffect(() => {
+  if (activeTab !== "Attractions") return;
+  if (!activeTrip?.cityName) return;
+  if (attractionsMd || attractionsLoading) return;
+
+  const controller = new AbortController();
+  (async () => {
+    setAttractionsLoading(true);
+    setAttractionsError(null);
+    try {
+      const res = await axios.post(
+        "http://localhost:8000/chat",
+        { question: `places to visit near ${activeTrip.cityName}` },
+        { signal: controller.signal as any }
+      );
+      setAttractionsMd(res.data.answer || "No attractions found.");
+    } catch (e: any) {
+      if (e.name !== "CanceledError" && e.name !== "AbortError") {
+        setAttractionsError("Could not load attractions. Is the backend running?");
+      }
+    } finally {
+      setAttractionsLoading(false);
+    }
+  })();
+
+  return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeTab, activeTrip?.cityName]);
+
+// If the city changes, invalidate cached attractions
+useEffect(() => {
+  setAttractionsMd(null);
+  setAttractionsError(null);
+}, [activeTrip?.cityName]);
+//until this attractions code
 
   // Toast status states
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -280,6 +326,8 @@ export const TripPlanner: React.FC = () => {
     triggerToast("Itinerary Regenerated Successfully", "success");
   };
 
+  const cityForOverallCrowd = overviewCrowdCity || activeTrip?.cityName || "";
+
   return (
     <div className="flex-1 flex flex-col min-w-0 relative bg-slate-50 dark:bg-[#0b0f19]">
 
@@ -396,7 +444,11 @@ export const TripPlanner: React.FC = () => {
           <div className="p-4 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3.5 bg-white dark:bg-[#111827]">
             {[
               { label: "Rating", val: "⭐ 4.8", color: "text-amber-500" },
-              { label: "Attractions", val: "📍 12 Places", color: "text-sky-505 text-sky-600" },
+              {
+                label: "Attractions",
+                val: `📍 ${activeTrip.attractions.length} ${activeTrip.attractions.length === 1 ? "Place" : "Places"}`,
+                color: "text-sky-505 text-sky-600"
+              },
               { label: "Restaurants", val: "🍽 8 Dinings", color: "text-rose-505 text-rose-600" },
               { label: "Hotels", val: "🏨 1 Stay", color: "text-teal-505 text-teal-600" },
               { label: "Distance", val: "🚗 38 km", color: "text-slate-600" },
@@ -414,7 +466,7 @@ export const TripPlanner: React.FC = () => {
 
         {/* ──────── 3. WORKSPACE TABS SELECTOR ──────── */}
         <div className="flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar pb-px">
-          {(["Overview", "Itinerary", "Hotels", "Restaurants", "Map", "Budget", "Notes"] as const).map((tab) => {
+          {(["Overview", "Itinerary", "Hotels", "Restaurants", "Attractions","Map", "Budget", "Notes"] as const).map((tab) => {
             const active = activeTab === tab;
             return (
               <button
@@ -562,6 +614,10 @@ export const TripPlanner: React.FC = () => {
                       </div>
                     );
                   })()}
+
+                  <div className="p-5 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm">
+                    <CityCrowdMeter city={cityForOverallCrowd} />
+                  </div>
 
                   {/* Currency Converter */}
                   <div className="p-5 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm space-y-3">
@@ -780,6 +836,81 @@ export const TripPlanner: React.FC = () => {
                 ))}
               </motion.div>
             )}
+
+            {/* //adding new code for attractions */}
+            {/* TAB: ATTRACTIONS (Discover Agent) */}
+{/*             
+{activeTab === "Attractions" && (
+
+
+  <motion.div
+    key="tab-attractions"
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -10 }}
+    className="max-w-4xl mx-auto text-left"
+  >
+    <div className="p-5 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-heading text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+            <MapPin className="w-4.5 h-4.5 text-teal-600" />
+            Attractions near {activeTrip.cityName}
+          </h3>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+            Live crowd predictions, Wikipedia photos, and inline maps — powered by the Discover Agent.
+          </p>
+        </div>
+        <button
+          onClick={() => { setAttractionsMd(null); }}
+          className="px-3 py-1.5 text-[10px] font-bold rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {attractionsLoading && (
+        <div className="flex items-center gap-2 text-xs text-slate-500 py-6">
+          <Sparkles className="w-4 h-4 animate-spin text-teal-600" />
+          Loading attractions for {activeTrip.cityName}…
+        </div>
+      )}
+
+      {attractionsError && !attractionsLoading && (
+        <div className="text-xs text-rose-600 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 p-3 rounded-xl">
+          {attractionsError}
+        </div>
+      )}
+
+      {!attractionsLoading && !attractionsError && attractionsMd && (
+        <DiscoverMarkdown text={attractionsMd} defaultCity={activeTrip.cityName} />
+      )}
+    </div>
+  </motion.div>
+)} */}
+
+{/* //added new code for attractions like card instead of old response above  */}
+{activeTab === "Attractions" && (
+  // <AttractionsTab
+  //   attractions={activeTrip?.attractions || []}
+  //   durationDays={activeTrip?.durationDays || 3}
+  //   onAddToItinerary={(place, dayNum, time) => {
+  //     console.log("Add attraction", place, dayNum, time);
+  //   }}
+  // />
+  <AttractionsTab
+  attractions={activeTrip.attractions || []}
+  durationDays={activeTrip.durationDays}
+  cityName={activeTrip.cityName}          // ← ADD THIS LINE
+  onAddToItinerary={(place, dayNum, time) => {
+   console.log("Add attraction", place, dayNum, time);
+  }}
+/>
+
+)}
+
+{/* until this attractions */}
+
 
             {/* TAB: MAP INTERACTIVE OVERLAYS */}
             {activeTab === "Map" && (
@@ -1048,6 +1179,7 @@ export const TripPlanner: React.FC = () => {
         onClose={() => setIsCopilotOpen(false)}
         onApplySuccess={(title) => triggerToast(`Copilot applied: ${title}`, "success")}
       />
+      
 
       {/* ──────── TOAST NOTIFICATIONS ──────── */}
       <AnimatePresence>

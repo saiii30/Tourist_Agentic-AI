@@ -22,6 +22,7 @@ from graph import graph
 from routes.crowd_api import router as crowd_router
 from intelligence.place_details import get_place_details
 from routes.nearby_api import router as nearby_router
+from routes.city_crowd_api import router as city_crowd_router
 
 
 app = FastAPI()
@@ -35,6 +36,7 @@ app.add_middleware(
 
 app.include_router(crowd_router)
 app.include_router(nearby_router)
+app.include_router(city_crowd_router)
 trip_service = TripService()
 
 def init_calendar_db():
@@ -264,6 +266,8 @@ def chat(req: ChatRequest):
             "answer": result["answer"],
             "routes": result.get("routes", []),
             "trip": trip_response,
+            #added single line below for attrctions tab
+            "attractions": result.get("discover", []),
             "metadata": {
                 "source": "llm",
                 "generated_by": "calendar_agent",
@@ -277,6 +281,8 @@ def chat(req: ChatRequest):
         "answer": result["answer"],
         "routes": result.get("routes", []),
         "trip": None,
+        #added below single line code for attrcations 
+        "attractions": result.get("discover", []),
         "metadata": {
             "source": "guided_flow",
             "generated_by": "supervisor",

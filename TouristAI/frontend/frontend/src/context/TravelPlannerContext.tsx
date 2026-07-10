@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import axios from "axios";
+import { extractRequestedCity } from "../utils/extractRequestedCity";
 
 export interface Activity {
   id: string;
@@ -64,6 +65,17 @@ export interface HistoryEvent {
   iconName: string;
 }
 
+//added below attractions
+export interface AttractionDetails {
+  id: string;
+  name: string;
+  image: string;
+  category: string;
+  distance: string;
+  expectedCrowd: string;
+  bestTime: string;
+}
+/////
 export interface TripDetails {
   id: string;
   cityName: string;
@@ -87,6 +99,9 @@ export interface TripDetails {
   isFavorite: boolean;
   hotels: HotelDetails[];
   restaurants: RestaurantDetails[];
+  //added below attractions
+  attractions: AttractionDetails[];
+  ////
   expenses: ExpenseItem[];
   packingChecklist: PackingItem[];
   emergencyContacts: EmergencyContact[];
@@ -120,6 +135,7 @@ interface TravelPlannerContextType {
   syncCalendar: (tripId: string, options?: { remove?: boolean }) => Promise<boolean>;
   askAIChat: (question: string) => Promise<void>;
   generateNewMockTrip: (city: string, days?: number) => TripDetails;
+  overviewCrowdCity: string | null;
 }
 
 const TravelPlannerContext = createContext<TravelPlannerContextType | undefined>(undefined);
@@ -320,6 +336,7 @@ const generateMockTripDetails = (city: string, daysCount = 3): TripDetails => {
     isFavorite: false,
     hotels: [],
     restaurants: [],
+    attractions: [],
     expenses: [],
     packingChecklist,
     emergencyContacts,
@@ -334,6 +351,7 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
     const saved = localStorage.getItem("theme");
     return (saved as "light" | "dark") || "light";
   });
+  const [overviewCrowdCity, setOverviewCrowdCity] = useState<string | null>(null);
 
   // Chat message state
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
@@ -517,8 +535,22 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     try {
       const res = await axios.post("http://localhost:8000/chat", { question });
+  //     const requestedCity =
+  // res.data.trip?.city ||
+  // res.data.city ||
+  // extractRequestedCity(question);
+
+const requestedCity =
+  extractRequestedCity(question) ||
+  res.data.trip?.city ||
+  res.data.city; //changed this codex
+
+if (requestedCity) {
+  setOverviewCrowdCity(requestedCity);
+}
       const answerText = res.data.answer;
       const routes = res.data.routes || [];
+      const attractions = res.data.attractions || [];
 
       let tripCard: TripDetails | undefined = undefined;
       const tripData = res.data.trip;
@@ -534,6 +566,10 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
         } else if (cityLower.includes("ooty")) {
           banner = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80";
         }
+       
+
+console.log("FULL API RESPONSE:", res.data);
+console.log("ATTRACTIONS:", attractions);
 
         tripCard = {
           id: tripData.trip_id || `trip-real-${Date.now()}`,
@@ -554,6 +590,8 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
           isFavorite: false,
           hotels: tripData.hotels || [],
           restaurants: tripData.restaurants || [],
+          // attractions: tripData.attractions || [],
+          attractions: attractions ,
           expenses: tripData.budget_summary?.expenses || [],
           packingChecklist: tripData.packing_checklist || [],
           emergencyContacts: tripData.emergency || [],
@@ -622,7 +660,8 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
         isSyncingCalendar,
         syncCalendar,
         askAIChat,
-        generateNewMockTrip: generateMockTripDetails
+        generateNewMockTrip: generateMockTripDetails,
+        overviewCrowdCity,
       }}
     >
       {children}

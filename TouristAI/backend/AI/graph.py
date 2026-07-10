@@ -164,9 +164,24 @@ def weather_node(state):
 #     return {
 #         "responses": [answer]
 #     }
+
+# def discover_node(state):
+#     answer = discover_agent(state["question"],state.get("city",""))
+#     return{"responses":[answer]}
+
+#changed the beloe code for markdownstring response for attractions tab commented above
+
 def discover_node(state):
-    answer = discover_agent(state["question"],state.get("city",""))
-    return{"responses":[answer]}
+
+    discover_data = discover_agent(
+        state["question"],
+        state.get("city", "")
+    )
+
+    return {
+        "responses": [discover_data["answer"]],
+        "discover": discover_data["attractions"]
+    }
 
 def general_node(state):
     answer = general_agent(state["question"])
@@ -201,7 +216,9 @@ def merge_node(state):
         context = "\n\n".join(state["responses"])
         if not context.strip():
             return {"answer": state.get("answer", "")}
-        return {"answer": context}
+        return {"answer": context,
+                "discover": state.get("discover", [])}
+    #added discover:state.get(discover,[] newly only one line for attractions cards above 220th line)
 
     # If the destination city is not specified
     if state.get("city", "None") == "None":
@@ -334,7 +351,9 @@ This itinerary focuses on {interests} attractions, budget-appropriate stays, and
 
     return {
         "answer": synthesis,
-        "routes": ["calendar_preview"]
+        "routes": ["calendar_preview"],
+        #added below single line for attrctions card code
+        "discover": state.get("discover", [])
     }
     
 builder.add_node(

@@ -198,6 +198,16 @@ class ResponseBuilder:
         for idx, place in enumerate(all_places, start=1):
             crowd = predict_crowd(city, place["popularity"], place["best_time"])
             img, wiki_or_maps, latlon = _place_media(place["name"], city)
+            #adding new chnage sfrom codex 
+            # Persist the exact media resolved for the AI Chat response.
+            # AttractionBuilder runs immediately after ResponseBuilder.build(), so it
+            # can return these same values to the planner cards.
+            place["image"] = img or ""
+            place["wiki_url"] = wiki_or_maps or ""
+
+            if latlon:
+                place["lat"], place["lon"] = latlon
+                #until this codex changes 
             place_link = _place_link(place["name"], city, latlon)
 
             # Numbered heading like "1. Amboli (85 km, ~2 hours)" — clickable → Leaflet

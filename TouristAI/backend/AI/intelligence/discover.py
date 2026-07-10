@@ -7,7 +7,7 @@ def get_discover_places(city):
     cursor = conn.cursor()
 
     try:
-
+        print(f"Searching attractions for {city}")
         # Find destination
         cursor.execute("""
             SELECT id

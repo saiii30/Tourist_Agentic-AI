@@ -1,97 +1,166 @@
-"""
-Seed 3 years of synthetic-but-realistic crowd history for every attraction
-already present in `attraction_details`.
-
-Run once:  python scripts/seed_crowd_history.py
-"""
-
-import hashlib
-import random
 from datetime import date, timedelta
+import random
 
 from database.postgres import get_connection
 
 
-HOUR_BANDS = ("morning", "noon", "evening", "night")
+def seasonal_multiplier(month):
+    """
+    Tourism season factor
+    """
 
-# base daily visitors by popularity level
-POP_BASE = {
-    "Popular": 4000,
-    "Medium":  1500,
-    "Hidden":  400,
-}
+    # Peak season
+    if month in [10, 11, 12]:
+        return 1.4
 
-# monthly multiplier — winter peak, monsoon dip (India tourism pattern)
-MONTH_MULT = {
-    1: 1.30, 2: 1.25, 3: 1.10, 4: 0.95, 5: 0.85, 6: 0.70,
-    7: 0.65, 8: 0.70, 9: 0.85, 10: 1.10, 11: 1.25, 12: 1.40,
-}
+    # Summer travel
+    if month in [4, 5, 6]:
+        return 1.2
 
-# weekday multiplier — Mon..Sun
-WEEKDAY_MULT = [0.75, 0.72, 0.78, 0.82, 0.95, 1.45, 1.55]
+    # Monsoon
+    if month in [7, 8]:
+        return 0.8
 
-# hour band split of the day's total
-BAND_SPLIT = {"morning": 0.30, "noon": 0.20, "evening": 0.40, "night": 0.10}
+    return 1.0
 
 
-def stable_noise(seed_str: str) -> float:
-    """Deterministic 0.85 – 1.15 multiplier so re-runs give same numbers."""
-    h = int(hashlib.md5(seed_str.encode()).hexdigest(), 16)
-    return 0.85 + (h % 1000) / 1000 * 0.30
+def weekend_multiplier(weekday):
+    """
+    Python weekday:
+    Monday=0
+    Sunday=6
+    """
+
+    if weekday in [5, 6]:
+        return 1.3
+
+    return 1.0
+
+
+def hour_band_multiplier(hour_band):
+
+    if hour_band == "morning":
+        return 1.2
+
+    if hour_band == "noon":
+        return 1.0
+
+    if hour_band == "evening":
+        return 1.4
+
+    return 0.6
+
+
+def popularity_to_base(popularity_score):
+
+    score = float(popularity_score or 50)
+
+    return int(500 + score * 20)
 
 
 def seed():
+
     conn = get_connection()
-    cur = conn.cursor()
+    cursor = conn.cursor()
 
-    cur.execute("""
-        SELECT d.destination_name, a.attraction_name, a.popularity_level
-        FROM attraction_details a
-        JOIN destinations d ON d.id = a.destination_id
-    """)
-    rows = cur.fetchall()
-    print(f"Seeding history for {len(rows)} attractions...")
+    print("Loading destinations...")
 
-    end = date.today()
-    start = end - timedelta(days=365 * 3)
+    cursor.execute(
+        """
+        SELECT
+            destination_name,
+            popularity_score
+        FROM destinations
+        """
+    )
 
-    insert_sql = """
-        INSERT INTO crowd_history
-            (city, attraction, visit_date, weekday, month, hour_band, visitors)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (city, attraction, visit_date, hour_band) DO NOTHING
-    """
+    destinations = cursor.fetchall()
 
-    batch = []
-    for city, attraction, pop in rows:
-        base = POP_BASE.get(pop or "Medium", 1500)
-        d = start
-        while d <= end:
-            month_m = MONTH_MULT[d.month]
-            wk_m = WEEKDAY_MULT[d.weekday()]
-            noise = stable_noise(f"{city}|{attraction}|{d.isoformat()}")
-            day_total = base * month_m * wk_m * noise
+    print(f"Found {len(destinations)} destinations")
 
-            for band, split in BAND_SPLIT.items():
-                visitors = int(day_total * split)
-                batch.append((
-                    city, attraction, d,
-                    d.weekday(), d.month, band, visitors,
-                ))
-            d += timedelta(days=1)
+    cursor.execute("TRUNCATE crowd_history RESTART IDENTITY")
+    conn.commit()
 
-            if len(batch) >= 5000:
-                cur.executemany(insert_sql, batch)
-                conn.commit()
-                batch.clear()
+    start_date = date.today() - timedelta(days=365 * 3)
+    end_date = date.today()
 
-    if batch:
-        cur.executemany(insert_sql, batch)
-        conn.commit()
+    total_rows = 0
 
-    cur.close()
+    for city, popularity_score in destinations:
+
+        city = city.strip()
+
+        base_visitors = popularity_to_base(popularity_score)
+
+        current_date = start_date
+
+        while current_date <= end_date:
+
+            season_factor = seasonal_multiplier(
+                current_date.month
+            )
+
+            weekend_factor = weekend_multiplier(
+                current_date.weekday()
+            )
+
+            for hour_band in [
+                "morning",
+                "noon",
+                "evening",
+                "night",
+            ]:
+
+                hour_factor = hour_band_multiplier(
+                    hour_band
+                )
+
+                visitors = int(
+                    base_visitors
+                    * season_factor
+                    * weekend_factor
+                    * hour_factor
+                    * random.uniform(0.85, 1.15)
+                )
+
+                cursor.execute(
+                    """
+                    INSERT INTO city_crowd_history
+                    (
+                        city,
+                        visit_date,
+                        month,
+                        weekday,
+                        hour_band,
+                        visitors
+                    )
+                    VALUES
+                    (%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        city,
+                        current_date,
+                        current_date.month,
+                        current_date.weekday(),
+                        hour_band,
+                        visitors,
+                    ),
+                )
+
+                total_rows += 1
+
+            current_date += timedelta(days=1)
+
+        print(f"Seeded {city}")
+
+    conn.commit()
+
+    print()
+    print("DONE")
+    print(f"Inserted {total_rows:,} rows")
+
+    cursor.close()
     conn.close()
-    print("Done.")
 
 
 if __name__ == "__main__":
