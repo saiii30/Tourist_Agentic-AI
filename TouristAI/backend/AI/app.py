@@ -135,11 +135,12 @@ def chat(req: ChatRequest):
     is_active = g_state.get("is_active") == "1"
     
     if not is_start and not is_active:
-        if not is_single_topic:
-            from supervisor import extract_query_details
-            details = extract_query_details(req.question)
-            if details.get("city") != "None" and details.get("requires_city", True):
-                is_start = True
+        # Only trigger a new trip if trip-related keywords are present, not just a city.
+        # This prevents single-topic queries (like for hotels) from starting a full plan.
+        from supervisor import extract_query_details, matches_keywords
+        details = extract_query_details(req.question)
+        if details.get("city") != "None" and details.get("requires_city", True):
+            is_start = matches_keywords(question_lower, start_keywords)
             
     if is_start:
         from supervisor import extract_all_opening_details
@@ -221,7 +222,10 @@ def chat(req: ChatRequest):
         except Exception as e:
             print(f"Error building real itinerary: {e}")
 
-    if real_itinerary:
+    itinerary_routes = {"calendar", "modify_itinerary", "regenerate_itinerary", "save_itinerary", "delete_itinerary", "google_calendar"}
+    has_itinerary_route = any(r in itinerary_routes for r in result.get("routes", []))
+
+    if real_itinerary and has_itinerary_route:
         city = g_state.get("destination", "Unknown")
         days = int(g_state.get("days", 3))
         budget = g_state.get("budget", "Moderate")
