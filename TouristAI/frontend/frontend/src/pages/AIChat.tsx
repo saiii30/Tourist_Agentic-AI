@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Volume2, VolumeX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
@@ -435,6 +435,50 @@ export const AIChat: React.FC = () => {
   // Toast alert status state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Smart Voice-Over Settings
+  const [isVoiceOverEnabled, setIsVoiceOverEnabled] = useState(() => {
+    return localStorage.getItem("isVoiceOverEnabled") === "true";
+  });
+
+  const toggleVoiceOver = () => {
+    setIsVoiceOverEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem("isVoiceOverEnabled", String(next));
+      if (!next && typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      return next;
+    });
+  };
+
+  const speakText = (text: string) => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      
+      // Filter out markdown characters, brackets, URLs, etc. for clear speech synthesis
+      const cleanText = text
+        .replace(/[*#_~`\[\]()]/g, "")
+        .replace(/[-+•]\s+/g, "")
+        .replace(/:\s*(\n|$)/g, ". ")
+        .replace(/\n+/g, ". ");
+        
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Automatically read aloud new incoming assistant messages when voice over is enabled
+  useEffect(() => {
+    if (chatMessages.length > 0 && isVoiceOverEnabled) {
+      const lastMsg = chatMessages[chatMessages.length - 1];
+      if (lastMsg.role === "assistant") {
+        speakText(lastMsg.text);
+      }
+    }
+  }, [chatMessages.length, isVoiceOverEnabled]);
+
   // Auto-scroll on messages addition
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -442,6 +486,9 @@ export const AIChat: React.FC = () => {
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
+    if (isVoiceOverEnabled) {
+      speakText(msg);
+    }
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -567,6 +614,28 @@ export const AIChat: React.FC = () => {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50/50 dark:bg-[#0b0f19] relative">
       
+      {/* Voice-Over Mode Header Bar */}
+      <div className="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 bg-white/55 dark:bg-[#111827]/55 backdrop-blur px-5 py-3 text-left">
+        <div>
+          <h2 className="text-xs font-bold text-slate-800 dark:text-slate-205 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-teal-605" />
+            AI Travel Assistant
+          </h2>
+        </div>
+        <button
+          onClick={toggleVoiceOver}
+          className={`px-3 py-1.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
+            isVoiceOverEnabled
+              ? "bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 border-teal-100 dark:border-teal-900/40 shadow-sm"
+              : "bg-slate-50 dark:bg-slate-900 text-slate-455 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+          }`}
+          title="Toggle Smart Voice Notification Aloud Mode"
+        >
+          {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+          <span>{isVoiceOverEnabled ? "Voice notifications ON" : "Voice notifications OFF"}</span>
+        </button>
+      </div>
+
       {/* 1. Chat Dialog Log */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 no-scrollbar">
         
@@ -626,9 +695,20 @@ export const AIChat: React.FC = () => {
                       className={`relative p-4 rounded-2xl shadow-sm border leading-relaxed ${
                         isUser
                           ? "bg-teal-600 border-teal-650 text-white rounded-br-none"
-                          : "bg-white dark:bg-[#111827] border-slate-200/60 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-none"
+                          : "bg-white dark:bg-[#111827] border-slate-200/60 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-none pr-9"
                       }`}
                     >
+                      {/* Read Aloud button for assistant replies */}
+                      {!isUser && (
+                        <button
+                          onClick={() => speakText(msg.text)}
+                          className="absolute top-2.5 right-2.5 p-1 rounded-lg text-slate-400 hover:text-teal-605 hover:bg-slate-105 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover-scale"
+                          title="Read Aloud"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
                       {/* Message Content */}
                       {!isUser && renderStructuredMessage(msg.text)}
                       {isUser && (

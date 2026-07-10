@@ -6,12 +6,18 @@ import urllib.parse
 import base64
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-
-import base64
-import requests
-from bs4 import BeautifulSoup
 from urllib.parse import urljoin, quote
+from dotenv import load_dotenv
+
+# Load environment variables from possible locations to ensure API keys are populated
+for env_path in [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+    os.path.abspath(os.path.join(os.getcwd(), ".env")),
+    os.path.abspath(os.path.join(os.getcwd(), "backend", ".env")),
+]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
 
 
 def get_image_from_website(url, max_images=20):
@@ -131,7 +137,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
     if not api_key:
-        print("❌ GOOGLE_PLACES_API_KEY not found.")
+        print("[ERROR] GOOGLE_PLACES_API_KEY not found.")
         return None
 
     # Build a more specific search query
@@ -358,7 +364,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
                 "hours": hours
             })
 
-        print("✅ Google Places API call successful.")
+        print("[INFO] Google Places API call successful.")
 
         return {"text": "\n".join(lines), "data": rests_data}
 
@@ -398,18 +404,21 @@ def restaurant_agent(
     if city == "None":
         return {"message": "I need to know which city you are visiting to suggest restaurants."}
 
+    is_trip_plan = any(kw in question.lower() for kw in ["plan a", "trip", "itinerary", "vacation", "holiday"])
+
     # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
-    try:
-        from rag_service import get_answer
-        rag_result = get_answer(question, check_rag_only=True)
-        if rag_result:
-            print("✅ Found restaurant recommendations from RAG (FAISS DB).")
-            return rag_result
-    except Exception as e:
-        print(f"⚠️ Error checking RAG for restaurants: {e}")
+    if not is_trip_plan:
+        try:
+            from rag_service import get_answer
+            rag_result = get_answer(question, check_rag_only=True)
+            if rag_result:
+                print("[INFO] Found restaurant recommendations from RAG (FAISS DB).")
+                return rag_result
+        except Exception as e:
+            print(f"[WARNING] Error checking RAG for restaurants: {e}")
 
     # 2. If RAG is empty, try the Google Places API
-    print("ℹ️ No results in RAG. Checking Google Places API for restaurants.")
+    print("[INFO] No results in RAG. Checking Google Places API for restaurants.")
     google_results = get_restaurants_from_google(
         question, city, budget, interests
     )
@@ -418,16 +427,16 @@ def restaurant_agent(
         try:
             from rag_service import save_to_rag
             save_to_rag(question, google_results["text"])
-            print("✅ Saved Google Places response to RAG.")
+            print("[INFO] Saved Google Places response to RAG.")
         except Exception as e:
-            print(f"⚠️ Could not save Google response to RAG: {e}")
+            print(f"[WARNING] Could not save Google response to RAG: {e}")
         return {"source": "google_places", "answer": google_results["text"], "data": google_results["data"]}
 
     # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
-    print("⚠️ Google Places API also failed. Falling back to Groq LLM.")
+    print("[WARNING] Google Places API also failed. Falling back to Groq LLM.")
     try:
         from rag_service import get_answer
         return get_answer(question)
     except Exception as e:
-        print(f"❌ Final fallback to Groq failed: {e}")
+        print(f"[ERROR] Final fallback to Groq failed: {e}")
         return {"message": f"Sorry, I'm having trouble finding restaurant recommendations for {city} right now."}

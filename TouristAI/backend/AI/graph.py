@@ -216,6 +216,10 @@ def calendar_node(state):
 
 
 def merge_node(state):
+    print(f"[DEBUG] Merge Node state hotels_data: {len(state.get('hotels_data') or [])} items")
+    print(f"[DEBUG] Merge Node state restaurants_data: {len(state.get('restaurants_data') or [])} items")
+    print(f"[DEBUG] Merge Node state nearby_data: {len(state.get('nearby_data') or [])} items")
+
     # If there is only one response, return directly
     if len(state["responses"]) <= 1:
         context = "\n\n".join(state["responses"])
@@ -333,18 +337,13 @@ def merge_node(state):
 
     synthesis = f"""📍 **{city}**
 
-Great! I've planned a {days}-day {budget_description} {city} trip for {travelers} traveler(s) (style: {travel_style}) who enjoy {interests}.
+Great! I've planned a {days}-day {city} trip for {travelers} traveler(s) (style: {travel_style}) who enjoy {interests}.
 
 🌤 **Weather in {city}**
 {sections.get('weather', 'Not available')}
 
 📅 **Itinerary Schedule**
 {calendar_formatted}
-
-💰 **Estimated Budget**
-- Accommodation: {budget_description.title()} stays
-- Food & Dining: {budget_description.title()} dining
-- **Total Estimated**: {budget_limit_text}
 
 *(Note: You can view details and comparison options for recommended hotels, dining spots, and attractions in the panels below. Select an action to proceed.)*"""
 
@@ -466,7 +465,7 @@ builder.add_edge(
 def merge_router(state):
     g_state = get_guided_state()
     routes = state.get("routes", [])
-    if "calendar" in routes or "calendar_preview" in routes or g_state.get("trip_id"):
+    if "calendar" in routes or "calendar_preview" in routes:
         return "calendar_preview"
     return END
 
@@ -479,11 +478,21 @@ builder.add_conditional_edges(
     }
 )
 
+def regenerate_router(state):
+    sends = []
+    for route in state.get("routes", []):
+        sends.append(Send(route, state))
+    return sends
+
+builder.add_conditional_edges(
+    "regenerate_itinerary",
+    regenerate_router
+)
+
 builder.add_edge("calendar_preview", END)
 builder.add_edge("save_itinerary", END)
 builder.add_edge("google_calendar", END)
 builder.add_edge("delete_itinerary", END)
 builder.add_edge("modify_itinerary", "calendar_preview")
-builder.add_edge("regenerate_itinerary", "calendar_preview")
 
 graph = builder.compile()

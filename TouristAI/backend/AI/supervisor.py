@@ -121,8 +121,8 @@ def extract_query_details(question: str) -> dict:
     normalized_question = question.replace('_', ' ')
     question_lower = normalized_question.lower()
     
-    print(f"🔍 Original query: '{question}'")
-    print(f"🔍 Normalized query: '{normalized_question}'")
+    print(f"[DEBUG] Original query: '{question}'")
+    print(f"[DEBUG] Normalized query: '{normalized_question}'")
     
     # Check for train-related queries
     if any(kw in question_lower for kw in ["train", "railway", "rail", "irctc"]):
@@ -133,7 +133,7 @@ def extract_query_details(question: str) -> dict:
         
         # Remove "train" keyword to avoid confusion
         query_clean = re.sub(r'train|railway|rail|irctc', '', question_lower).strip()
-        print(f"🔍 Query after removing train keywords: '{query_clean}'")
+        print(f"[DEBUG] Query after removing train keywords: '{query_clean}'")
         
         # Split by "to" to separate source and destination parts
         if ' to ' in query_clean:
@@ -141,8 +141,8 @@ def extract_query_details(question: str) -> dict:
             source_part = parts[0].strip()
             dest_part = parts[1].strip()
             
-            print(f"🔍 Source part: '{source_part}'")
-            print(f"🔍 Dest part: '{dest_part}'")
+            print(f"[DEBUG] Source part: '{source_part}'")
+            print(f"[DEBUG] Dest part: '{dest_part}'")
             
             # Extract source from the part before "to"
             # Look for "from X" pattern or just take the city name
@@ -162,8 +162,8 @@ def extract_query_details(question: str) -> dict:
             source = re.sub(r'\s+', ' ', source).strip()
             destination = re.sub(r'\s+', ' ', destination).strip()
             
-            print(f"🔍 Extracted source: '{source}'")
-            print(f"🔍 Extracted destination: '{destination}'")
+            print(f"[DEBUG] Extracted source: '{source}'")
+            print(f"[DEBUG] Extracted destination: '{destination}'")
             
             # Check if destination is empty or just noise after date removal
             if not destination or len(destination) < 2 or destination.isdigit():
@@ -204,8 +204,8 @@ def extract_query_details(question: str) -> dict:
                 source_clean = re.sub(r'\s+', '', source).upper() if len(source) <= 4 else source.title()
                 dest_clean = re.sub(r'\s+', '', destination).upper() if len(destination) <= 4 else destination.title()
                 
-                print(f"🔍 Final cleaned source: '{source_clean}'")
-                print(f"🔍 Final cleaned destination: '{dest_clean}'")
+                print(f"[DEBUG] Final cleaned source: '{source_clean}'")
+                print(f"[DEBUG] Final cleaned destination: '{dest_clean}'")
                 
                 return {
                     "city": source_clean,
@@ -216,7 +216,7 @@ def extract_query_details(question: str) -> dict:
                 }
             else:
                 # Missing or invalid destination - print helpful message and fall back to LLM
-                print(f"⚠️ Could not extract valid city names from query: '{question}'")
+                print(f"[WARNING] Could not extract valid city names from query: '{question}'")
                 print(f"   Extracted - Source: '{source}', Destination: '{destination}'")
                 print(f"   Please specify full city names or station codes (e.g., 'train from Chennai to Bangalore on 30-11-2026' or 'train from MAS to SA on 30-11-2026')")
     
@@ -479,7 +479,7 @@ def get_next_missing_field(g_state: dict) -> tuple[str, str]:
         ("destination", "Great! I'll help you plan your trip. First, where would you like to go?"),
         ("travel_date", "Great choice! When are you planning to travel?"),
         ("days", "How many days are you planning to stay?"),
-        ("budget", "What's your approximate budget?\n\n• **Budget** (< ₹5,000)\n• **Moderate** (₹5,000–₹15,000)\n• **Luxury** (> ₹15,000)"),
+        # ("budget", "What's your approximate budget?\n\n• **Budget** (< ₹5,000)\n• **Moderate** (₹5,000–₹15,000)\n• **Luxury** (> ₹15,000)"),
         ("travelers", "How many people are travelling?"),
         ("travel_style", "What kind of trip do you prefer?\n\n• **Family**\n• **Solo**\n• **Friends**\n• **Couple**\n• **Business**"),
         ("interests", "Any special interests?\n\n• **History**\n• **Nature**\n• **Adventure**\n• **Food**\n• **Photography**\n• **Shopping**")
@@ -494,16 +494,37 @@ def route_question(state, details=None):
     question = state["question"].strip()
     question_lower = question.lower()
 
-    g_state = get_guided_state()
-    trip_status = g_state.get("trip_status")
+    # Helper to check for exact option selection (e.g. strictly "1" or "option 1") rather than simple substring matching (which hits "1" in "16")
+    def is_exact_choice(text, keywords, num):
+        cleaned = text.strip().strip('.')
+        if any(kw in text for kw in keywords):
+            return True
+        if cleaned == str(num) or cleaned in [f"option {num}", f"choice {num}", f"({num})"]:
+            return True
+        return False
+
+    # Check if the user is starting a new trip planning request
+    start_keywords = [
+        "trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"
+    ]
+    is_start = matches_keywords(question_lower, start_keywords)
+    is_lifecycle_cmd = any(cmd in question_lower for cmd in ["save", "keep", "regenerate", "redo", "recreate", "delete", "remove", "cancel", "discard"])
+
+    if is_start and not is_lifecycle_cmd:
+        clear_guided_state()
+        g_state = get_guided_state()
+        trip_status = None
+    else:
+        g_state = get_guided_state()
+        trip_status = g_state.get("trip_status")
 
     # If active preview lifecycle, handle previews first to avoid keyword collisions
     if trip_status == "preview":
         if any(kw in question_lower for kw in ["reset", "start over", "new trip"]):
             clear_guided_state()
-        elif any(kw in question_lower for kw in ["save", "keep", "1"]):
+        elif is_exact_choice(question_lower, ["save", "keep"], 1):
             return ["save_itinerary"]
-        elif any(kw in question_lower for kw in ["regenerate", "redo", "recreate", "3"]):
+        elif is_exact_choice(question_lower, ["regenerate", "redo", "recreate"], 3):
             return ["regenerate_itinerary"]
         elif any(kw in question_lower for kw in ["delete", "remove", "cancel", "discard"]):
             return ["delete_itinerary"]
@@ -528,8 +549,11 @@ def route_question(state, details=None):
     elif trip_status == "calendar_sync":
         if any(kw in question_lower for kw in ["reset", "start over", "new trip"]):
             clear_guided_state()
-        else:
+        elif is_exact_choice(question_lower, ["yes", "sync", "google calendar", "calendar"], 2) or question_lower.strip().strip('.') in ["yes", "y"]:
             return ["google_calendar"]
+        else:
+            # Let it fall through to normal routing if they typed something else
+            clear_guided_state()
 
     # Move general question check to the very top to bypass planning triggers
     if details and not details.get("requires_city", True):
@@ -555,6 +579,11 @@ def route_question(state, details=None):
             if v != "None":
                 update_guided_state(k, v)
                 
+        # Set default budget to "Moderate" if not provided in opening query
+        g_state = get_guided_state()
+        if not g_state.get("budget") or g_state.get("budget") == "None":
+            update_guided_state("budget", "Moderate")
+
         # Re-fetch state
         g_state = get_guided_state()
         missing_key, missing_prompt = get_next_missing_field(g_state)
