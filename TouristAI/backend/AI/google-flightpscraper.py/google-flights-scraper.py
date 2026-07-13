@@ -75,19 +75,41 @@ class FlightScraper:
                     const co2 = lines.find(x => x.toLowerCase().includes("co2") || x.toLowerCase().includes("co₂")) || "";
                     const variation = lines.find(x => x.includes("%")) || "";
                     
-                    results.push({
-                        airline: airline,
-                        departure_time: depTime,
-                        arrival_time: arrTime,
-                        duration: duration,
-                        stops: stops,
-                        price: price,
-                        co2_emissions: co2,
-                        emissions_variation: variation
-                    });
+                    if (
+                        airline &&
+                        depTime &&
+                        arrTime &&
+                        price &&
+                        airline.length < 40 &&
+                        depTime.length < 20 &&
+                        arrTime.length < 20
+                    ) {
+                        results.push({
+                            airline,
+                            departure_time: depTime,
+                            arrival_time: arrTime,
+                            duration,
+                            stops,
+                            price,
+                            co2_emissions: co2,
+                            emissions_variation: variation
+                        });
+                    }
                 }
             });
-            return results;
+            const unique = [];
+            const seen = new Set();
+
+            results.forEach(f => {
+                const key = `${f.airline}-${f.departure_time}-${f.arrival_time}-${f.price}`;
+
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    unique.push(f);
+                }
+            });
+
+            return unique;
         }
         """)
 
@@ -134,6 +156,8 @@ class FlightScraper:
                 await page.goto(url, timeout=60000)
                 await page.wait_for_load_state("networkidle")
 
+                await self._load_all_flights(page)
+
                 flights = await self._extract_flight_data(page)
 
                 output = {
@@ -179,4 +203,4 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         import asyncio
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-    asyncio.run(main())
+    asyncio.run(main())

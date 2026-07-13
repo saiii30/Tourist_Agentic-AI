@@ -30,7 +30,7 @@ export const FlightSearchResults: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    axios.get(`/api/flights/search`, {
+    axios.get(`http://localhost:8000/api/flights/search`, {
       params: {
         from: from,
         to: to,
