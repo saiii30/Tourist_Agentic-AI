@@ -8,3 +8,6 @@ sentence-transformers
 groq
 python-dotenv
 psycopg2-binary
+psycopg2-binary
+beautifulsoup4
+requests

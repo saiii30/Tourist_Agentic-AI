@@ -33,70 +33,138 @@ class CalendarService:
 
     def sync_to_google_calendar(self, trip_id: str, start_date_str: str, reminder_minutes: int = 30) -> Dict[str, Any]:
         """
-        Syncs trip activities to Google Calendar. Supports creation and partial updates.
+        Syncs trip activities to Google Calendar. Supports creation, updates, and deletes.
         """
-        # If credentials are not configured, perform a mock sync to simulate success in local DB
+        trip = self.repo.get_trip(trip_id)
+        if not trip:
+            # Try to fetch/create a fallback trip using guided state
+            from supervisor import get_guided_state
+            g_state = get_guided_state()
+            city = g_state.get("destination", "Unknown")
+            days = int(g_state.get("days", 3))
+            budget = g_state.get("budget", "Moderate")
+            travel_style = g_state.get("travel_style", "Solo")
+            travelers = int(g_state.get("travelers", 1))
+            interests = g_state.get("interests", "None")
+            
+            trip = Trip(
+                trip_id=trip_id,
+                user_id=self.user_id,
+                city=city,
+                days=days,
+                budget=budget,
+                travel_style=travel_style,
+                travelers=travelers,
+                interests=interests,
+                status="GENERATED",
+                travel_date=start_date_str,
+                created_at=datetime.now().isoformat(),
+                updated_at=datetime.now().isoformat()
+            )
+            
+            # Fetch calendar items from state to save
+            cached_items_json = g_state.get("last_itinerary_items")
+            if cached_items_json:
+                import json
+                try:
+                    raw_items = json.loads(cached_items_json)
+                    parsed_items = []
+                    for item in raw_items:
+                        parsed_items.append(ItineraryItem(
+                            trip_id=trip_id,
+                            day=item.get("day", 1),
+                            start_time=item.get("start_time", "09:00"),
+                            end_time=item.get("end_time", "12:00"),
+                            activity=item.get("activity", "Activity"),
+                            location=item.get("location", ""),
+                            category=item.get("category", "Sightseeing"),
+                            restaurant=item.get("restaurant"),
+                            hotel=item.get("hotel"),
+                            notes=item.get("notes"),
+                            activity_id=item.get("activity_id") or str(uuid.uuid4()),
+                            google_event_id=item.get("google_event_id")
+                        ))
+                    self.save_itinerary(trip, parsed_items)
+                except Exception as e:
+                    logger.error(f"Error parsing cached items during mock sync: {e}")
+
+        # Update service with trip-specific user ID to prevent token collision
+        user_id = trip.user_id if trip.user_id else self.user_id
+        self.gcal_service = GoogleCalendarService(user_id=user_id)
+
+        items = self.repo.get_itinerary_items(trip_id)
+        if not items:
+            return {"success": False, "message": "No itinerary items found to sync"}
+
+        # Metrics for logs
+        created_count = 0
+        updated_count = 0
+        deleted_count = 0
+
+        # Determine starting date
+        date_str = start_date_str.strip()
+        start_date = None
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%d/%m/%Y", "%Y%m%d"):
+            try:
+                start_date = datetime.strptime(date_str, fmt)
+                break
+            except ValueError:
+                continue
+                
+        if not start_date:
+            # Try parsing natural language date using LLM helper
+            parsed_str = self._parse_natural_date(date_str)
+            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%Y/%m/%d", "%d/%m/%Y", "%Y%m%d"):
+                try:
+                    start_date = datetime.strptime(parsed_str.strip(), fmt)
+                    break
+                except ValueError:
+                    continue
+                    
+        if not start_date:
+            start_date = datetime.now() + timedelta(days=1)
+
+        # 1. Simulated Mode (Credentials not configured)
         if not self.gcal_service.is_configured():
             logger.warning("Google Calendar API credentials are not configured. Running in simulated Google Calendar Sync mode.")
-            trip = self.repo.get_trip(trip_id)
-            if not trip:
-                # If trip not found in repository, create a draft one using guided state
-                from supervisor import get_guided_state
-                g_state = get_guided_state()
-                city = g_state.get("destination", "Unknown")
-                days = int(g_state.get("days", 3))
-                budget = g_state.get("budget", "Moderate")
-                travel_style = g_state.get("travel_style", "Solo")
-                travelers = int(g_state.get("travelers", 1))
-                interests = g_state.get("interests", "None")
-                
-                trip = Trip(
-                    trip_id=trip_id,
-                    user_id=self.user_id,
-                    city=city,
-                    days=days,
-                    budget=budget,
-                    travel_style=travel_style,
-                    travelers=travelers,
-                    interests=interests,
-                    status="draft",
-                    created_at=datetime.now().isoformat(),
-                    updated_at=datetime.now().isoformat()
-                )
-                
-                # Fetch calendar items from state to save
-                cached_items_json = g_state.get("last_itinerary_items")
-                if cached_items_json:
-                    import json
-                    try:
-                        raw_items = json.loads(cached_items_json)
-                        parsed_items = [ItineraryItem(**item) for item in raw_items]
-                        self.save_itinerary(trip, parsed_items)
-                    except Exception as e:
-                        logger.error(f"Error parsing cached items during mock sync: {e}")
-            
-            # Now fetch items again
-            items = self.repo.get_itinerary_items(trip_id)
-            if not items:
-                return {"success": False, "message": "No itinerary items found to sync (Simulated Mode)"}
-                
-            # Create simulated calendar event mappings
-            # First, clean existing mappings to avoid duplicates
+            # Clear existing calendar mappings to avoid duplicates
             existing = self.repo.get_calendar_events(trip_id)
-            existing_event_ids = [m["google_event_id"] for m in existing]
-            for event_id in existing_event_ids:
-                self.repo.delete_calendar_event(trip_id, event_id)
+            for m in existing:
+                self.repo.delete_calendar_event(trip_id, m["google_event_id"])
+                deleted_count += 1
                 
             for item in items:
-                simulated_event_id = f"simulated-gcal-event-{uuid.uuid4()}"
-                self.repo.save_calendar_event(trip_id, item.day, item.activity, simulated_event_id, "primary")
+                if not item.google_event_id:
+                    simulated_event_id = f"simulated-gcal-event-{uuid.uuid4()}"
+                    self.repo.update_google_event_id(trip_id, item.activity_id, simulated_event_id)
+                    item.google_event_id = simulated_event_id
+                    created_count += 1
+                else:
+                    updated_count += 1
                 
-            self.repo.update_trip_status(trip_id, "synced")
+                # Keep calendar_events mapping table in sync
+                self.repo.save_calendar_event(trip_id, item.day, item.activity, item.google_event_id, "primary")
+                
+            self.repo.update_trip_status(trip_id, "SYNCED")
+            
+            # Log Sync Success
+            self.repo.log_sync_event({
+                "trip_id": trip_id,
+                "user_id": user_id,
+                "status": "SYNCED",
+                "events_created": created_count,
+                "events_updated": updated_count,
+                "events_deleted": deleted_count,
+                "error": None
+            })
+            
             return {
                 "success": True,
+                "simulated": True,
                 "message": f"Successfully synced {len(items)} events to Google Calendar (Simulated Mode)."
             }
 
+        # 2. Check Authentication for Real OAuth Sync
         if not self.gcal_service.is_authenticated():
             return {
                 "success": False,
@@ -104,116 +172,137 @@ class CalendarService:
                 "auth_url": self.gcal_service.get_authorization_url(trip_id)
             }
 
-        trip = self.repo.get_trip(trip_id)
-        if not trip:
-            return {"success": False, "message": f"Trip {trip_id} not found"}
-
-        items = self.repo.get_itinerary_items(trip_id)
-        if not items:
-            return {"success": False, "message": "No itinerary items to sync"}
-
-        # Determine starting date
+        # 3. Real OAuth Sync Mode
         try:
-            start_date = datetime.strptime(start_date_str.strip(), "%Y-%m-%d")
-        except ValueError:
-            # Fallback parsing
+            # Fetch user primary calendar timezone dynamically
             try:
-                start_date = datetime.strptime(start_date_str.strip(), "%Y%m%d")
-            except ValueError:
-                start_date = datetime.now() + timedelta(days=1)
+                gcal = self.gcal_service.get_calendar_service()
+                calendar_meta = gcal.calendars().get(calendarId='primary').execute()
+                user_timezone = calendar_meta.get('timeZone', 'Asia/Kolkata')
+            except Exception as tz_ex:
+                logger.warning(f"Could not retrieve user calendar timezone, defaulting to Asia/Kolkata: {tz_ex}")
+                user_timezone = 'Asia/Kolkata'
 
-        # Get existing synced events mapping for this trip
-        existing_mappings = self.repo.get_calendar_events(trip_id)
-        # Create a lookup table for faster retrieval: (day, activity_name) -> google_event_id
-        mappings_lookup = {
-            (m["day"], m["activity"]): m["google_event_id"]
-            for m in existing_mappings
-        }
-
-        # Keep track of active event IDs during this sync
-        synced_event_ids = set()
-
-        for item in items:
-            # Construct Google Calendar Event body
-            event_date = start_date + timedelta(days=(item.day - 1))
+            # Map current items by activity_id
+            current_ids = {item.activity_id for item in items}
             
-            try:
-                sh, sm = map(int, item.start_time.split(":"))
-            except ValueError:
-                sh, sm = 9, 0
-            try:
-                eh, em = map(int, item.end_time.split(":"))
-            except ValueError:
-                eh, em = 12, 0
+            # Find and delete events on Google Calendar that were previously synced but no longer exist locally
+            existing_mappings = self.repo.get_calendar_events(trip_id)
+            for m in existing_mappings:
+                # Find if there is any local item with matching google_event_id
+                matched_item = next((it for it in items if it.google_event_id == m["google_event_id"]), None)
+                if not matched_item:
+                    try:
+                        self.gcal_service.delete_event(m["google_event_id"])
+                    except Exception as e:
+                        logger.error(f"Error deleting Google event {m['google_event_id']}: {e}")
+                    self.repo.delete_calendar_event(trip_id, m["google_event_id"])
+                    deleted_count += 1
 
-            start_dt = datetime(event_date.year, event_date.month, event_date.day, sh, sm)
-            end_dt = datetime(event_date.year, event_date.month, event_date.day, eh, em)
+            # Sync current items
+            for item in items:
+                # Construct Google Calendar Event body
+                event_date = start_date + timedelta(days=(item.day - 1))
+                
+                try:
+                    sh, sm = map(int, item.start_time.split(":"))
+                except ValueError:
+                    sh, sm = 9, 0
+                try:
+                    eh, em = map(int, item.end_time.split(":"))
+                except ValueError:
+                    eh, em = 12, 0
 
-            description = f"{item.notes or ''}"
-            if item.restaurant:
-                description += f"\nRecommended Restaurant: {item.restaurant}"
-            if item.hotel:
-                description += f"\nStaying at: {item.hotel}"
+                start_dt = datetime(event_date.year, event_date.month, event_date.day, sh, sm)
+                end_dt = datetime(event_date.year, event_date.month, event_date.day, eh, em)
 
-            event_body = {
-                'summary': item.activity,
-                'location': item.location,
-                'description': description,
-                'start': {
-                    'dateTime': start_dt.isoformat() + "+05:30",
-                    'timeZone': 'Asia/Kolkata',
-                },
-                'end': {
-                    'dateTime': end_dt.isoformat() + "+05:30",
-                    'timeZone': 'Asia/Kolkata',
-                },
-                'reminders': {
-                    'useDefault': False,
-                    'overrides': [
-                        {'method': 'popup', 'minutes': reminder_minutes},
-                    ],
-                },
+                # Handle events crossing midnight or zero-duration events to avoid Google Calendar timeRangeEmpty errors
+                if end_dt < start_dt:
+                    end_dt += timedelta(days=1)
+                elif end_dt == start_dt:
+                    end_dt += timedelta(minutes=30)
+
+                description = f"{item.notes or ''}"
+                if item.restaurant:
+                    description += f"\nRecommended Restaurant: {item.restaurant}"
+                if item.hotel:
+                    description += f"\nStaying at: {item.hotel}"
+
+                event_body = {
+                    'summary': item.activity,
+                    'location': item.location,
+                    'description': description,
+                    'start': {
+                        'dateTime': start_dt.isoformat(),
+                        'timeZone': user_timezone,
+                    },
+                    'end': {
+                        'dateTime': end_dt.isoformat(),
+                        'timeZone': user_timezone,
+                    },
+                    'reminders': {
+                        'useDefault': False,
+                        'overrides': [
+                            {'method': 'popup', 'minutes': reminder_minutes},
+                        ],
+                    },
+                }
+
+                # Check if it has a google_event_id already mapped
+                g_event_id = item.google_event_id
+                remote_event = None
+                if g_event_id:
+                    remote_event = self.gcal_service.get_event(g_event_id)
+                
+                if g_event_id and remote_event:
+                    # Remote event exists. Check if any relevant field changed:
+                    changed = (
+                        remote_event.get("summary") != event_body["summary"] or
+                        remote_event.get("location") != event_body["location"] or
+                        remote_event.get("description") != event_body["description"]
+                    )
+                    
+                    if changed:
+                        self.gcal_service.patch_event(g_event_id, event_body)
+                        updated_count += 1
+                else:
+                    # Remote event does not exist (or was deleted). Create it.
+                    new_id = self.gcal_service.create_event(event_body)
+                    self.repo.update_google_event_id(trip_id, item.activity_id, new_id)
+                    self.repo.save_calendar_event(trip_id, item.day, item.activity, new_id, "primary")
+                    created_count += 1
+
+            self.repo.update_trip_status(trip_id, "SYNCED")
+            
+            # Log Sync Success
+            self.repo.log_sync_event({
+                "trip_id": trip_id,
+                "user_id": user_id,
+                "status": "SYNCED",
+                "events_created": created_count,
+                "events_updated": updated_count,
+                "events_deleted": deleted_count,
+                "error": None
+            })
+            
+            return {
+                "success": True,
+                "message": f"Successfully synced {len(items)} events to Google Calendar."
             }
 
-            lookup_key = (item.day, item.activity)
-            if lookup_key in mappings_lookup:
-                # Event already exists -> Update it (Affected parts only)
-                g_event_id = mappings_lookup[lookup_key]
-                try:
-                    self.gcal_service.update_event(g_event_id, event_body)
-                    synced_event_ids.add(g_event_id)
-                except Exception as e:
-                    logger.error(f"Error updating Google event {g_event_id}: {e}")
-                    # Recreate if it was deleted on Google Calendar
-                    new_id = self.gcal_service.create_event(event_body)
-                    self.repo.save_calendar_event(trip_id, item.day, item.activity, new_id, "primary")
-                    synced_event_ids.add(new_id)
-            else:
-                # Event does not exist -> Create new
-                try:
-                    new_id = self.gcal_service.create_event(event_body)
-                    self.repo.save_calendar_event(trip_id, item.day, item.activity, new_id, "primary")
-                    synced_event_ids.add(new_id)
-                except Exception as e:
-                    logger.error(f"Error creating Google Calendar event: {e}")
-                    return {"success": False, "message": f"Google Calendar API Error: {str(e)}"}
-
-        # Delete any Google Calendar events that were in mapping but no longer exist in the new itinerary
-        for m in existing_mappings:
-            if m["google_event_id"] not in synced_event_ids:
-                try:
-                    self.gcal_service.delete_event(m["google_event_id"])
-                    self.repo.delete_calendar_event(trip_id, m["google_event_id"])
-                except Exception as e:
-                    logger.error(f"Error deleting obsolete Google event {m['google_event_id']}: {e}")
-
-        # Update trip status in SQLite
-        self.repo.update_trip_status(trip_id, "synced")
-        
-        return {
-            "success": True,
-            "message": f"Successfully synced {len(items)} events to Google Calendar."
-        }
+        except Exception as e:
+            logger.error(f"Google Calendar Sync Failed: {e}")
+            self.repo.update_trip_status(trip_id, "FAILED")
+            self.repo.log_sync_event({
+                "trip_id": trip_id,
+                "user_id": user_id,
+                "status": "FAILED",
+                "events_created": created_count,
+                "events_updated": updated_count,
+                "events_deleted": deleted_count,
+                "error": str(e)
+            })
+            return {"success": False, "message": f"Google Calendar API Error: {str(e)}"}
 
     def delete_trip_and_calendar(self, trip_id: str) -> None:
         """
@@ -321,3 +410,22 @@ class CalendarService:
             lines.append("---")
 
         return "\n".join(lines)
+
+    def _parse_natural_date(self, date_str: str) -> str:
+        from rag_service import client
+        prompt = (
+            f"Convert the natural language travel date description '{date_str}' to a clean YYYY-MM-DD format.\n"
+            "Assume the current context year is 2026. "
+            "Return ONLY the YYYY-MM-DD string and nothing else (no formatting, no code block backticks)."
+        )
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0
+            )
+            val = response.choices[0].message.content.strip()
+            val = val.replace("`", "").strip()
+            return val
+        except Exception:
+            return date_str

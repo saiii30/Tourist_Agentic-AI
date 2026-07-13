@@ -15,6 +15,9 @@ export interface Activity {
   image: string;
   isFavorite?: boolean;
   slot?: "Breakfast" | "Morning Activity" | "Lunch" | "Afternoon Activity" | "Evening Activity" | "Dinner" | "Hotel";
+  restaurant?: string | null;
+  hotel?: string | null;
+  google_event_id?: string | null;
 }
 
 export interface HotelDetails {
@@ -94,6 +97,9 @@ export interface TripDetails {
   calendarSynced: boolean;
   calendarSyncedAt?: string;
   calendarEventsCount?: number;
+  user_id?: string;
+  specialInterests?: string[];
+  budgetSummary?: any;
 
   // Premium smart features properties
   isFavorite: boolean;
@@ -354,11 +360,31 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
   const [overviewCrowdCity, setOverviewCrowdCity] = useState<string | null>(null);
 
   // Chat message state
-  const [chatMessages, setChatMessages] = useState<Message[]>([]);
+  const [chatMessages, setChatMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem("chatMessages");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  });
   const [isLoadingChat, setIsLoadingChat] = useState<boolean>(false);
 
   // Active Trip Planner states
-  const [activeTrip, setActiveTrip] = useState<TripDetails | null>(null);
+  const [activeTrip, setActiveTrip] = useState<TripDetails | null>(() => {
+    const saved = localStorage.getItem("activeTrip");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  });
 
   // Saved Trips state
   const [savedTrips, setSavedTrips] = useState<TripDetails[]>(() => {
@@ -391,6 +417,20 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     localStorage.setItem("savedTrips", JSON.stringify(savedTrips));
   }, [savedTrips]);
+
+  // Synchronize localStorage for active trip
+  useEffect(() => {
+    if (activeTrip) {
+      localStorage.setItem("activeTrip", JSON.stringify(activeTrip));
+    } else {
+      localStorage.removeItem("activeTrip");
+    }
+  }, [activeTrip]);
+
+  // Synchronize localStorage for chat messages
+  useEffect(() => {
+    localStorage.setItem("chatMessages", JSON.stringify(chatMessages));
+  }, [chatMessages]);
 
   const toggleTheme = () => {
     setTheme((prev) => (prev === "light" ? "dark" : "light"));
@@ -455,74 +495,163 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const targetTrip = savedTrips.find((t) => t.id === tripId) || activeTrip;
 
-    if (targetTrip) {
-      const isRemoval = !!options?.remove;
-      const historyMsg = isRemoval ? "Google Calendar Events Removed" : "Google Calendar Synchronized";
-      const countVal = isRemoval ? 0 : 7 * targetTrip.durationDays;
-
-      // Format itinerary to markdown
-      let itineraryMarkdown = "";
-      Object.entries(targetTrip.itinerary).forEach(([dayNum, activities]) => {
-        itineraryMarkdown += `### Day ${dayNum}\n`;
-        activities.forEach((act) => {
-          itineraryMarkdown += `- **${act.time}** [${act.slot}] ${act.title}: ${act.description}\n`;
-        });
-      });
-
-      // Save itinerary to SQLite database via backend
-      const tripName = targetTrip.cityName + " Itinerary";
-      try {
-        await axios.post("http://localhost:8000/calendar/save", {
-          itinerary_text: itineraryMarkdown,
-          trip_name: tripName
-        });
-      } catch (err) {
-        console.warn("Backend save failed, syncing offline:", err);
-      }
-
-      // Trigger Google OAuth popup if syncing (not removing)
-      if (!isRemoval) {
-        const width = 600, height = 655;
-        const left = window.innerWidth / 2 - width / 2;
-        const top = window.innerHeight / 2 - height / 2;
-        window.open(
-          `http://localhost:8000/login/google?trip_id=${targetTrip.id}`,
-          "Google Calendar Sync",
-          `width=${width},height=${height},top=${top},left=${left}`
-        );
-      }
-
-      setSavedTrips((prev) =>
-        prev.map((t) =>
-          t.id === tripId
-            ? {
-              ...t,
-              calendarSynced: !isRemoval,
-              calendarEventsCount: countVal,
-              calendarSyncedAt: isRemoval ? undefined : "Today 10:30 AM",
-              historyTimeline: appendHistoryEvent(t.historyTimeline, historyMsg, "calendar")
-            }
-            : t
-        )
-      );
-
-      if (activeTrip && activeTrip.id === tripId) {
-        setActiveTrip((prev) =>
-          prev
-            ? {
-              ...prev,
-              calendarSynced: !isRemoval,
-              calendarEventsCount: countVal,
-              calendarSyncedAt: isRemoval ? undefined : "Today 10:30 AM",
-              historyTimeline: appendHistoryEvent(prev.historyTimeline, historyMsg, "calendar")
-            }
-            : null
-        );
-      }
+    if (!targetTrip) {
+      setIsSyncingCalendar(false);
+      return false;
     }
 
-    setIsSyncingCalendar(false);
-    return true;
+    const isRemoval = !!options?.remove;
+    const historyMsg = isRemoval ? "Google Calendar Events Removed" : "Google Calendar Synchronized";
+    const countVal = isRemoval ? 0 : 7 * targetTrip.durationDays;
+
+    return new Promise<boolean>(async (resolve) => {
+      try {
+        const payload: any = {
+          trip_id: targetTrip.id,
+          user_id: targetTrip.user_id || "guest_user",
+          city: targetTrip.cityName,
+          duration: targetTrip.durationDays,
+          budget: targetTrip.budget,
+          travel_style: targetTrip.travelStyle,
+          travelers: targetTrip.travelersCount || 1,
+          interests: targetTrip.specialInterests ? targetTrip.specialInterests.join(", ") : "None",
+          travel_date: targetTrip.startDate,
+          status: isRemoval ? "ARCHIVED" : "SAVED",
+          itinerary: {},
+          metadata: {
+            weather_summary: targetTrip.weatherSummary,
+            packing: targetTrip.packingTips,
+            packing_checklist: targetTrip.packingChecklist,
+            budget_summary: targetTrip.budgetSummary,
+            emergency: targetTrip.emergencyContacts,
+            hotels: targetTrip.hotels,
+            restaurants: targetTrip.restaurants
+          }
+        };
+
+        Object.entries(targetTrip.itinerary).forEach(([dayNum, activities]) => {
+          payload.itinerary[dayNum] = activities.map((act) => {
+            let startTime = "09:00";
+            let endTime = "12:00";
+            if (act.duration && act.duration.includes("-")) {
+              const parts = act.duration.split("-");
+              startTime = parts[0].trim();
+              endTime = parts[1].trim();
+            }
+            return {
+              activity_id: act.id,
+              day: parseInt(dayNum),
+              start_time: startTime,
+              end_time: endTime,
+              activity: act.title,
+              location: act.location || "",
+              category: act.category || "Sightseeing",
+              restaurant: act.restaurant || null,
+              hotel: act.hotel || null,
+              notes: act.description || "",
+              google_event_id: act.google_event_id || null
+            };
+          });
+        });
+
+        const res = await axios.post("http://localhost:8000/calendar/save-and-sync", payload);
+        const data = res.data;
+
+        if (data.needs_auth && data.auth_url && !isRemoval) {
+          const width = 600, height = 655;
+          const left = window.innerWidth / 2 - width / 2;
+          const top = window.innerHeight / 2 - height / 2;
+          
+          const handleAuthMessage = async (event: MessageEvent) => {
+            if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS' && event.data.trip_id === targetTrip.id) {
+              window.removeEventListener('message', handleAuthMessage);
+              try {
+                const finalRes = await axios.post("http://localhost:8000/calendar/save-and-sync", payload);
+                
+                // Update local state
+                setSavedTrips((prev) =>
+                  prev.map((t) =>
+                    t.id === tripId
+                      ? {
+                        ...t,
+                        calendarSynced: true,
+                        calendarEventsCount: countVal,
+                        calendarSyncedAt: "Today 10:30 AM",
+                        historyTimeline: appendHistoryEvent(t.historyTimeline, historyMsg, "calendar")
+                      }
+                      : t
+                  )
+                );
+
+                if (activeTrip && activeTrip.id === tripId) {
+                  setActiveTrip((prev) =>
+                    prev
+                      ? {
+                        ...prev,
+                        calendarSynced: true,
+                        calendarEventsCount: countVal,
+                        calendarSyncedAt: "Today 10:30 AM",
+                        historyTimeline: appendHistoryEvent(prev.historyTimeline, historyMsg, "calendar")
+                      }
+                      : null
+                  );
+                }
+
+                setIsSyncingCalendar(false);
+                resolve(finalRes.data.synced);
+              } catch (e) {
+                console.error("Failed to sync after auth:", e);
+                setIsSyncingCalendar(false);
+                resolve(false);
+              }
+            }
+          };
+          window.addEventListener('message', handleAuthMessage);
+
+          window.open(
+            data.auth_url,
+            "Google Calendar Sync",
+            `width=${width},height=${height},top=${top},left=${left}`
+          );
+        } else {
+          // Already authenticated or simulated sync completed
+          setSavedTrips((prev) =>
+            prev.map((t) =>
+              t.id === tripId
+                ? {
+                  ...t,
+                  calendarSynced: !isRemoval,
+                  calendarEventsCount: countVal,
+                  calendarSyncedAt: isRemoval ? undefined : "Today 10:30 AM",
+                  historyTimeline: appendHistoryEvent(t.historyTimeline, historyMsg, "calendar")
+                }
+                : t
+            )
+          );
+
+          if (activeTrip && activeTrip.id === tripId) {
+            setActiveTrip((prev) =>
+              prev
+                ? {
+                  ...prev,
+                  calendarSynced: !isRemoval,
+                  calendarEventsCount: countVal,
+                  calendarSyncedAt: isRemoval ? undefined : "Today 10:30 AM",
+                  historyTimeline: appendHistoryEvent(prev.historyTimeline, historyMsg, "calendar")
+                }
+                : null
+            );
+          }
+
+          setIsSyncingCalendar(false);
+          resolve(data.synced);
+        }
+      } catch (err) {
+        console.warn("Backend save & sync failed, syncing offline:", err);
+        setIsSyncingCalendar(false);
+        resolve(false);
+      }
+    });
   };
 
   const askAIChat = async (question: string) => {
@@ -571,12 +700,17 @@ if (requestedCity) {
 console.log("FULL API RESPONSE:", res.data);
 console.log("ATTRACTIONS:", attractions);
 
+        const tripStart = tripData.travel_date || new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0];
+        const parsedStart = new Date(tripStart);
+        const parsedEnd = new Date(parsedStart.getTime() + 86400000 * tripData.duration);
+        const tripEnd = parsedEnd.toISOString().split("T")[0];
+
         tripCard = {
           id: tripData.trip_id || `trip-real-${Date.now()}`,
           cityName: tripData.city,
           bannerImage: banner,
-          startDate: new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0],
-          endDate: new Date(Date.now() + 86400000 * (7 + tripData.duration)).toISOString().split("T")[0],
+          startDate: tripStart,
+          endDate: tripEnd,
           durationDays: tripData.duration,
           travelersCount: tripData.travelers || 1,
           budget: tripData.budget || "Moderate",

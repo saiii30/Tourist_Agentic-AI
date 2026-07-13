@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
+
 import { X, Calendar, Clock, Plus } from "lucide-react";
+
 import { motion, AnimatePresence } from "framer-motion";
- 
+
 interface AddToItineraryDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -9,7 +11,7 @@ interface AddToItineraryDialogProps {
   durationDays: number;
   onAdd: (dayNum: number, time: string) => void;
 }
- 
+
 export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
   isOpen,
   onClose,
@@ -19,28 +21,29 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
 }) => {
   const [selectedDay, setSelectedDay] = useState<number>(1);
   const [selectedTime, setSelectedTime] = useState<string>("09:00 AM");
- 
+
   // Reset defaults when item changes or modal opens
   useEffect(() => {
     if (isOpen) {
       setSelectedDay(1);
-      // setSelectedTime(item?.type === "hotel" ? "09:00 PM" : "01:00 PM");commented this to add attractions code below
       setSelectedTime(
-  item?.type === "hotel" ? "09:00 PM"
-  : item?.type === "attraction" ? "09:00 AM"
-  : "01:00 PM"
-);
+        item?.type === "hotel"
+          ? "09:00 PM"
+          : item?.type === "attraction"
+          ? "09:00 AM"
+          : "01:00 PM"
+      );
     }
   }, [isOpen, item]);
- 
+
   if (!item) return null;
- 
+
   // Generate days based on trip duration
   const dayOptions = [];
   for (let i = 1; i <= durationDays; i++) {
     dayOptions.push(i);
   }
- 
+
   // Generate times (07:00 AM to 11:30 PM, 30m intervals)
   const timeOptions: string[] = [];
   for (let hour = 7; hour <= 23; hour++) {
@@ -50,12 +53,12 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
     timeOptions.push(`${hStr}:00 ${ampm}`);
     timeOptions.push(`${hStr}:30 ${ampm}`);
   }
- 
+
   const handleAddClick = () => {
     onAdd(selectedDay, selectedTime);
     onClose();
   };
- 
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -68,7 +71,7 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
             onClick={onClose}
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 pointer-events-auto"
           />
- 
+
           {/* Modal Centered on Desktop, Bottom Sheet on Mobile */}
           <div className="fixed inset-0 flex items-center justify-center p-4 z-50 pointer-events-none">
             <motion.div
@@ -99,16 +102,16 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
                   <X className="w-5 h-5" />
                 </button>
               </div>
- 
+
               {/* Form Content */}
               <div className="p-6 space-y-5">
                 <div>
                   <h3 className="font-heading text-sm font-bold text-slate-800 dark:text-slate-200">
                     {item.type === "hotel"
-    ? "🏨 Add Stay Accommodation"
-    : item.type === "attraction"
-    ? "🗺️ Add on Travel Plan"
-    : "🍽 Add Dining Spot"}
+                      ? "🏨 Add Stay Accommodation"
+                      : item.type === "attraction"
+                      ? "🗺️ Add on Travel Plan"
+                      : "🍽 Add Dining Spot"}
                   </h3>
                   <p className="text-[11px] text-slate-450 dark:text-slate-400 mt-1 font-medium truncate">
                     {item.name}
@@ -117,7 +120,7 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
                     {item.location}
                   </span>
                 </div>
- 
+
                 <div className="space-y-4">
                   {/* Select Day */}
                   <div className="space-y-1.5">
@@ -137,7 +140,7 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
                       ))}
                     </select>
                   </div>
- 
+
                   {/* Select Time */}
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
@@ -157,7 +160,7 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
                     </select>
                   </div>
                 </div>
- 
+
                 {/* Submit Action */}
                 <button
                   onClick={handleAddClick}

@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { X, Calendar, Globe, CheckCircle, ExternalLink, ArrowRight, Loader } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+import { useTravelPlanner } from "../../context/TravelPlannerContext";
+
 interface CalendarSyncDialogProps {
   isOpen: boolean;
   onClose: () => void;
@@ -11,6 +13,7 @@ interface CalendarSyncDialogProps {
 type SyncStep = "auth" | "syncing" | "success";
 
 export const CalendarSyncDialog: React.FC<CalendarSyncDialogProps> = ({ isOpen, onClose, tripName }) => {
+  const { activeTrip, syncCalendar } = useTravelPlanner();
   const [step, setStep] = useState<SyncStep>("auth");
   const [progress, setProgress] = useState<number>(0);
 
@@ -29,20 +32,33 @@ export const CalendarSyncDialog: React.FC<CalendarSyncDialogProps> = ({ isOpen, 
       setProgress(0);
       interval = setInterval(() => {
         setProgress((p) => {
-          if (p >= 100) {
-            clearInterval(interval);
-            setTimeout(() => setStep("success"), 500);
-            return 100;
+          if (p >= 95) {
+            return 95;
           }
-          return p + 4;
+          return p + 5;
         });
-      }, 100);
+      }, 150);
     }
     return () => clearInterval(interval);
   }, [step]);
 
-  const handleGoogleAuth = () => {
+  const handleGoogleAuth = async () => {
+    if (!activeTrip) return;
     setStep("syncing");
+    try {
+      const success = await syncCalendar(activeTrip.id);
+      if (success) {
+        setProgress(100);
+        setTimeout(() => {
+          setStep("success");
+        }, 300);
+      } else {
+        setStep("auth");
+      }
+    } catch (e) {
+      console.error("Sync error:", e);
+      setStep("auth");
+    }
   };
 
   return (

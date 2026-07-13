@@ -1,60 +1,357 @@
 import os
 import json
+import urllib.request
+import urllib.parse
 from rag_service import client
+import urllib.error
+import base64
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+import base64
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, quote
+
+
+
+def get_image_from_website(url, max_images=1):
+    """
+    Returns up to max_images image URLs from a website.
+    """
+
+    try:
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/138.0 Safari/537.36"
+            )
+        }
+
+        response = requests.get(
+            url,
+            headers=headers,
+            timeout=20,
+            allow_redirects=True,
+        )
+
+        response.raise_for_status()
+
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        images = []
+        seen = set()
+
+        def add_image(src):
+            if not src:
+                return
+
+            src = src.strip()
+
+            if src.startswith("data:"):
+                return
+
+            full = urljoin(url, src)
+
+            # Ignore icons/logos/svg
+            if any(
+                x in full.lower()
+                for x in [
+                    ".svg",
+                    "logo",
+                    "icon",
+                    "favicon",
+                    "sprite",
+                ]
+            ):
+                return
+
+            if full not in seen:
+                seen.add(full)
+                images.append(full)
+
+        # -----------------------
+        # OpenGraph
+        # -----------------------
+        og = soup.find("meta", property="og:image")
+        if og:
+            add_image(og.get("content"))
+
+        # -----------------------
+        # Twitter
+        # -----------------------
+        twitter = soup.find("meta", attrs={"name": "twitter:image"})
+        if twitter:
+            add_image(twitter.get("content"))
+
+        # -----------------------
+        # Picture source tags
+        # -----------------------
+        for source in soup.find_all("source"):
+            add_image(source.get("srcset"))
+
+        # -----------------------
+        # IMG tags
+        # -----------------------
+        for img in soup.find_all("img"):
+
+            attrs = [
+                "src",
+                "data-src",
+                "data-lazy-src",
+                "data-original",
+                "data-image",
+                "data-large-image",
+                "data-srcset",
+                "srcset",
+            ]
+
+            for attr in attrs:
+
+                value = img.get(attr)
+
+                if not value:
+                    continue
+
+                # srcset contains multiple URLs
+                if attr in ["srcset", "data-srcset"]:
+                    for item in value.split(","):
+                        add_image(item.strip().split(" ")[0])
+                else:
+                    add_image(value)
+
+        return images[:max_images]
+
+    except Exception as e:
+        print("Website image error:", e)
+        return []
+
+
+
+def get_places_from_google(city: str, interests: str) -> str | None:
+    api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+    if not api_key:
+        print("GOOGLE_PLACES_API_KEY not found in environment. Skipping Google Places search.")
+        return None
+
+    # Construct the search query
+    query_parts = [f"best tourist attractions in {city}"]
+    if interests and interests.lower() != "none":
+        query_parts.append(interests)
+    
+    query = " ".join(query_parts)
+    
+    # New Places API endpoint and parameters
+    url = "https://places.googleapis.com/v1/places:searchText"
+    field_mask = (
+    "places.id,"
+    "places.displayName,"
+    "places.formattedAddress,"
+    "places.location,"
+    "places.types,"
+    "places.primaryType,"
+    "places.rating,"
+    "places.userRatingCount,"
+    "places.priceLevel,"
+    "places.websiteUri,"
+    "places.googleMapsUri,"
+    "places.nationalPhoneNumber,"
+    "places.internationalPhoneNumber,"
+    "places.businessStatus,"
+    "places.regularOpeningHours,"
+    "places.currentOpeningHours,"
+    "places.photos,"
+    "places.parkingOptions,"
+    "places.paymentOptions,"
+    "places.accessibilityOptions,"
+    "places.takeout,"
+    "places.delivery,"
+    "places.dineIn,"
+    "places.servesBreakfast,"
+    "places.servesLunch,"
+    "places.servesDinner,"
+    "places.servesBeer,"
+    "places.servesWine,"
+    "places.servesVegetarianFood,"
+    "places.allowsDogs,"
+    "places.goodForChildren,"
+    "places.goodForGroups,"
+    "places.editorialSummary"
+    )
+    
+    post_data = json.dumps({"textQuery": query}).encode('utf-8')
+    
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": field_mask,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+
+    try:
+        req = urllib.request.Request(url, data=post_data, headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+
+        if data and data.get("places"):
+            print("Google Places API call successful, found nearby places.")
+            lines = []
+            places_data = []
+
+            for i, place in enumerate(data["places"][:5], 1):
+                attraction_id = place.get("id", f"mock-attraction-{i}")
+                name = place.get("displayName", {}).get("text", "N/A")
+                rating = place.get("rating", "N/A")
+                num_reviews = place.get("userRatingCount", 0)
+                address = place.get("formattedAddress", "Address not available")
+                website = place.get("websiteUri", "Not available")
+                photo_url = None
+
+                # Get coordinates
+                loc = place.get("location", {})
+                lat = loc.get("latitude")
+                lng = loc.get("longitude")
+
+                item_lines = [f"**{name}**"]
+                item_lines.append(f"⭐ Rating: {rating} ({num_reviews} reviews)")
+                item_lines.append(f"📍 Address: {address}")
+
+                # Phone numbers
+                phone = place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber")
+                if phone:
+                    item_lines.append(f"📞 Phone: {phone}")
+
+                hours = (
+                    place.get("currentOpeningHours", {}).get("weekdayDescriptions")
+                    or place.get("regularOpeningHours", {}).get("weekdayDescriptions")
+                    or []
+                )
+
+                if hours:
+                    item_lines.append("🕒 Hours:")
+                    for h in hours:
+                        item_lines.append(f"🕒 {h}")
+
+                # Editorial summary
+                editorial = place.get("editorialSummary", {}).get("text")
+                if editorial:
+                    item_lines.append(f"📝 {editorial}")
+
+                # Business status
+                business_status = place.get("businessStatus")
+                if business_status:
+                    status_text = "✅ Open" if business_status == "OPERATIONAL" else f"⚠️ {business_status}"
+                    item_lines.append(status_text)
+
+                # Good for children
+                if place.get("goodForChildren"):
+                    item_lines.append("👶 Good for children")
+
+                # Good for groups
+                if place.get("goodForGroups"):
+                    item_lines.append("👥 Good for groups")
+
+                # Accessibility options
+                accessibility = place.get("accessibilityOptions", {})
+                if accessibility:
+                    access_info = [
+                        "wheelchair accessible parking" for k, v in accessibility.items() if k == "wheelchairAccessibleParking" and v
+                    ] + [
+                        "wheelchair accessible entrance" for k, v in accessibility.items() if k == "wheelchairAccessibleEntrance" and v
+                    ]
+                    if access_info:
+                        item_lines.append(f"♿ {', '.join(access_info).capitalize()}")
+
+                # Payment options
+                payment = place.get("paymentOptions", {})
+                if payment:
+                    payment_methods = [
+                        "credit cards" for k, v in payment.items() if k == "acceptsCreditCards" and v
+                    ] + [
+                        "debit cards" for k, v in payment.items() if k == "acceptsDebitCards" and v
+                    ] + [
+                        "cash only" for k, v in payment.items() if k == "acceptsCashOnly" and v
+                    ]
+                    if payment_methods:
+                        item_lines.append(f"💳 Accepts {', '.join(payment_methods)}")
+
+                if address != "Address not available":
+                    map_query = urllib.parse.quote_plus(address)
+                    map_url = f"https://www.google.com/maps/search/?api=1&query={map_query}"
+                    item_lines.append(f"[View Map]({map_url})")
+
+                if website != "Not available":
+                    item_lines.append(f"[Visit Website]({website})")
+
+                if photo_url:
+                    item_lines.append(f"![{name}]({photo_url})")
+
+                lines.append(f"{i}. {chr(10).join(item_lines)}")
+
+                places_data.append({
+                    "attraction_id": attraction_id,
+                    "name": name,
+                    "rating": rating if isinstance(rating, (int, float)) else 4.2,
+                    "reviews": num_reviews,
+                    "address": address,
+                    "website": website,
+                    "latitude": lat,
+                    "longitude": lng,
+                    "types": place.get("types", []),
+                    "hours": hours,
+                    "editorial": editorial or ""
+                })
+            
+            return {"text": "\n".join(lines), "data": places_data}
+        else:
+            print(f"Google Places API returned no nearby places. Response: {data}")
+            return None
+    except urllib.error.HTTPError as e:
+        print("Status Code:", e.code)
+        print("Google Error Response:")
+        print(e.read().decode("utf-8"))
+        return None
+
+    except Exception as e:
+        print("Error:", str(e))
+        return None
 
 def nearby_agent(question, city="None", interests="None"):
     if city == "None":
-        return "I need to know which city you are visiting to suggest nearby places."
-        
-    city_clean = city.strip().lower()
-    
-    # Extract list of lowercase interests
-    interests_list = []
-    if interests and interests.lower() != "none":
-        interests_list = [i.strip().lower() for i in interests.split(",")]
-        
-    # Attempt local database lookup
-    db_path = os.path.join(os.path.dirname(__file__), "locations_data.json")
-    if os.path.exists(db_path):
-        try:
-            with open(db_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                
-            city_data = data.get(city_clean)
-            if city_data and "nearby_places" in city_data:
-                # Interest scoring function
-                def score_interest(p):
-                    p_interests = [pi.lower() for pi in p.get("interests", [])]
-                    return len(set(interests_list).intersection(set(p_interests)))
-                
-                # Sort all nearby places by interest score descending
-                matched = list(city_data["nearby_places"])
-                matched.sort(key=score_interest, reverse=True)
-                matched = matched[:3]
-                
-                # Format to expected markdown output
-                lines = []
-                for place in matched:
-                    lines.append(f"* **{place['name']}**: {place['description']}")
-                    lines.append(f"\t+ Best time to visit: {place['best_time']}")
-                return "\n".join(lines)
-        except Exception as e:
-            print(f"Error loading local nearby places database: {e}")
-            
-    # Fallback to LLM specific prompt if city not found in local db or database error
+        return {"message": "I need to know which city you are visiting to suggest nearby places."}
+
+    # 1. Check RAG cache
     try:
-        interests_str = ", ".join(interests_list) if interests_list else "sightseeing"
-        prompt = (
-            f"Generate a list of 2-3 realistic places to visit / attractions in {city.title()} catering to {interests_str} interests.\n"
-            "Format the output strictly as a markdown list with bold names, a brief description, and the best time to visit.\n"
-            "Do not include any greeting, introduction, or general trip advice. Return only the markdown list."
-        )
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2
-        )
-        return response.choices[0].message.content.strip()
+        from rag_service import get_answer
+        rag_result = get_answer(question, check_rag_only=True)
+        if rag_result:
+            print("✅ Found nearby place recommendations from RAG (FAISS DB).")
+            return rag_result
     except Exception as e:
-        print(f"Error in nearby_agent fallback: {e}")
-        return f"Currently, I cannot fetch sightseeing suggestions for {city}."
+        print(f"⚠️ Error checking RAG for nearby places: {e}")
+
+
+    # 2. If  fails, try the Google Places API
+    print("⚠️ Foursquare failed. Checking Google Places API for nearby places.")
+    google_results = get_places_from_google(city, interests)
+    if google_results:
+        print("✅ Found results from Google Places.")
+        # Save the successful Google response to RAG for future queries
+        try:
+            from rag_service import save_to_rag
+            save_to_rag(question, google_results["text"])
+            print("✅ Saved Google Places response to RAG.")
+        except Exception as e:
+            print(f"⚠️ Could not save Google response to RAG: {e}")
+        return {"source": "google_places", "answer": google_results["text"], "data": google_results["data"]}
+
+    # 4. Final fallback to Groq LLM
+    print("⚠️ All place APIs failed. Falling back to Groq LLM.")
+    try:
+        from rag_service import get_answer
+        return get_answer(question)
+    except Exception as e:
+        print(f"❌ Final fallback to Groq failed: {e}")
+        return {"message": f"Sorry, I'm having trouble finding sightseeing suggestions for {city} right now."}

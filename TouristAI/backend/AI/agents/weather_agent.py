@@ -174,4 +174,14 @@ def weather_agent(question: str, city: str = "None") -> str:
     if is_mock:
         answer += "\n\n*(Note: Displaying simulated weather data. To enable live weather, please configure `OPENWEATHER_API_KEY` in your `.env` file.)*"
         
-    return answer
+    return {
+        "text": answer,
+        "data": {
+            "temp": temp,
+            "feels_like": feels_like,
+            "description": weather_desc,
+            "main": main_cond,
+            "humidity": humidity,
+            "wind_speed": wind
+        }
+    }

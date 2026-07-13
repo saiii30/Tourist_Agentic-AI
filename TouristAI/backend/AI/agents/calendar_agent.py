@@ -1,7 +1,8 @@
 import os
-import sqlite3
 import json
+from database.postgres import PostgresDatabase
 from rag_service import client
+from agents.calendar_builder import CalendarBuilder
 
 def extract_trip_details(question: str) -> tuple[str, int]:
     prompt = (
@@ -24,7 +25,6 @@ def extract_trip_details(question: str) -> tuple[str, int]:
         )
         content = response.choices[0].message.content.strip()
         
-        # Strip markdown code blocks if the model returned them
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
@@ -43,19 +43,12 @@ def extract_trip_details(question: str) -> tuple[str, int]:
         return "None", 3
 
 def get_db_places(city: str) -> list:
-    db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tourist_ai.db"))
     places = []
-    if not os.path.exists(db_path):
-        print(f"Database file not found at {db_path}")
-        return []
-        
     try:
-        conn = sqlite3.connect(db_path)
+        conn = PostgresDatabase.get_connection()
         cursor = conn.cursor()
-        
-        # Case insensitive query for city name
         cursor.execute(
-            "SELECT name, place_type, description, rating FROM places WHERE LOWER(city) = ? OR LOWER(city) LIKE ?",
+            "SELECT name, place_type, description, rating FROM places WHERE LOWER(city) = %s OR LOWER(city) LIKE %s",
             (city.lower(), f"%{city.lower()}%")
         )
         rows = cursor.fetchall()
@@ -66,231 +59,38 @@ def get_db_places(city: str) -> list:
                 "description": row[2],
                 "rating": row[3]
             })
+        cursor.close()
         conn.close()
     except Exception as e:
         print(f"Error querying database for city '{city}': {e}")
     return places
 
-def calendar_agent(question: str, city: str = "None", days: int = 3, interests: str = "None", travel_style: str = "None", budget: str = "None", other_agent_info: str = "") -> str:
-    if city == "None":
-        return "I can help you build a personalized day plan, but I need to know your destination first."
-        
-    city_clean = city.strip().lower()
-    budget_clean = budget.strip().lower() if budget else "budget"
-    
-    # Extract list of lowercase interests
-    interests_list = []
-    if interests and interests.lower() != "none":
-        interests_list = [i.strip().lower() for i in interests.split(",")]
-        
-    # Map to database budget levels
-    budget_val = "Budget"
-    if "moderate" in budget_clean:
-        budget_val = "Moderate"
-    elif "luxury" in budget_clean:
-        budget_val = "Luxury"
-        
-    # 1. Attempt programmatic schedule assembly from local database
-    db_path = os.path.join(os.path.dirname(__file__), "locations_data.json")
-    if os.path.exists(db_path):
-        try:
-            with open(db_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                
-            city_data = data.get(city_clean)
-            if city_data:
-                # Hotels (for accommodation notes)
-                matched_hotels = [h for h in city_data.get("hotels", []) if h.get("budget") == budget_val]
-                if len(matched_hotels) < 3:
-                    matched_hotels += [h for h in city_data.get("hotels", []) if h not in matched_hotels]
-                selected_hotel = matched_hotels[0]["name"] if matched_hotels else "Local Hotel"
-                
-                # Restaurants (sorted by interest match)
-                def score_restaurant(r):
-                    r_interests = [ri.lower() for ri in r.get("interests", [])]
-                    return len(set(interests_list).intersection(set(r_interests)))
-                
-                matched_rests = [r for r in city_data.get("restaurants", []) if r.get("budget") == budget_val]
-                matched_rests.sort(key=score_restaurant, reverse=True)
-                if len(matched_rests) < 3:
-                    others = [r for r in city_data.get("restaurants", []) if r not in matched_rests]
-                    others.sort(key=score_restaurant, reverse=True)
-                    matched_rests += others
-                    
-                # Attractions/Places (sorted by interest match)
-                def score_place(p):
-                    p_interests = [pi.lower() for pi in p.get("interests", [])]
-                    return len(set(interests_list).intersection(set(p_interests)))
-                    
-                matched_places = list(city_data.get("nearby_places", []))
-                matched_places.sort(key=score_place, reverse=True)
-                
-                # Build Day-by-Day schedule
-                items = []
-                for day in range(1, days + 1):
-                    # Morning
-                    if matched_places:
-                        place = matched_places[(day - 1) % len(matched_places)]
-                        items.append({
-                            "day": day,
-                            "start_time": "09:00",
-                            "end_time": "12:00",
-                            "activity": f"Visit {place['name']}",
-                            "location": place['name'],
-                            "category": "Sightseeing",
-                            "notes": f"{place['description']} Best time to visit: {place['best_time'].lower()}."
-                        })
-                    else:
-                        items.append({
-                            "day": day,
-                            "start_time": "09:00",
-                            "end_time": "12:00",
-                            "activity": "Morning Sightseeing",
-                            "location": "Local Attractions",
-                            "category": "Sightseeing",
-                            "notes": "Explore the local scenic sights and viewpoints around the city."
-                        })
-                        
-                    # Lunch
-                    if matched_rests:
-                        rest = matched_rests[(day * 2 - 2) % len(matched_rests)]
-                        items.append({
-                            "day": day,
-                            "start_time": "12:30",
-                            "end_time": "14:00",
-                            "activity": f"Lunch at {rest['name']}",
-                            "location": rest['name'],
-                            "category": "Food",
-                            "restaurant": rest['name'],
-                            "notes": f"Enjoy {rest['cuisine'].lower()} cuisine. Recommended: {rest['must_try']}."
-                        })
-                    else:
-                        items.append({
-                            "day": day,
-                            "start_time": "12:30",
-                            "end_time": "14:00",
-                            "activity": "Lunch",
-                            "location": "Local Cafe",
-                            "category": "Food",
-                            "notes": "Enjoy lunch at a local cafe or restaurant."
-                        })
-                        
-                    # Afternoon
-                    if matched_places and len(matched_places) > 1:
-                        place = matched_places[day % len(matched_places)]
-                        items.append({
-                            "day": day,
-                            "start_time": "14:30",
-                            "end_time": "17:00",
-                            "activity": f"Explore {place['name']}",
-                            "location": place['name'],
-                            "category": "Sightseeing",
-                            "notes": f"{place['description']} Enjoy the local sights and capture scenic views."
-                        })
-                    else:
-                        items.append({
-                            "day": day,
-                            "start_time": "14:30",
-                            "end_time": "17:00",
-                            "activity": "Afternoon Relaxation",
-                            "location": selected_hotel,
-                            "category": "Relaxation",
-                            "hotel": selected_hotel,
-                            "notes": f"Relax and unwind or stroll near your hotel, {selected_hotel}."
-                        })
-                        
-                    # Evening
-                    if matched_rests and len(matched_rests) > 1:
-                        rest = matched_rests[(day * 2 - 1) % len(matched_rests)]
-                        items.append({
-                            "day": day,
-                            "start_time": "18:00",
-                            "end_time": "21:00",
-                            "activity": f"Dinner at {rest['name']}",
-                            "location": rest['name'],
-                            "category": "Food",
-                            "restaurant": rest['name'],
-                            "notes": f"{rest['cuisine']} style dinner. Try their famous {rest['must_try']}."
-                        })
-                    else:
-                        items.append({
-                            "day": day,
-                            "start_time": "18:00",
-                            "end_time": "21:00",
-                            "activity": "Evening Walk & Dinner",
-                            "location": "Local Market",
-                            "category": "Food",
-                            "notes": "Enjoy a pleasant evening walk in the local market, and dine at a cozy nearby eatery."
-                        })
-                    
-                return json.dumps(items)
-        except Exception as e:
-            print(f"Error programmatically generating calendar: {e}")
-            
-    # 2. LLM Fallback (for uncatalogued cities)
-    places = get_db_places(city)
-    places_str = ""
-    if places:
-        for idx, p in enumerate(places, 1):
-            places_str += f"{idx}. {p['name']} ({p['type']}) - Rating: {p['rating']}\n   Description: {p['description']}\n"
-            
+# Dedicated LLM fallback generators
+def generate_hotels(city: str) -> list:
+    print(f"[FALLBACK] Calling dedicated fallback generator for hotels in {city}.")
     prompt = (
-        f"You are a professional travel planner agent. The user wants a day-by-day travel calendar/itinerary.\n"
-        f"Request: '{question}'\n"
-        f"Destination City: {city}\n"
-        f"Duration: {days} Day(s)\n"
-        f"Travel Style: {travel_style}\n"
-        f"Interests: {interests}\n"
-        f"Budget Category: {budget}\n\n"
-        "Guidelines:\n"
-        "- The itinerary must respect the budget constraint. "
-        "If budget category is 'Budget', prioritize free attractions, budget street foods or low-cost dining, and local/public transport. "
-        "If budget category is 'Moderate', mix mid-range experiences, comfortable local transport (like autos or cabs), and nice local restaurants. "
-        "If budget category is 'Luxury', prioritize high-end experiences, private chauffeur tours, fine dining, and exclusive activities.\n\n"
-    )
-    
-    if places:
-        prompt += (
-            "We have these local attractions and dining spots in our database for this city. "
-            "Please prioritize including these places in the itinerary/schedule where appropriate:\n"
-            f"{places_str}\n"
-        )
-    else:
-        prompt += (
-            "We don't have database records for this city. "
-            f"Please generate a highly realistic, accurate, and appealing day-by-day itinerary/calendar for {city} "
-            f"using your general knowledge.\n"
-        )
-        
-    if other_agent_info:
-        prompt += (
-            "\nIMPORTANT: Your colleague agents have already suggested the following places/hotels/restaurants. "
-            "You MUST incorporate their specific suggestions into your day-by-day schedule to avoid contradictions!\n"
-            f"{other_agent_info}\n\n"
-        )
-        
-    prompt += (
-        "Construct a detailed day-by-day calendar schedule. For each day, include:\n"
-        "- Morning (approx. 09:00 - 12:00) activity/attraction\n"
-        "- Afternoon (approx. 14:00 - 17:00) activity/attraction\n"
-        "- Evening (approx. 18:00 - 21:00) dining/relaxation or local market stroll\n\n"
-        "Return the output STRICTLY as a JSON list of objects, matching this schema:\n"
+        f"Generate a list of 5 realistic, actual hotels in the city of {city}.\n"
+        "Return the output STRICTLY as a JSON list of objects matching this schema:\n"
         "[\n"
         "  {\n"
-        "    \"day\": 1,\n"
-        "    \"start_time\": \"09:00\",\n"
-        "    \"end_time\": \"12:00\",\n"
-        "    \"activity\": \"Activity Name\",\n"
-        "    \"location\": \"Location expected\",\n"
-        "    \"category\": \"Sightseeing\",\n"
-        "    \"restaurant\": null,\n"
-        "    \"hotel\": null,\n"
-        "    \"notes\": \"Details...\"\n"
+        "    \"hotel_id\": \"hotel-1\",\n"
+        "    \"name\": \"Grand Palace Hotel\",\n"
+        "    \"rating\": 4.6,\n"
+        "    \"reviews\": 340,\n"
+        "    \"address\": \"123 Palace Road, Central Block\",\n"
+        "    \"website\": \"http://grandpalacehotel.com\",\n"
+        "    \"latitude\": 17.3850,\n"
+        "    \"longitude\": 78.4867,\n"
+        "    \"pricePerNight\": 4500,\n"
+        "    \"amenities\": [\"Free Wi-Fi\", \"Swimming Pool\", \"Room Service\"],\n"
+        "    \"room_types\": [\"Standard\", \"Deluxe\", \"Suite\"],\n"
+        "    \"parking\": \"Valet parking available\",\n"
+        "    \"photos\": [],\n"
+        "    \"booking_url\": \"http://booking.com\"\n"
         "  }\n"
-        "]\n\n"
-        "Do not output markdown. Output ONLY a valid JSON list."
+        "]\n"
+        "Output only valid JSON. Do not include markdown codeblocks or explanations."
     )
-    
     try:
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
@@ -304,7 +104,168 @@ def calendar_agent(question: str, city: str = "None", days: int = 3, interests: 
             content = content.split("```")[1].split("```")[0].strip()
         if "[" in content:
             content = content[content.find("["):content.rfind("]")+1]
-        return content
+        return json.loads(content)
     except Exception as e:
-        print(f"Error calling Groq for calendar fallback: {e}")
-        return f"Sorry, I could not generate a travel itinerary calendar for {city} at this moment."
+        print(f"Error generating fallback hotels: {e}")
+        return []
+
+def generate_restaurants(city: str) -> list:
+    print(f"[FALLBACK] Calling dedicated fallback generator for restaurants in {city}.")
+    prompt = (
+        f"Generate a list of 8 realistic, actual restaurants in the city of {city}. Include breakfast cafes as well as lunch/dinner spots.\n"
+        "Return the output STRICTLY as a JSON list of objects matching this schema:\n"
+        "[\n"
+        "  {\n"
+        "    \"restaurant_id\": \"rest-1\",\n"
+        "    \"name\": \"Chutneys Restaurant\",\n"
+        "    \"rating\": 4.4,\n"
+        "    \"reviews\": 1200,\n"
+        "    \"address\": \"Begumpet, Main Road\",\n"
+        "    \"website\": \"http://chutneysrest.com\",\n"
+        "    \"latitude\": 17.4410,\n"
+        "    \"longitude\": 78.4815,\n"
+        "    \"price\": \"Moderate\",\n"
+        "    \"serves_breakfast\": true,\n"
+        "    \"serves_lunch\": true,\n"
+        "    \"serves_dinner\": true,\n"
+        "    \"serves_vegetarian\": true,\n"
+        "    \"hours\": [\"07:00 AM - 11:00 PM\"]\n"
+        "  }\n"
+        "]\n"
+        "Output only valid JSON. Do not include markdown codeblocks or explanations."
+    )
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0
+        )
+        content = response.choices[0].message.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        if "[" in content:
+            content = content[content.find("["):content.rfind("]")+1]
+        return json.loads(content)
+    except Exception as e:
+        print(f"Error generating fallback restaurants: {e}")
+        return []
+
+def generate_attractions(city: str) -> list:
+    print(f"[FALLBACK] Calling dedicated fallback generator for attractions in {city}.")
+    prompt = (
+        f"Generate a list of 10 realistic, actual tourist attractions and sightseeing places in the city of {city}.\n"
+        "Return the output STRICTLY as a JSON list of objects matching this schema:\n"
+        "[\n"
+        "  {\n"
+        "    \"attraction_id\": \"attr-1\",\n"
+        "    \"name\": \"Golconda Fort\",\n"
+        "    \"rating\": 4.7,\n"
+        "    \"reviews\": 25000,\n"
+        "    \"address\": \"Ibrahim Bagh, Hyderabad\",\n"
+        "    \"website\": \"https://golcondafort.com\",\n"
+        "    \"latitude\": 17.3833,\n"
+        "    \"longitude\": 78.4011,\n"
+        "    \"types\": [\"historical_monument\", \"fort\", \"sightseeing\"],\n"
+        "    \"hours\": [\"09:00 AM - 05:30 PM\"],\n"
+        "    \"editorial\": \"A massive, historic fort famous for its acoustics and architecture.\"\n"
+        "  }\n"
+        "]\n"
+        "Output only valid JSON. Do not include markdown codeblocks or explanations."
+    )
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0
+        )
+        content = response.choices[0].message.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        if "[" in content:
+            content = content[content.find("["):content.rfind("]")+1]
+        return json.loads(content)
+    except Exception as e:
+        print(f"Error generating fallback attractions: {e}")
+        return []
+
+def calendar_agent(
+    question: str,
+    city: str = "None",
+    days: int = 3,
+    interests: str = "None",
+    travel_style: str = "None",
+    budget: str = "None",
+    hotels_data: list = None,
+    restaurants_data: list = None,
+    nearby_data: list = None,
+    weather_data: dict = None,
+    other_agent_info: str = ""
+) -> str:
+    """
+    Orchestrator calendar agent that coordinates data preparation and invokes CalendarBuilder.
+    """
+    if city == "None":
+        return "I can help you build a personalized day plan, but I need to know your destination first."
+
+    # Validate and handle empty structured data fallbacks
+    if not hotels_data:
+        hotels_data = generate_hotels(city)
+    if not restaurants_data:
+        restaurants_data = generate_restaurants(city)
+    if not nearby_data:
+        nearby_data = generate_attractions(city)
+    if not weather_data:
+        weather_data = {"main": "Clear", "temp": 28.0}
+
+    # Invoke programmatic builder
+    itinerary_struct = CalendarBuilder.build_itinerary(
+        city=city,
+        start_date_str="2026-07-12",  # Default or extract
+        days=days,
+        budget=budget,
+        travel_style=travel_style,
+        interests=interests,
+        travelers=4,  # Default
+        hotels=hotels_data,
+        restaurants=restaurants_data,
+        attractions=nearby_data,
+        weather=weather_data
+    )
+
+    # Flatten the day-by-day structure into the flat list layout expected by the system
+    flat_itinerary = []
+    for day_info in itinerary_struct.get("days", []):
+        day_num = day_info.get("day")
+        for activity in day_info.get("activities", []):
+            # Create a compatibility dictionary matching the output schema
+            flat_item = {
+                "day": day_num,
+                "start_time": activity.get("start_time"),
+                "end_time": activity.get("end_time"),
+                "activity": activity.get("title"),
+                "location": activity.get("location"),
+                "category": activity.get("category"),
+                "restaurant": activity.get("title") if activity.get("category") == "Food" else None,
+                "hotel": activity.get("title") if activity.get("category") == "Hotel" else None,
+                "notes": activity.get("notes"),
+                "activity_id": activity.get("activity_id"),
+                "google_event_id": activity.get("google_event_id"),
+                "hotel_id": activity.get("hotel_id"),
+                "restaurant_id": activity.get("restaurant_id"),
+                "attraction_id": activity.get("attraction_id"),
+                "latitude": activity.get("latitude"),
+                "longitude": activity.get("longitude"),
+                "start_datetime": activity.get("start_datetime"),
+                "end_datetime": activity.get("end_datetime"),
+                "travel_time": activity.get("travel_time"),
+                "transport": activity.get("transport"),
+                "estimated_cost": activity.get("estimated_cost"),
+                "status": activity.get("status")
+            }
+            flat_itinerary.append(flat_item)
+
+    return json.dumps(flat_itinerary, indent=2)

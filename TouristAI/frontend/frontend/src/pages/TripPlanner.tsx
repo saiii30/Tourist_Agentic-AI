@@ -9,12 +9,13 @@ import { CalendarSyncDialog } from "../components/dialogs/CalendarSyncDialog";
 import { RegenerateDialog } from "../components/dialogs/RegenerateDialog";
 import { ShareDialog } from "../components/dialogs/ShareDialog";
 import { FloatingAICopilot } from "../components/dialogs/FloatingAICopilot";
+import { AddToItineraryDialog } from "../components/dialogs/AddToItineraryDialog";
 import { ActivityCard } from "../components/shared/ActivityCard";
 
 // Icons
 import {
   Calendar, Users, DollarSign, Edit3, RefreshCw, Save, Share2,
-  CheckCircle2, AlertTriangle, AlertCircle, Sparkles, MapPin,
+  CheckCircle2, AlertTriangle, AlertCircle, Sparkles,
   ExternalLink, ShieldAlert, BookOpen, Thermometer, FileText,
   Activity as ActivityIcon, PhoneCall, Wallet, CheckSquare, Square
 } from "lucide-react";
@@ -41,6 +42,9 @@ export const TripPlanner: React.FC = () => {
   const [isRegenOpen, setIsRegenOpen] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
+  const [isAddItineraryOpen, setIsAddItineraryOpen] = useState(false);
+  const [itemToAdd, setItemToAdd] = useState<{ type: 'hotel' | 'restaurant', id: string, name: string, location: string, rating: number, image: string } | null>(null);
+  const [mapSearchQuery, setMapSearchQuery] = useState<string | null>(null);
 
   // Currency converter variables
   const [usdAmount, setUsdAmount] = useState("100");
@@ -224,6 +228,105 @@ useEffect(() => {
       };
     });
     triggerToast(`Table Reserved at ${restName}! Confirmation sent via SMS.`, "success");
+  };
+
+  const handleAddItemToItinerary = (dayNum: number, time: string) => {
+    if (!itemToAdd) return;
+
+    // Helper to calculate end time (1.5 hours later)
+    const addIntervalToTime = (timeStr: string, minutesToAdd: number): string => {
+      const match = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+      if (!match) return timeStr;
+      
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const period = match[3].toUpperCase();
+      
+      if (period === "PM" && hours !== 12) hours += 12;
+      if (period === "AM" && hours === 12) hours = 0;
+      
+      const totalMinutes = hours * 60 + minutes + minutesToAdd;
+      let newHours = Math.floor(totalMinutes / 60) % 24;
+      const newMinutes = totalMinutes % 60;
+      
+      const newPeriod = newHours >= 12 ? "PM" : "AM";
+      let displayHours = newHours % 12;
+      if (displayHours === 0) displayHours = 12;
+      
+      const hStr = displayHours < 10 ? `0${displayHours}` : `${displayHours}`;
+      const mStr = newMinutes < 10 ? `0${newMinutes}` : `${newMinutes}`;
+      
+      return `${hStr}:${mStr} ${newPeriod}`;
+    };
+
+    const endTime = addIntervalToTime(time, 90); // 1.5 hours later
+    const timeRange = `${time} - ${endTime}`;
+
+    const newAct: any = {
+      id: `added-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      title: itemToAdd.type === 'hotel' ? `Stay at ${itemToAdd.name}` : `Dine at ${itemToAdd.name}`,
+      time: time,
+      duration: timeRange,
+      category: itemToAdd.type === 'hotel' ? "Relaxation" : "Food",
+      rating: itemToAdd.rating || 4.5,
+      entryFee: itemToAdd.type === 'hotel' ? "Included" : "Standard pricing",
+      description: itemToAdd.type === 'hotel' ? `Stay accommodation at ${itemToAdd.name}.` : `Enjoy meals/dining at ${itemToAdd.name}.`,
+      location: itemToAdd.location || "",
+      image: itemToAdd.image || "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=400&q=80",
+      hotel: itemToAdd.type === 'hotel' ? itemToAdd.name : null,
+      restaurant: itemToAdd.type === 'restaurant' ? itemToAdd.name : null,
+      google_event_id: null
+    };
+
+    updateActiveTrip((prev) => {
+      if (!prev) return null;
+      const updatedItinerary = { ...prev.itinerary };
+      const currentDayActivities = updatedItinerary[dayNum] ? [...updatedItinerary[dayNum]] : [];
+
+      currentDayActivities.push(newAct);
+
+      const timeToMinutes = (timeStr: string): number => {
+        if (!timeStr) return 0;
+        const match = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)$/i);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const period = match[3].toUpperCase();
+          if (period === "PM" && hours !== 12) hours += 12;
+          if (period === "AM" && hours === 12) hours = 0;
+          return hours * 60 + minutes;
+        }
+        const match24 = timeStr.match(/^(\d+):(\d+)$/);
+        if (match24) {
+          const hours = parseInt(match24[1], 10);
+          const minutes = parseInt(match24[2], 10);
+          return hours * 60 + minutes;
+        }
+        return 0;
+      };
+
+      currentDayActivities.sort((a, b) => timeToMinutes(a.time) - timeToMinutes(b.time));
+      updatedItinerary[dayNum] = currentDayActivities;
+
+      const newHistory = [
+        { 
+          id: `hist-add-${Date.now()}`, 
+          action: `➕ Added ${itemToAdd.name} to Day ${dayNum} at ${time}`, 
+          timestamp: "Just now", 
+          iconName: "plus" 
+        },
+        ...prev.historyTimeline
+      ];
+
+      return { ...prev, itinerary: updatedItinerary, historyTimeline: newHistory };
+    });
+
+    triggerToast(`${itemToAdd.name} added to Day ${dayNum}!`, "success");
+  };
+
+  const handleViewOnMap = (location: string, title: string) => {
+    setMapSearchQuery(`${title}, ${location}`);
+    setActiveTab("Map");
   };
 
   // Toggle checklist checkbox items
@@ -704,6 +807,7 @@ useEffect(() => {
                             onDelete={(id: string) => handleDeleteActivity(dayNum, id)}
                             onFavoriteToggle={(id: string) => handleFavoriteToggle(dayNum, id)}
                             onReplace={(id: string) => handleReplaceActivity(dayNum, id)}
+                            onViewOnMap={handleViewOnMap}
                           />
                         ))}
                       </div>
@@ -763,6 +867,22 @@ useEffect(() => {
                           </div>
 
                           <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => {
+                                setItemToAdd({
+                                  type: "hotel",
+                                  id: h.id,
+                                  name: h.name,
+                                  image: h.image,
+                                  rating: h.rating,
+                                  location: h.distanceFromCenter
+                                });
+                                setIsAddItineraryOpen(true);
+                              }}
+                              className="px-3 py-1.5 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 hover:bg-teal-100 rounded-xl text-[10.5px] font-bold hover-scale border border-teal-100 dark:border-teal-900/50"
+                            >
+                              Add to Itinerary
+                            </button>
                             {!isCurrent && (
                               <button
                                 onClick={() => handleSwapHotel(h.id)}
@@ -822,14 +942,32 @@ useEffect(() => {
                         <span className="text-[9px] font-bold text-slate-450 dark:text-slate-500 uppercase">
                           {r.reservationAvailable ? "Tables Available" : "Walk-in Only"}
                         </span>
-                        {r.reservationAvailable && (
+                        <div className="flex items-center gap-1.5">
                           <button
-                            onClick={() => handleReserveTable(r.name)}
-                            className="px-3 py-1.5 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 hover:bg-teal-100 rounded-xl text-[10px] font-bold hover-scale"
+                            onClick={() => {
+                              setItemToAdd({
+                                type: "restaurant",
+                                id: r.id,
+                                name: r.name,
+                                image: r.image,
+                                rating: r.rating,
+                                location: `${r.cuisine} · ${r.distanceFromHotel} from hotel`
+                              });
+                              setIsAddItineraryOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 hover:bg-teal-100 rounded-xl text-[10px] font-bold hover-scale border border-teal-100 dark:border-teal-900/50"
                           >
-                            Reserve Table
+                            Add to Itinerary
                           </button>
-                        )}
+                          {r.reservationAvailable && (
+                            <button
+                              onClick={() => handleReserveTable(r.name)}
+                              className="px-3 py-1.5 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 hover:bg-teal-100 rounded-xl text-[10px] font-bold hover-scale"
+                            >
+                              Reserve Table
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -923,39 +1061,42 @@ useEffect(() => {
               >
                 {/* Map Control Badge Bar */}
                 <div className="p-3 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl flex flex-wrap gap-2 items-center justify-between text-xs">
-                  <span className="font-bold text-slate-700 dark:text-slate-300">Google Map Overlays</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">
+                    Location: <span className="text-teal-600 dark:text-teal-400 font-extrabold">{mapSearchQuery || activeTrip.cityName}</span>
+                  </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {["Show Stays", "Show Restaurants", "Traffic Overlays", "Show Route"].map((opt) => (
-                      <span key={opt} className="px-3 py-1 rounded-lg border border-slate-150 dark:border-slate-805 bg-slate-50 dark:bg-slate-900 text-[10px] font-bold text-slate-550 dark:text-slate-400 cursor-pointer hover:border-teal-500 hover:bg-teal-50/50 dark:hover:bg-teal-950/20">
-                        {opt}
-                      </span>
-                    ))}
+                    <button
+                      onClick={() => setMapSearchQuery(activeTrip.cityName)}
+                      className="px-3 py-1 rounded-lg border border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-[10px] font-bold text-slate-500 dark:text-slate-400 cursor-pointer hover:border-teal-500 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-all"
+                    >
+                      Center City
+                    </button>
+                    <button
+                      onClick={() => setMapSearchQuery(`Hotels in ${activeTrip.cityName}`)}
+                      className="px-3 py-1 rounded-lg border border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-[10px] font-bold text-slate-500 dark:text-slate-400 cursor-pointer hover:border-teal-500 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-all"
+                    >
+                      Show Stays
+                    </button>
+                    <button
+                      onClick={() => setMapSearchQuery(`Restaurants in ${activeTrip.cityName}`)}
+                      className="px-3 py-1 rounded-lg border border-slate-150 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-[10px] font-bold text-slate-500 dark:text-slate-400 cursor-pointer hover:border-teal-500 hover:bg-teal-50/50 dark:hover:bg-teal-950/20 transition-all"
+                    >
+                      Show Restaurants
+                    </button>
                   </div>
                 </div>
 
-                <div className="h-80 relative rounded-3xl overflow-hidden border border-slate-205 dark:border-slate-805 bg-slate-100 dark:bg-slate-900 flex flex-col justify-center items-center">
-                  {/* Google Map Mock SVG representation */}
-                  <div className="absolute inset-0 opacity-15 dark:opacity-5 pointer-events-none">
-                    <svg width="100%" height="100%">
-                      <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="currentColor" strokeWidth="1" />
-                      </pattern>
-                      <rect width="100%" height="100%" fill="url(#grid)" />
-                    </svg>
-                  </div>
-
-                  {/* Interactive map pins indicators */}
-                  <div className="relative text-center space-y-3 z-10 p-5 bg-white/70 dark:bg-[#111827]/70 backdrop-blur border border-white/20 dark:border-slate-800 rounded-2xl max-w-sm">
-                    <MapPin className="w-8 h-8 text-rose-500 animate-bounce mx-auto" />
-                    <div>
-                      <h4 className="font-heading text-xs font-bold text-slate-800 dark:text-slate-150 uppercase tracking-widest">
-                        Interactive Map Canvas
-                      </h4>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                        Displaying coordinates for {activeTrip.cityName}. Estimated route distances: 38 km total. Traffic index: Light.
-                      </p>
-                    </div>
-                  </div>
+                <div className="h-[450px] relative rounded-3xl overflow-hidden border border-slate-205 dark:border-slate-805 bg-slate-100 dark:bg-slate-900 flex flex-col shadow-inner">
+                  <iframe
+                    title="Google Map Search"
+                    width="100%"
+                    height="100%"
+                    style={{ border: 0 }}
+                    loading="lazy"
+                    allowFullScreen
+                    src={`https://maps.google.com/maps?q=${encodeURIComponent(mapSearchQuery || activeTrip.cityName)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                    className="w-full h-full rounded-3xl dark:invert dark:hue-rotate-180 dark:contrast-[0.9] dark:opacity-[0.85]"
+                  />
                 </div>
               </motion.div>
             )}
@@ -1180,6 +1321,14 @@ useEffect(() => {
         onApplySuccess={(title) => triggerToast(`Copilot applied: ${title}`, "success")}
       />
       
+
+      <AddToItineraryDialog
+        isOpen={isAddItineraryOpen}
+        onClose={() => setIsAddItineraryOpen(false)}
+        item={itemToAdd}
+        durationDays={activeTrip.durationDays}
+        onAdd={handleAddItemToItinerary}
+      />
 
       {/* ──────── TOAST NOTIFICATIONS ──────── */}
       <AnimatePresence>

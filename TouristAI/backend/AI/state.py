@@ -9,6 +9,8 @@ class AgentState(TypedDict):
     answer: str
     city: str
     days: int
+    destination: str
+    travel_date : str
     budget: str
     travelers: int
     travel_style: str
@@ -19,3 +21,7 @@ class AgentState(TypedDict):
     start_date: str
     reminder_minutes: int
     google_auth_url: str
+    hotels_data: list[dict]
+    restaurants_data: list[dict]
+    nearby_data: list[dict]
+    weather_data: dict
