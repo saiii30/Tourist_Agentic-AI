@@ -52,36 +52,8 @@ export const FlightSearchResults: React.FC = () => {
       });
   }, [from, to, date]);
 
-  // Helper to build the exact protobuf Google Flights search query
-  const getGoogleFlightsUrl = () => {
-    const fCode = (from || "").toUpperCase();
-    const tCode = (to || "").toUpperCase();
-    
-    const prefix = [8, 28, 16, 1, 26, 30, 18, 10];
-    const dateBytes = Array.from(date).map(c => c.charCodeAt(0));
-    const mid1 = [106, 8, 1, 18, 3];
-    const fromBytes = Array.from(fCode).map(c => c.charCodeAt(0));
-    const mid2 = [114, 8, 1, 18, 3];
-    const toBytes = Array.from(tCode).map(c => c.charCodeAt(0));
-    const suffix = [0, 65, 1, 112, 1];
-    
-    const allBytes = [
-        ...prefix,
-        ...dateBytes,
-        ...mid1,
-        ...fromBytes,
-        ...mid2,
-        ...toBytes,
-        ...suffix
-    ];
-    
-    const binary = String.fromCharCode(...allBytes);
-    const tfs = window.btoa(binary);
-    return `https://www.google.com/travel/flights/search?tfs={tfs}&curr=USD`;
-  };
-
   const handleBookRedirect = () => {
-    const queryUrl = `https://www.google.com/travel/flights?q=Flights%20from%20${from}%20to%20${to}%20on%20${date}`;
+    const queryUrl = `https://www.google.com/travel/flights?q=Flights%20from%20${from}%20to%20${to}%20on%20${date}&curr=INR`;
     window.open(queryUrl, "_blank");
   };
 

@@ -376,7 +376,7 @@ async def search_flights(
     origin = from_airport.strip().upper()
     destination = to_airport.strip().upper()
     
-    search_url = f"https://www.google.com/travel/flights/search?q=Flights%20from%20{origin}%20to%20{destination}%20on%20{clean_date}&curr=USD"
+    search_url = f"https://www.google.com/travel/flights/search?q=Flights%20from%20{origin}%20to%20{destination}%20on%20{clean_date}&curr=INR"
 
         
     print(f"Scraping Google Flights: {search_url}")

@@ -5,7 +5,7 @@ from typing import List
 import asyncio
 import json
 import re
-
+import time
 
 @dataclass
 class FlightData:
@@ -39,22 +39,24 @@ class FlightScraper:
         """Extract text content from a page element safely"""
         return (await element.text_content()).strip() if element else "N/A"
 
-    async def _load_all_flights(self, page) -> None:
-        """Click 'Show more flights' button until all flights are loaded"""
-        while True:
+    async def _load_all_flights(self, page):
+        start = time.time()
+
+        while time.time() - start < 5:   # Stop after 5 seconds
             try:
-                more_button = await page.wait_for_selector(
-                    'button[aria-label*="more flights"]', timeout=5000
-                )
-                if more_button:
-                    await more_button.click()
-                    await page.wait_for_timeout(2000)
-                else:
+                button = page.locator('button[aria-label*="more flights"]').first
+
+                if await button.count() == 0:
                     break
+
+                await button.click(timeout=1000)
+                await page.wait_for_timeout(800)
+
             except:
                 break
+
     async def _extract_flight_data(self, page):
-        await page.wait_for_timeout(5000)
+        await page.locator("li.pIav2d").first.wait_for(timeout=10000)
 
         flights = await page.locator("li").evaluate_all("""
         (elements) => {
@@ -98,7 +100,7 @@ class FlightScraper:
                 }
             });
             const unique = [];
-            const seen = new Set();
+            const seen = new Set(); 
 
             results.forEach(f => {
                 const key = `${f.airline}-${f.departure_time}-${f.arrival_time}-${f.price}`;
@@ -154,7 +156,7 @@ class FlightScraper:
 
             try:
                 await page.goto(url, timeout=60000)
-                await page.wait_for_load_state("networkidle")
+                await page.wait_for_load_state("domcontentloaded")
 
                 await self._load_all_flights(page)
 
@@ -186,7 +188,7 @@ async def main():
         url = sys.argv[1]
         output_path = "flight_results.json"
     else:
-        url = "https://www.google.com/travel/flights/search?tfs=CBwQAhoeEgoyMDI1LTA0LTAxagcIARIDREVMcgcIARIDU0ZPQAFIAXABggELCP___________wGYAQI&curr=USD"
+        url = "https://www.google.com/travel/flights/search?tfs=CBwQAhoeEgoyMDI1LTA0LTAxagcIARIDREVMcgcIARIDU0ZPQAFIAXABggELCP___________wGYAQI&curr=INR"
         output_path = "flight_results.json"
 
     scraper = FlightScraper()
