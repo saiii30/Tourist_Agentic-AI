@@ -29,7 +29,7 @@ export const BusSearchResults: React.FC = () => {
     setLoading(true);
     setError(null);
 
-    axios.get(`/api/buses/search`, {
+    axios.get(`http://localhost:8000/api/buses/search`, {
       params: {
         from: from,
         to: to,

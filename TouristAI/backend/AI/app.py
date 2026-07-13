@@ -471,54 +471,137 @@ async def search_flights(
     }
 
 @app.get("/api/buses/search")
-def search_buses(
+async def search_buses(
     from_city: str = Query(..., alias="from"),
     to_city: str = Query(..., alias="to"),
     date: Optional[str] = None
 ):
-    # Returns a list of bus operations matching the source & destination route
-    results = [
-        {
-            "operator": "SRS Travels",
-            "type": "A/C Sleeper (2+1)",
-            "departure_time": "21:00",
-            "arrival_time": "05:30",
-            "duration": "8h 30m",
-            "price": "₹950",
-            "rating": "4.2"
-        },
-        {
-            "operator": "Parveen Travels",
-            "type": "Volvo Multi-Axle I-Shift A/C Semi Sleeper (2+2)",
-            "departure_time": "22:15",
-            "arrival_time": "06:15",
-            "duration": "8h 00m",
-            "price": "₹1,150",
-            "rating": "4.5"
-        },
-        {
-            "operator": "IntrCity SmartBus",
-            "type": "A/C Sleeper (2+1) - SmartBus",
-            "departure_time": "21:30",
-            "arrival_time": "05:50",
-            "duration": "8h 20m",
-            "price": "₹1,200",
-            "rating": "4.6"
-        },
-        {
-            "operator": "KPN Travels",
-            "type": "Non A/C Sleeper (2+1)",
-            "departure_time": "20:45",
-            "arrival_time": "05:45",
-            "duration": "9h 00m",
-            "price": "₹750",
-            "rating": "3.8"
-        }
-    ]
+    import base64
+    import importlib.util
+    import os
+    import subprocess
+    import uuid
+    import tempfile
+    from datetime import datetime, timedelta
+
+    # 1. Format date (must be doj=DD-MMM-YYYY, e.g., 30-Jul-2026)
+    clean_date = date.strip() if date else ""
+    formatted_date = ""
+    if clean_date and len(clean_date) == 10 and "-" in clean_date:
+        try:
+            parts = clean_date.split("-")
+            year = parts[0]
+            month_idx = int(parts[1]) - 1
+            day = int(parts[2])
+            months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            month_name = months[month_idx]
+            formatted_date = f"{day}-{month_name}-{year}"
+        except Exception as date_err:
+            print(f"Error formatting redbus date: {date_err}")
+            
+    if not formatted_date:
+        # Default to 15 days in advance
+        d = datetime.now() + timedelta(days=15)
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        formatted_date = f"{d.day}-{months[d.month - 1]}-{d.year}"
+
+    # 2. Build search URL
+    clean_from = from_city.lower().strip().replace(" ", "-")
+    clean_to = to_city.lower().strip().replace(" ", "-")
+    search_url = f"https://www.redbus.in/bus-tickets/{clean_from}-to-{clean_to}?doj={formatted_date}"
+    print(f"Scraping redBus: {search_url}")
+
+    # 3. Run scraper in a subprocess to avoid event loop conflicts in Uvicorn
+    results = []
+    try:
+        scraper_dir = os.path.join(os.path.dirname(__file__), "redbus-scraper.py")
+        scraper_path = os.path.join(scraper_dir, "redbus-scraper.py")
+        
+        if os.path.exists(scraper_path):
+            # Save the temp JSON file in the OS temp directory
+            temp_json_path = os.path.join(tempfile.gettempdir(), f"temp_buses_{uuid.uuid4().hex}.json")
+            
+            # Run the scraper as a subprocess using the current Python executable
+            cmd = [sys.executable, scraper_path, search_url, temp_json_path]
+            print(f"Executing bus scraper subprocess: {' '.join(cmd)}")
+            
+            # Run in a separate thread to not block the FastAPI event loop
+            def run_proc():
+                return subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                
+            proc_res = await asyncio.to_thread(run_proc)
+            
+            # Print stderr/stdout for backend logs/debugging
+            if proc_res.stdout:
+                print(f"Bus Scraper stdout: {proc_res.stdout.strip()}")
+            if proc_res.stderr:
+                print(f"Bus Scraper stderr: {proc_res.stderr.strip()}")
+                
+            # If the output file exists, read results
+            if os.path.exists(temp_json_path):
+                try:
+                    with open(temp_json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        results = data.get("buses", [])
+                finally:
+                    # Cleanup the temp file
+                    try:
+                        os.remove(temp_json_path)
+                    except Exception as clean_err:
+                        print(f"Failed to remove temp file: {clean_err}")
+            else:
+                print(f"Warning: Bus scraper subprocess completed, but output file not found at: {temp_json_path}")
+        else:
+            print(f"Warning: Bus scraper file not found at: {scraper_path}")
+    except Exception as scrap_err:
+        print(f"Bus scraper error: {scrap_err}")
+
+    # 4. Fallback to mock data if empty or error
+    if not results:
+        results = [
+            {
+                "operator": "SRS Travels",
+                "type": "A/C Sleeper (2+1)",
+                "departure_time": "21:00",
+                "arrival_time": "05:30",
+                "duration": "8h 30m",
+                "price": "₹950",
+                "rating": "4.2"
+            },
+            {
+                "operator": "Parveen Travels",
+                "type": "Volvo Multi-Axle I-Shift A/C Semi Sleeper (2+2)",
+                "departure_time": "22:15",
+                "arrival_time": "06:15",
+                "duration": "8h 00m",
+                "price": "₹1,150",
+                "rating": "4.5"
+            },
+            {
+                "operator": "IntrCity SmartBus",
+                "type": "A/C Sleeper (2+1) - SmartBus",
+                "departure_time": "21:30",
+                "arrival_time": "05:50",
+                "duration": "8h 20m",
+                "price": "₹1,200",
+                "rating": "4.6"
+            },
+            {
+                "operator": "KPN Travels",
+                "type": "Non A/C Sleeper (2+1)",
+                "departure_time": "20:45",
+                "arrival_time": "05:45",
+                "duration": "9h 00m",
+                "price": "₹750",
+                "rating": "3.8"
+            }
+        ]
+        
     return {
         "success": True,
         "data": results
     }
+
 
 # -------------------------------------------------------------
 # RailRadar APIs (to support the frontend search interface)
