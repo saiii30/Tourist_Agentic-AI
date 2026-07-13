@@ -53,24 +53,45 @@ class FlightScraper:
                     break
             except:
                 break
+    async def _extract_flight_data(self, page):
+        await page.wait_for_timeout(5000)
 
-    async def _extract_flight_data(self, page) -> List[FlightData]:
-        """Extract flight information from search results"""
-        try:
-            await page.wait_for_selector("li.pIav2d", timeout=30000)
-            await self._load_all_flights(page)
-            flights = await page.query_selector_all("li.pIav2d")
+        flights = await page.locator("li").evaluate_all("""
+        (elements) => {
+            const results = [];
+            elements.forEach(el => {
+                const text = el.innerText;
+                if (text.includes("₹") || text.includes("$")) {
+                    const lines = text.split("\\n").map(x => x.trim()).filter(x => x !== "");
+                    
+                    const depTime = lines[0] || "";
+                    const arrTimeIdx = lines.findIndex((x, idx) => idx > 0 && (x.includes("AM") || x.includes("PM")));
+                    const arrTime = arrTimeIdx !== -1 ? lines[arrTimeIdx] : "";
+                    const airline = arrTimeIdx !== -1 && lines[arrTimeIdx + 1] ? lines[arrTimeIdx + 1] : "";
+                    
+                    const duration = lines.find(x => /^\\d+\\s*h/i.test(x) || /^\\d+\\s*m/i.test(x) || /\\bhr\\b|\\bmin\\b/.test(x)) || "";
+                    const stops = lines.find(x => x.toLowerCase().includes("stop") || x.toLowerCase().includes("nonstop")) || "";
+                    const price = lines.find(x => x.includes("₹") || x.includes("$")) || "";
+                    const co2 = lines.find(x => x.toLowerCase().includes("co2") || x.toLowerCase().includes("co₂")) || "";
+                    const variation = lines.find(x => x.includes("%")) || "";
+                    
+                    results.push({
+                        airline: airline,
+                        departure_time: depTime,
+                        arrival_time: arrTime,
+                        duration: duration,
+                        stops: stops,
+                        price: price,
+                        co2_emissions: co2,
+                        emissions_variation: variation
+                    });
+                }
+            });
+            return results;
+        }
+        """)
 
-            flights_data = []
-            for flight in flights:
-                flight_info = {}
-                for key, selector in self.SELECTORS.items():
-                    element = await flight.query_selector(selector)
-                    flight_info[key] = await self._extract_text(element)
-                flights_data.append(FlightData(**flight_info))
-            return flights_data
-        except Exception as e:
-            raise Exception(f"Failed to extract flight data: {str(e)}")
+        return flights
 
     def _extract_trip_info_from_url(self, url: str) -> dict:
         """Extract trip information from Google Flights URL"""
@@ -99,12 +120,13 @@ class FlightScraper:
         return filepath
 
     @retry(stop=stop_after_attempt(3), wait=wait_fixed(5))
-    async def search_flights(self, url: str) -> List[FlightData]:
+    async def search_flights(self, url: str, output_path: str = "flight_results.json") -> List[FlightData]:
         """Execute the flight search with retry capability using a direct URL"""
         async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
+            browser = await p.chromium.launch(headless=True)
             context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36",
+                locale="en-US"
             )
             page = await context.new_page()
 
@@ -113,8 +135,17 @@ class FlightScraper:
                 await page.wait_for_load_state("networkidle")
 
                 flights = await self._extract_flight_data(page)
-                filepath = self.save_results(flights, url)
-                print(f"Results saved to: {filepath}")
+
+                output = {
+                    "search_url": url,
+                    "flights": flights
+                }
+
+                with open(output_path, "w", encoding="utf-8") as f:
+                    json.dump(output, f, indent=4, ensure_ascii=False)
+
+                print(f"Flight data saved successfully to {output_path}")
+
                 return flights
             finally:
                 await browser.close()
@@ -122,15 +153,30 @@ class FlightScraper:
 
 async def main():
     """Main function to demonstrate usage"""
-    scraper = FlightScraper()
-    url = "https://www.google.com/travel/flights/search?tfs=CBwQAhoeEgoyMDI1LTA0LTAxagcIARIDREVMcgcIARIDU0ZPQAFIAXABggELCP___________wGYAQI&curr=USD"
+    import sys
+    
+    if len(sys.argv) > 2:
+        url = sys.argv[1]
+        output_path = sys.argv[2]
+    elif len(sys.argv) > 1:
+        url = sys.argv[1]
+        output_path = "flight_results.json"
+    else:
+        url = "https://www.google.com/travel/flights/search?tfs=CBwQAhoeEgoyMDI1LTA0LTAxagcIARIDREVMcgcIARIDU0ZPQAFIAXABggELCP___________wGYAQI&curr=USD"
+        output_path = "flight_results.json"
 
+    scraper = FlightScraper()
     try:
-        flights = await scraper.search_flights(url)
+        flights = await scraper.search_flights(url, output_path)
         print(f"Successfully found {len(flights)} flights")
     except Exception as e:
         print(f"Error during flight search: {str(e)}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import sys
+    if sys.platform == "win32":
+        import asyncio
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    asyncio.run(main())

@@ -1,4 +1,10 @@
 import os
+import sys
+import asyncio
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 from database.postgres import PostgresDatabase
 import json
@@ -366,59 +372,63 @@ async def search_flights(
         from datetime import datetime, timedelta
         clean_date = (datetime.now() + timedelta(days=15)).strftime("%Y-%m-%d")
         
-    # 2. Build protobuf URL
+    # 2. Build search URL (using the highly robust search query format)
     origin = from_airport.strip().upper()
     destination = to_airport.strip().upper()
     
-    prefix = b"\x08\x1c\x10\x01\x1a\x1e\x12\n"
-    mid1 = b"j\x08\x01\x12\x03"
-    mid2 = b"r\x08\x01\x12\x03"
-    suffix = b"\x00A\x01p\x01"
-    
-    try:
-        proto_bytes = (
-            prefix + 
-            clean_date.encode("ascii") + 
-            mid1 + 
-            origin.encode("ascii") + 
-            mid2 + 
-            destination.encode("ascii") + 
-            suffix
-        )
-        tfs = base64.b64encode(proto_bytes).decode("ascii")
-        search_url = f"https://www.google.com/travel/flights/search?tfs={tfs}&curr=USD"
-    except Exception as build_err:
-        print(f"Error building google flights url: {build_err}")
-        search_url = f"https://www.google.com/travel/flights/search?q=Flights%20from%20{origin}%20to%20{destination}%20on%20{clean_date}"
+    search_url = f"https://www.google.com/travel/flights/search?q=Flights%20from%20{origin}%20to%20{destination}%20on%20{clean_date}&curr=USD"
+
         
-    print(f"🔍 Scraping Google Flights: {search_url}")
+    print(f"Scraping Google Flights: {search_url}")
     
-    # 3. Import and run scraper
+    # 3. Run scraper in a subprocess to avoid event loop conflicts in Uvicorn
     results = []
     try:
         scraper_dir = os.path.join(os.path.dirname(__file__), "google-flightpscraper.py")
         scraper_path = os.path.join(scraper_dir, "google-flights-scraper.py")
         
         if os.path.exists(scraper_path):
-            spec = importlib.util.spec_from_file_location("google_flights_scraper", scraper_path)
-            flights_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(flights_module)
-            FlightScraper = flights_module.FlightScraper
+            import subprocess
+            import uuid
+            import tempfile
             
-            scraper = FlightScraper()
-            flights_data = await scraper.search_flights(search_url)
-            for f in flights_data:
-                # Convert dataclass/dict to simple dictionary
-                if hasattr(f, "__dict__"):
-                    results.append(f.__dict__)
-                elif isinstance(f, dict):
-                    results.append(f)
-                else:
-                    results.append(vars(f))
+            # Save the temp JSON file in the OS temp directory so that Uvicorn's WatchFiles doesn't trigger a server reload
+            temp_json_path = os.path.join(tempfile.gettempdir(), f"temp_flights_{uuid.uuid4().hex}.json")
+            
+            # Run the scraper as a subprocess using the current Python executable
+            cmd = [sys.executable, scraper_path, search_url, temp_json_path]
+            print(f"Executing flight scraper subprocess: {' '.join(cmd)}")
+            
+            # Run in a separate thread to not block the FastAPI event loop
+            def run_proc():
+                return subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                
+            proc_res = await asyncio.to_thread(run_proc)
+            
+            # Print stderr/stdout for backend logs/debugging
+            if proc_res.stdout:
+                print(f"Scraper stdout: {proc_res.stdout.strip()}")
+            if proc_res.stderr:
+                print(f"Scraper stderr: {proc_res.stderr.strip()}")
+                
+            # If the output file exists, read results
+            if os.path.exists(temp_json_path):
+                try:
+                    with open(temp_json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        results = data.get("flights", [])
+                finally:
+                    # Cleanup the temp file
+                    try:
+                        os.remove(temp_json_path)
+                    except Exception as clean_err:
+                        print(f"Failed to remove temp file: {clean_err}")
+            else:
+                print(f"Warning: Scraper subprocess completed, but output file not found at: {temp_json_path}")
         else:
-            print(f"⚠️ Scraper file not found at: {scraper_path}")
+            print(f"Warning: Scraper file not found at: {scraper_path}")
     except Exception as scrap_err:
-        print(f"❌ Scraper error: {scrap_err}")
+        print(f"Scraper error: {scrap_err}")
         
     # 4. Fallback to mock data if empty or error
     if not results:
