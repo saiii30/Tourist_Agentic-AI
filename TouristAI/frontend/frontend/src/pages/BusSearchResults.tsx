@@ -23,11 +23,15 @@ export const BusSearchResults: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
   useEffect(() => {
     if (!from || !to || !date) return;
 
     setLoading(true);
     setError(null);
+    setCurrentPage(1);
 
     axios.get(`http://localhost:8000/api/buses/search`, {
       params: {
@@ -76,6 +80,11 @@ export const BusSearchResults: React.FC = () => {
     window.open(queryUrl, "_blank");
   };
 
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentBuses = buses.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(buses.length / itemsPerPage);
+
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-200 text-left pb-16">
       {/* Route Breadcrumb Header */}
@@ -121,7 +130,7 @@ export const BusSearchResults: React.FC = () => {
               Available Buses
             </h2>
             <p className="text-xs text-slate-455 mt-1">
-              Found {buses.length} schedules
+              Found {buses.length} schedules {buses.length > 0 && `(showing page ${currentPage} of ${totalPages})`}
             </p>
           </div>
         </div>
@@ -152,7 +161,7 @@ export const BusSearchResults: React.FC = () => {
 
         {!loading && !error && buses.length > 0 && (
           <div className="space-y-3">
-            {buses.map((bus, idx) => (
+            {currentBuses.map((bus, idx) => (
               <div 
                 key={idx}
                 className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-4 flex items-center justify-between gap-4 hover:border-emerald-600/30 transition-all shadow-sm"
@@ -214,6 +223,41 @@ export const BusSearchResults: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* PAGINATION CONTROLS */}
+        {!loading && !error && buses.length > itemsPerPage && (
+          <div className="mt-8 flex items-center justify-between border-t border-slate-800 pt-6">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="rounded-lg bg-slate-900 border border-slate-700/60 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-850 disabled:opacity-50 disabled:hover:bg-slate-900 transition-colors cursor-pointer"
+            >
+              Previous
+            </button>
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  onClick={() => setCurrentPage(pageNumber)}
+                  className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    currentPage === pageNumber
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-900 border border-slate-700/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="rounded-lg bg-slate-900 border border-slate-700/60 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-850 disabled:opacity-50 disabled:hover:bg-slate-900 transition-colors cursor-pointer"
+            >
+              Next
+            </button>
           </div>
         )}
       </main>

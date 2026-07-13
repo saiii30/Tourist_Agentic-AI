@@ -769,38 +769,84 @@ def map_railradar_train_to_frontend(t):
         "totalHaltsBetween": halts
     }
 @app.get("/api/trains/between")
-def trains_between(
+async def trains_between(
     from_code: str = Query(..., alias="from"),
     to_code: str = Query(..., alias="to"),
     date: Optional[str] = None,
     live: Optional[bool] = None
 ):
-    from agents.transport_agent import get_trains
     from datetime import datetime, timedelta
+    import os
+    import subprocess
+    import uuid
+    import tempfile
+    import json
     
     if not date or date == "undefined" or date == "None":
-        date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        date = (datetime.now() + timedelta(days=15)).strftime("%Y-%m-%d")
         
-    trains_res = get_trains(from_code, to_code, date)
-    print(f"🔍 trains_res raw response: {str(trains_res)[:1000]}")
-    
+    # Format date to DD-MM-YYYY for ConfirmTkt (e.g. 30-07-2026)
+    formatted_date = ""
+    try:
+        if "-" in date:
+            parts = date.split("-")
+            if len(parts) == 3:
+                if len(parts[0]) == 4: # YYYY-MM-DD
+                    formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                else: # DD-MM-YYYY or other
+                    formatted_date = date
+    except Exception as date_err:
+        print(f"Error formatting train date: {date_err}")
+        
+    if not formatted_date:
+        # Default to 15 days in advance
+        d = datetime.now() + timedelta(days=15)
+        formatted_date = f"{d.strftime('%d-%m-%Y')}"
+
+    # Build search URL
+    origin = from_code.strip().upper()
+    destination = to_code.strip().upper()
+    search_url = f"https://www.confirmtkt.com/rbooking/trains/from/{origin}/to/{destination}/{formatted_date}"
+    print(f"Scraping ConfirmTkt: {search_url}")
+
+    # Run scraper in a subprocess
     trains_list = []
-    raw_trains = []
-    if isinstance(trains_res, dict):
-        if "data" in trains_res and isinstance(trains_res["data"], dict) and "trains" in trains_res["data"]:
-            raw_trains = trains_res["data"]["trains"]
-        elif "trains" in trains_res:
-            raw_trains = trains_res["trains"]
-        elif "data" in trains_res and isinstance(trains_res["data"], list):
-            raw_trains = trains_res["data"]
-    elif isinstance(trains_res, list):
-        raw_trains = trains_res
-        
-    if isinstance(raw_trains, list) and len(raw_trains) > 0:
-        for t in raw_trains:
-            trains_list.append(map_railradar_train_to_frontend(t))
+    try:
+        scraper_path = os.path.join(os.path.dirname(__file__), "train_scraper.py")
+        if os.path.exists(scraper_path):
+            temp_json_path = os.path.join(tempfile.gettempdir(), f"temp_trains_{uuid.uuid4().hex}.json")
             
-    # Fallback to dummy data if API failed or no trains returned
+            cmd = [sys.executable, scraper_path, search_url, temp_json_path]
+            print(f"Executing train scraper subprocess: {' '.join(cmd)}")
+            
+            def run_proc():
+                return subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                
+            proc_res = await asyncio.to_thread(run_proc)
+            
+            if proc_res.stdout:
+                print(f"Train Scraper stdout: {proc_res.stdout.strip()}")
+            if proc_res.stderr:
+                print(f"Train Scraper stderr: {proc_res.stderr.strip()}")
+                
+            if os.path.exists(temp_json_path):
+                try:
+                    with open(temp_json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        trains_list = data.get("trains", [])
+                finally:
+                    try:
+                        os.remove(temp_json_path)
+                    except Exception as clean_err:
+                        print(f"Failed to remove temp file: {clean_err}")
+            else:
+                print(f"Warning: Train scraper completed but output file not found at: {temp_json_path}")
+        else:
+            print(f"Warning: Train scraper file not found at: {scraper_path}")
+    except Exception as scrap_err:
+        print(f"Train scraper error: {scrap_err}")
+
+    # Fallback to dummy data if API/scraper failed or returned nothing
     if not trains_list:
         trains_list = [
             {

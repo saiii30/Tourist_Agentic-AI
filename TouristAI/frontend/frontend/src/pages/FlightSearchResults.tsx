@@ -24,11 +24,15 @@ export const FlightSearchResults: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
+
   useEffect(() => {
     if (!from || !to || !date) return;
 
     setLoading(true);
     setError(null);
+    setCurrentPage(1);
 
     axios.get(`http://localhost:8000/api/flights/search`, {
       params: {
@@ -56,6 +60,11 @@ export const FlightSearchResults: React.FC = () => {
     const queryUrl = `https://www.google.com/travel/flights?q=Flights%20from%20${from}%20to%20${to}%20on%20${date}&curr=INR`;
     window.open(queryUrl, "_blank");
   };
+
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentFlights = flights.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(flights.length / itemsPerPage);
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-slate-200 text-left pb-16">
@@ -103,7 +112,7 @@ export const FlightSearchResults: React.FC = () => {
               Available Flights
             </h2>
             <p className="text-xs text-slate-455 mt-1">
-              Found {flights.length} schedules
+              Found {flights.length} schedules {flights.length > 0 && `(showing page ${currentPage} of ${totalPages})`}
             </p>
           </div>
         </div>
@@ -137,7 +146,7 @@ export const FlightSearchResults: React.FC = () => {
 
         {!loading && !error && flights.length > 0 && (
           <div className="space-y-3">
-            {flights.map((flight, idx) => (
+            {currentFlights.map((flight, idx) => (
               <div 
                 key={idx}
                 className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-4 flex items-center justify-between gap-4 hover:border-emerald-600/30 transition-all shadow-sm"
@@ -168,7 +177,7 @@ export const FlightSearchResults: React.FC = () => {
                       <div className="h-px w-16 bg-slate-800 my-1 relative">
                         <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-1.5 w-1.5 rounded-full bg-slate-600" />
                       </div>
-                      <span className="text-[10px] text-slate-500 font-bold uppercase">{flight.stops}</span>
+                      <span className="text-[10px] text-slate-550 font-bold uppercase">{flight.stops}</span>
                     </div>
 
                     <div>
@@ -202,6 +211,41 @@ export const FlightSearchResults: React.FC = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* PAGINATION CONTROLS */}
+        {!loading && !error && flights.length > itemsPerPage && (
+          <div className="mt-8 flex items-center justify-between border-t border-slate-800 pt-6">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              disabled={currentPage === 1}
+              className="rounded-lg bg-slate-900 border border-slate-700/60 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-850 disabled:opacity-50 disabled:hover:bg-slate-900 transition-colors cursor-pointer"
+            >
+              Previous
+            </button>
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  onClick={() => setCurrentPage(pageNumber)}
+                  className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                    currentPage === pageNumber
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-900 border border-slate-700/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  }`}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="rounded-lg bg-slate-900 border border-slate-700/60 px-4 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-850 disabled:opacity-50 disabled:hover:bg-slate-900 transition-colors cursor-pointer"
+            >
+              Next
+            </button>
           </div>
         )}
       </main>
