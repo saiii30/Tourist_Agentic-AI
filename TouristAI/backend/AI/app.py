@@ -1,5 +1,17 @@
 import os
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
+from dotenv import load_dotenv
+
+# Load environment variables from possible locations to ensure API keys are populated
+for env_path in [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+    os.path.abspath(os.path.join(os.getcwd(), ".env")),
+    os.path.abspath(os.path.join(os.getcwd(), "backend", ".env")),
+]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
+
 from database.postgres import PostgresDatabase
 import json
 import sys
@@ -78,6 +90,58 @@ class SaveAndSyncRequest(BaseModel):
     itinerary: Dict[str, List[SaveAndSyncActivity]]
     metadata: Optional[dict] = None
 
+def map_hotels_to_frontend(hotels_data, city_clean):
+    frontend_hotels = []
+    if not hotels_data:
+        return frontend_hotels
+    for idx, h in enumerate(hotels_data):
+        price_val = h.get("pricePerNight") or h.get("price") or 3000
+        try:
+            if isinstance(price_val, str):
+                import re
+                digits = re.findall(r'\d+', price_val.replace(",", ""))
+                price_val = int(digits[0]) if digits else 3000
+            price_val = int(price_val)
+        except:
+            price_val = 3000
+            
+        frontend_hotels.append({
+            "id": h.get("hotel_id") or f"hotel-{idx}",
+            "name": h.get("name", "N/A"),
+            "image": h.get("image") or "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=80",
+            "rating": h.get("rating") or 4.5,
+            "pricePerNight": price_val,
+            "amenities": h.get("amenities") or ["Free Wi-Fi", "Room Service"],
+            "distanceFromCenter": h.get("address", "Central Location"),
+            "bookingUrl": h.get("booking_url") or h.get("website") or "https://booking.com"
+        })
+    return frontend_hotels
+
+def map_restaurants_to_frontend(restaurants_data):
+    frontend_rests = []
+    if not restaurants_data:
+        return frontend_rests
+    for idx, r in enumerate(restaurants_data):
+        price_tier = "$$"
+        p = str(r.get("price", ""))
+        if p:
+            if "expensive" in p.lower() or "high" in p.lower():
+                price_tier = "$$$$"
+            elif "moderate" in p.lower() or "medium" in p.lower():
+                price_tier = "$$$"
+                
+        frontend_rests.append({
+            "id": r.get("restaurant_id") or f"rest-{idx}",
+            "name": r.get("name", "N/A"),
+            "image": r.get("image") or "https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=400&q=80",
+            "rating": r.get("rating") or 4.5,
+            "cuisine": "Local & Multi-cuisine" if not r.get("serves_vegetarian") else "Vegetarian / Indian",
+            "priceTier": price_tier,
+            "distanceFromHotel": "0.5 km",
+            "reservationAvailable": idx % 2 == 0
+        })
+    return frontend_rests
+
 @app.post("/chat")
 def chat(req: ChatRequest):
     question_lower = req.question.strip().lower()
@@ -134,6 +198,10 @@ def chat(req: ChatRequest):
     is_single_topic = any(kw in question_lower for kw in ["weather", "forecast", "climate", "temperature", "rain", "hotel", "stay", "resort", "restaurant", "food", "eat", "cafe", "attraction", "sightseeing", "places to visit", "things to do"])
     if is_single_topic:
         update_guided_state("is_active", "0")
+        update_guided_state("last_itinerary_items", "")
+        update_guided_state("last_itinerary", "")
+        update_guided_state("trip_id", "")
+        update_guided_state("trip_status", "")
         
     start_keywords = ["trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"]
     is_start = matches_keywords = lambda q, kw: any(k in q for k in kw)
@@ -267,8 +335,18 @@ def chat(req: ChatRequest):
         packing_checklist = PackingService.get_packing_checklist(city, travel_style, budget)
         budget_summary = BudgetService.calculate_budget_summary(city, days, budget)
         emergency_contacts = EmergencyService.get_emergency_contacts(city)
-        hotels = trip_service.get_structured_hotels(city, budget)
-        restaurants = trip_service.get_structured_restaurants(city, budget)
+        g_hotels = result.get("hotels_data")
+        g_restaurants = result.get("restaurants_data")
+        
+        if g_hotels:
+            hotels = map_hotels_to_frontend(g_hotels, city)
+        else:
+            hotels = trip_service.get_structured_hotels(city, budget)
+            
+        if g_restaurants:
+            restaurants = map_restaurants_to_frontend(g_restaurants)
+        else:
+            restaurants = trip_service.get_structured_restaurants(city, budget)
         
         # 2. Parse JSON list to models.itinerary objects
         from models.itinerary import Trip, ItineraryItem
@@ -310,6 +388,19 @@ def chat(req: ChatRequest):
         updated_items_json = json.dumps([item.dict() for item in itinerary_items])
         update_guided_state("last_itinerary_items", updated_items_json)
         
+        # Get weather summary from agent responses
+        weather_summary = f"Weather forecast for {city.title()}"
+        weather_data = result.get("weather_data")
+        if weather_data and isinstance(weather_data, dict) and "temp" in weather_data:
+            temp = weather_data.get("temp")
+            desc = weather_data.get("description", "clear sky")
+            weather_summary = f"Currently in {city.title()}, the weather is {temp}°C with {desc}."
+        elif result.get("responses"):
+            for resp in result["responses"]:
+                if resp.startswith("Weather:\n"):
+                    weather_summary = resp.split(":\n", 1)[1].strip()
+                    break
+
         trip_response = {
             "trip_id": trip_id,
             "city": city.title(),
@@ -318,7 +409,7 @@ def chat(req: ChatRequest):
             "travel_date": travel_date,
             "travel_style": travel_style,
             "travelers": int(g_state.get("travelers", 1)),
-            "weather_summary": budget_summary.get("weather_summary", f"Weather forecast for {city.title()}"),
+            "weather_summary": weather_summary,
             "packing": packing_tips,
             "packing_checklist": packing_checklist,
             "emergency": emergency_contacts,

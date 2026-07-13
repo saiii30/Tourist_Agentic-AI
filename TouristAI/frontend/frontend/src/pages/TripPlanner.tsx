@@ -129,6 +129,45 @@ useEffect(() => {
     );
   }
 
+  // Dynamic Statistics Calculations
+  const allActivities = Object.values(activeTrip.itinerary).flat();
+
+  // Average Rating
+  const ratings = [
+    ...allActivities.map(a => a.rating).filter(Boolean),
+    ...(activeTrip.hotels || []).map(h => h.rating).filter(Boolean),
+    ...(activeTrip.restaurants || []).map(r => r.rating).filter(Boolean)
+  ];
+  const avgRating = ratings.length > 0 
+    ? (ratings.reduce((sum, val) => sum + val, 0) / ratings.length).toFixed(1)
+    : "4.8";
+
+  // Counts
+  const attractionsCount = allActivities.filter(a => 
+    a.category === "Sightseeing" || 
+    a.category === "Adventure" || 
+    a.category === "Culture"
+  ).length;
+
+  const restaurantsCount = activeTrip.restaurants && activeTrip.restaurants.length > 0
+    ? activeTrip.restaurants.length
+    : allActivities.filter(a => a.category === "Food" || a.restaurant).length;
+
+  const hotelsCount = activeTrip.hotels && activeTrip.hotels.length > 0
+    ? activeTrip.hotels.length
+    : Array.from(new Set(allActivities.filter(a => a.hotel || a.category === "Relaxation").map(a => a.hotel || a.title))).length || 1;
+
+  const totalDistance = attractionsCount > 0 ? attractionsCount * 6 + 5 : 20;
+  const activeHours = activeTrip.durationDays * 8;
+
+  const getTemp = (summary: string) => {
+    if (!summary) return "26°C";
+    const match = summary.match(/(\d+(?:\.\d+)?)\s*°C/);
+    return match ? `${match[1]}°C` : "26°C";
+  };
+  const tempStr = getTemp(activeTrip.weatherSummary);
+
+
   // Itinerary deletions and modifications
   const handleDeleteActivity = (dayNum: number, activityId: string) => {
     updateActiveTrip((prev) => {
@@ -489,7 +528,7 @@ useEffect(() => {
             <div className="absolute top-4 right-4 flex gap-2">
               <span className="px-3 py-1 bg-black/40 backdrop-blur-md text-[10px] font-bold text-white border border-white/10 rounded-full flex items-center gap-1">
                 <Thermometer className="w-3.5 h-3.5 text-amber-500" />
-                26°C Weather
+                {tempStr} Weather
               </span>
               <span className="px-3 py-1 bg-teal-500 text-slate-950 text-[10px] font-extrabold rounded-full shadow-sm">
                 ₹{activeTrip.estimatedCost} Cost
@@ -557,7 +596,15 @@ useEffect(() => {
               { label: "Distance", val: "🚗 38 km", color: "text-slate-600" },
               { label: "Est Budget", val: "💰 ₹8,450", color: "text-emerald-600" },
               { label: "Active hours", val: "⏱ 30 Hours", color: "text-purple-600" },
-              { label: "Forecast", val: "🌤 26°C", color: "text-amber-505 text-amber-600" }
+              { label: "Forecast", val: "🌤 26°C", color: "text-amber-505 text-amber-600" },
+              { label: "Rating", val: `⭐ ${avgRating}`, color: "text-amber-500" },
+              { label: "Attractions", val: `📍 ${attractionsCount} Place${attractionsCount !== 1 ? 's' : ''}`, color: "text-sky-505 text-sky-600" },
+              { label: "Restaurants", val: `🍽 ${restaurantsCount} Dining${restaurantsCount !== 1 ? 's' : ''}`, color: "text-rose-505 text-rose-600" },
+              { label: "Hotels", val: `🏨 ${hotelsCount} Stay${hotelsCount !== 1 ? 's' : ''}`, color: "text-teal-505 text-teal-600" },
+              { label: "Distance", val: `🚗 ${totalDistance} km`, color: "text-slate-600" },
+              { label: "Est Budget", val: `💰 ₹${activeTrip.estimatedCost.toLocaleString('en-IN')}`, color: "text-emerald-600" },
+              { label: "Active hours", val: `⏱ ${activeHours} Hours`, color: "text-purple-600" },
+              { label: "Forecast", val: `🌤 ${tempStr}`, color: "text-amber-505 text-amber-600" }
             ].map((stat) => (
               <div key={stat.label} className="p-2 border border-slate-100 dark:border-slate-800/80 rounded-xl bg-slate-50/50 dark:bg-slate-900/10">
                 <span className="block text-[9px] text-slate-400 font-bold uppercase">{stat.label}</span>
@@ -1195,80 +1242,82 @@ useEffect(() => {
       </div>
 
       {/* ──────── 5. STICKY ACTION CONTROL BAR ──────── */}
-      <div className="fixed bottom-16 sm:bottom-0 left-0 right-0 sm:left-20 lg:left-68 bg-white/95 dark:bg-[#111827]/95 backdrop-blur-md border-t border-slate-200/60 dark:border-slate-800/60 p-4 flex items-center justify-between sm:justify-around px-5 z-40">
+      {activeTab === "Itinerary" && (
+        <div className="fixed bottom-16 sm:bottom-0 left-0 right-0 sm:left-20 lg:left-68 bg-white/95 dark:bg-[#111827]/95 backdrop-blur-md border-t border-slate-200/60 dark:border-slate-800/60 p-4 flex items-center justify-between sm:justify-around px-5 z-40">
 
-        {/* Sync calendar connected summary */}
-        <div className="hidden lg:block text-left">
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-            {activeTrip.calendarSynced ? "✔ Calendar Connected" : "Calendar Pending"}
-          </p>
-          <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5">
-            {activeTrip.calendarSynced ? `Last Synced: ${activeTrip.calendarSyncedAt}` : `Sync calendar slots`}
-          </h4>
-        </div>
+          {/* Sync calendar connected summary */}
+          <div className="hidden lg:block text-left">
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              {activeTrip.calendarSynced ? "✔ Calendar Connected" : "Calendar Pending"}
+            </p>
+            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5">
+              {activeTrip.calendarSynced ? `Last Synced: ${activeTrip.calendarSyncedAt}` : `Sync calendar slots`}
+            </h4>
+          </div>
 
-        {/* Action strip buttons */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar w-full sm:w-auto">
-          {/* Modify button */}
-          <button
-            onClick={() => setIsModifyOpen(true)}
-            className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
-          >
-            <Edit3 className="w-4 h-4 text-teal-605" />
-            <span>Modify</span>
-          </button>
-
-          {/* Regenerate */}
-          <button
-            onClick={() => setIsRegenOpen(true)}
-            className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
-          >
-            <RefreshCw className="w-4 h-4 text-teal-605" />
-            <span>Regenerate</span>
-          </button>
-
-          {/* Save */}
-          <button
-            onClick={() => setIsSaveOpen(true)}
-            className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-teal-650 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 hover-scale shadow-sm"
-          >
-            <Save className="w-4 h-4" />
-            <span>Save</span>
-          </button>
-
-          {/* Google Calendar sync/unsync buttons */}
-          {activeTrip.calendarSynced ? (
+          {/* Action strip buttons */}
+          <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar w-full sm:w-auto">
+            {/* Modify button */}
             <button
-              onClick={handleRemoveCalendarEvents}
-              className="px-3.5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-950/20 text-rose-600 bg-rose-50/20 hover:bg-rose-50 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
+              onClick={() => setIsModifyOpen(true)}
+              className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
             >
-              <Calendar className="w-4 h-4 text-rose-500" />
-              <span>Unsync</span>
+              <Edit3 className="w-4 h-4 text-teal-605" />
+              <span>Modify</span>
             </button>
-          ) : (
+
+            {/* Regenerate */}
             <button
-              onClick={() => {
-                setIsSaveOpen(false);
-                setIsSyncOpen(true);
-              }}
+              onClick={() => setIsRegenOpen(true)}
+              className="flex-1 sm:flex-initial px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-850 text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
+            >
+              <RefreshCw className="w-4 h-4 text-teal-605" />
+              <span>Regenerate</span>
+            </button>
+
+            {/* Save */}
+            <button
+              onClick={() => setIsSaveOpen(true)}
+              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-teal-650 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 hover-scale shadow-sm"
+            >
+              <Save className="w-4 h-4" />
+              <span>Save</span>
+            </button>
+
+            {/* Google Calendar sync/unsync buttons */}
+            {activeTrip.calendarSynced ? (
+              <button
+                onClick={handleRemoveCalendarEvents}
+                className="px-3.5 py-2.5 rounded-xl border border-rose-200 dark:border-rose-950/20 text-rose-605 bg-rose-50/20 hover:bg-rose-50 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
+              >
+                <Calendar className="w-4 h-4 text-rose-500" />
+                <span>Unsync</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setIsSaveOpen(false);
+                  setIsSyncOpen(true);
+                }}
+                className="px-3.5 py-2.5 rounded-xl border border-slate-205 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
+              >
+                <Calendar className="w-4 h-4 text-teal-600" />
+                <span>Calendar</span>
+              </button>
+            )}
+
+            {/* Share */}
+            <button
+              onClick={() => setIsShareOpen(true)}
               className="px-3.5 py-2.5 rounded-xl border border-slate-205 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
             >
-              <Calendar className="w-4 h-4 text-teal-600" />
-              <span>Calendar</span>
+              <Share2 className="w-4 h-4 text-slate-450" />
+              <span className="hidden sm:inline">Share</span>
             </button>
-          )}
+          </div>
 
-          {/* Share */}
-          <button
-            onClick={() => setIsShareOpen(true)}
-            className="px-3.5 py-2.5 rounded-xl border border-slate-205 dark:border-slate-850 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-900 text-xs font-bold flex items-center justify-center gap-1.5 hover-scale"
-          >
-            <Share2 className="w-4 h-4 text-slate-450" />
-            <span className="hidden sm:inline">Share</span>
-          </button>
         </div>
-
-      </div>
+      )}
 
       {/* ──────── 6. FLOATING AI ASSISTANT FAB BUTTON ──────── */}
       <div className="fixed bottom-24 right-5 sm:right-6 z-45">

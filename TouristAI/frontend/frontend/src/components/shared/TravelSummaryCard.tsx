@@ -9,6 +9,16 @@ interface TravelSummaryCardProps {
 export const TravelSummaryCard: React.FC<TravelSummaryCardProps> = ({ trip }) => {
   const [showPacking, setShowPacking] = useState(false);
 
+  const getTempAndCondition = (summary: string) => {
+    if (!summary) return { temp: "26°C", condition: "Warm, Sunny" };
+    const tempMatch = summary.match(/(\d+(?:\.\d+)?)\s*°C/);
+    const temp = tempMatch ? `${tempMatch[1]}°C` : "26°C";
+    const condMatch = summary.match(/with\s+([^.\n]+)/);
+    const condition = condMatch ? condMatch[1].trim() : "Warm, Sunny";
+    return { temp, condition };
+  };
+  const { temp: tempVal, condition: condVal } = getTempAndCondition(trip.weatherSummary);
+
   return (
     <div className="relative rounded-[28px] overflow-hidden shadow-lg border border-slate-200/50 dark:border-slate-800/80 bg-white dark:bg-[#111827]">
       
@@ -91,9 +101,9 @@ export const TravelSummaryCard: React.FC<TravelSummaryCardProps> = ({ trip }) =>
           <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
             Forecast
           </span>
-          <p className="text-xs font-bold text-slate-800 dark:text-slate-250 flex items-center gap-1.5">
+          <p className="text-xs font-bold text-slate-800 dark:text-slate-250 flex items-center gap-1.5 capitalize">
             <Sun className="w-4 h-4 text-amber-500 animate-spin-slow" />
-            Warm, Sunny
+            {tempVal} {condVal}
           </p>
         </div>
 

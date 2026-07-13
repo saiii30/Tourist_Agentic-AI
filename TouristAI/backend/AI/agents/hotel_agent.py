@@ -6,10 +6,18 @@ import urllib.error
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-import requests
-from bs4 import BeautifulSoup
-from urllib.parse import quote_plus
+from urllib.parse import urljoin, quote_plus
+from dotenv import load_dotenv
+
+# Load environment variables from possible locations to ensure API keys are populated
+for env_path in [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+    os.path.abspath(os.path.join(os.getcwd(), ".env")),
+    os.path.abspath(os.path.join(os.getcwd(), "backend", ".env")),
+]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
 
 
 def get_image_from_website(url, max_images=1):
@@ -368,7 +376,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
     if not api_key:
-        print("❌ GOOGLE_PLACES_API_KEY not found.")
+        print("[ERROR] GOOGLE_PLACES_API_KEY not found.")
         return None
 
     query = f"best hotels in {city}"
@@ -417,7 +425,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
         print(json.dumps(data, indent=2))
 
         if not data.get("places"):
-            print("⚠️ No hotels found.")
+            print("[WARNING] No hotels found.")
             return None
 
         lines = []
@@ -559,7 +567,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
                 "booking_url": website if website != "Not available" else "https://booking.com"
             })
 
-        print("✅ Hotels fetched successfully.")
+        print("[INFO] Hotels fetched successfully.")
 
         return {"text": "\n".join(lines), "data": hotels_data}
 
@@ -577,18 +585,21 @@ def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None,
     if city == "None":
         return {"message": "I need to know which city you are visiting."}
 
+    is_trip_plan = any(kw in question.lower() for kw in ["plan a", "trip", "itinerary", "vacation", "holiday"])
+
     # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
-    try:
-        from rag_service import get_answer
-        rag_result = get_answer(question, check_rag_only=True)
-        if rag_result:
-            print("✅ Found hotel recommendations from RAG (FAISS DB).")
-            return rag_result
-    except Exception as e:
-        print(f"⚠️ Error checking RAG for hotels: {e}")
+    if not is_trip_plan:
+        try:
+            from rag_service import get_answer
+            rag_result = get_answer(question, check_rag_only=True)
+            if rag_result:
+                print("[INFO] Found hotel recommendations from RAG (FAISS DB).")
+                return rag_result
+        except Exception as e:
+            print(f"[WARNING] Error checking RAG for hotels: {e}")
 
     # 2. If RAG is empty, try the Google Places API
-    print("ℹ️ No results in RAG. Checking Google Places API for hotels.")
+    print("[INFO] No results in RAG. Checking Google Places API for hotels.")
     google_results = get_hotels_from_google(
         city, budget, travelers, checkin=checkin, checkout=checkout, rooms=rooms
     )
@@ -597,18 +608,18 @@ def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None,
         try:
             from rag_service import save_to_rag
             save_to_rag(question, google_results["text"])
-            print("✅ Saved Google Places response to RAG.")
+            print("[INFO] Saved Google Places response to RAG.")
         except Exception as e:
-            print(f"⚠️ Could not save Google response to RAG: {e}")
+            print(f"[WARNING] Could not save Google response to RAG: {e}")
         return {"source": "google_places", "hotels": google_results["text"], "data": google_results["data"]}
 
     # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
-    print("⚠️ Google Places API also failed. Falling back to Groq LLM.")
+    print("[WARNING] Google Places API also failed. Falling back to Groq LLM.")
     try:
         from rag_service import get_answer
         return get_answer(question)
     except Exception as e:
-        print(f"❌ Final fallback to Groq failed: {e}")
+        print(f"[ERROR] Final fallback to Groq failed: {e}")
         return {"message": f"Sorry, I'm having trouble finding hotel recommendations for {city} right now."}
 
 

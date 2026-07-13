@@ -80,8 +80,21 @@ class TripService:
         packing_checklist = PackingService.get_packing_checklist(city, travel_style, budget)
         budget_summary = BudgetService.calculate_budget_summary(city, days, budget)
         emergency_contacts = EmergencyService.get_emergency_contacts(city)
-        hotels = self.get_structured_hotels(city, budget)
-        restaurants = self.get_structured_restaurants(city, budget)
+        # Try to load hotels/restaurants from saved trip details in database
+        hotels = None
+        restaurants = None
+        try:
+            db_details = self.repo.get_trip_details(trip_id)
+            if db_details:
+                hotels = db_details.get("hotels")
+                restaurants = db_details.get("restaurants")
+        except Exception as e:
+            print(f"Error loading saved trip details for cached hotels/restaurants: {e}")
+            
+        if not hotels:
+            hotels = self.get_structured_hotels(city, budget)
+        if not restaurants:
+            restaurants = self.get_structured_restaurants(city, budget)
 
         return {
             "status": "success",

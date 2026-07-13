@@ -242,57 +242,18 @@ def google_calendar_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def regenerate_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Generates a completely different itinerary draft, avoiding repeating the previous one.
+    Sets up the state for programmatic regeneration using alternative agent data.
     """
     g_state = get_guided_state()
-    trip_id = g_state.get("trip_id")
+    # Increment regen count
+    regen_count = int(g_state.get("regen_count", 0)) + 1
+    update_guided_state("regen_count", str(regen_count))
     
-    if not trip_id:
-        trip_id = str(uuid.uuid4())
-        update_guided_state("trip_id", trip_id)
-
-    # Read from SQLite guided state cache
-    cached_items_json = g_state.get("last_itinerary_items")
-    items = []
-    if cached_items_json:
-        import json
-        try:
-            raw_items = json.loads(cached_items_json)
-            items = [ItineraryItem(**item) for item in raw_items]
-        except Exception as e:
-            print(f"Error loading cached itinerary items: {e}")
-
-    # Fallback to DB
-    if not items and trip_id:
-        items = calendar_service.repo.get_itinerary_items(trip_id)
-
-    trip = Trip(
-        trip_id=trip_id or str(uuid.uuid4()),
-        user_id="guest_user",
-        city=g_state.get("destination", state.get("city", "None")),
-        days=int(g_state.get("days", state.get("days", 3))),
-        budget=g_state.get("budget", state.get("budget", "Budget")),
-        travel_style=g_state.get("travel_style", state.get("travel_style", "Solo")),
-        travelers=int(g_state.get("travelers", state.get("travelers", 1))),
-        interests=g_state.get("interests", state.get("interests", "None")),
-        status="draft",
-        created_at=datetime.now().isoformat(),
-        updated_at=datetime.now().isoformat()
-    )
-
-    # Regenerate a different itinerary
-    regenerated_items = itinerary_service.regenerate_itinerary(trip, items)
+    print(f"[INFO] Incrementing regeneration offset to: {regen_count}")
     
-    # Update SQLite guided state cache
-    regenerated_dicts = [item.dict() for item in regenerated_items]
-    import json
-    update_guided_state("last_itinerary_items", json.dumps(regenerated_dicts))
-
-    # Format new draft
-    itinerary_md = calendar_service.render_itinerary_to_markdown(regenerated_items)
-    update_guided_state("last_itinerary", itinerary_md)
-
-    return calendar_preview_node(state)
+    return {
+        "routes": ["hotel", "restaurant", "nearby", "weather"]
+    }
 
 def delete_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """

@@ -3,7 +3,18 @@ import urllib.request
 import urllib.parse
 import json
 import random
+from dotenv import load_dotenv
 from rag_service import client
+
+# Load environment variables from possible locations to ensure API keys are populated
+for env_path in [
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"),
+    os.path.abspath(os.path.join(os.getcwd(), ".env")),
+    os.path.abspath(os.path.join(os.getcwd(), "backend", ".env")),
+]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
 
 def extract_city(question: str) -> str:
     prompt = (

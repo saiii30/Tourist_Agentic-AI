@@ -406,7 +406,6 @@ class CalendarService:
 
             # Cost
             # Estimate roughly
-            lines.append("💰 Estimated Daily Cost\n₹2,500 - ₹3,500\n")
             lines.append("---")
 
         return "\n".join(lines)
