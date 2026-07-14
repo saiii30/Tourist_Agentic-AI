@@ -463,7 +463,6 @@ builder.add_edge(
 
 
 def merge_router(state):
-    g_state = get_guided_state()
     routes = state.get("routes", [])
     if "calendar" in routes or "calendar_preview" in routes:
         return "calendar_preview"

@@ -20,7 +20,7 @@ for env_path in [
         load_dotenv(env_path)
 
 
-def get_image_from_website(url, max_images=20):
+def get_image_from_website(url, max_images=1):
     """
     Returns up to max_images image URLs from a website.
     """
@@ -402,7 +402,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
 
     payload = {
         "textQuery": query,
-        "maxResultCount": 10
+        "maxResultCount": 5
     }
 
     headers = {
@@ -431,7 +431,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
         lines = []
         hotels_data = []
 
-        for i, place in enumerate(data["places"][:10], 1):
+        for i, place in enumerate(data["places"][:5], 1):
             print(place)
             hotel_id = place.get("id", f"mock-hotel-{i}")
             name = place.get("displayName", {}).get("text", "N/A")
@@ -461,7 +461,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
             photo_urls = []
             if website != "Not available":
                 print(f"Getting images from: {website}")
-                photo_urls = get_image_from_website(website, max_images=20)
+                photo_urls = get_image_from_website(website, max_images=1)
                 print("Images:", photo_urls)
 
             # -----------------------

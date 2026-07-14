@@ -1,4 +1,10 @@
 import os
+import sys
+import asyncio
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 from dotenv import load_dotenv
 
@@ -18,7 +24,7 @@ import sys
 import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, Response, Request
+from fastapi import FastAPI, Response, Request, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
@@ -203,11 +209,12 @@ def chat(req: ChatRequest):
     is_active = g_state.get("is_active") == "1"
     
     if not is_start and not is_active:
-        if not is_single_topic:
-            from supervisor import extract_query_details
-            details = extract_query_details(req.question)
-            if details.get("city") != "None" and details.get("requires_city", True):
-                is_start = True
+        # Only trigger a new trip if trip-related keywords are present, not just a city.
+        # This prevents single-topic queries (like for hotels) from starting a full plan.
+        from supervisor import extract_query_details, matches_keywords
+        details = extract_query_details(req.question)
+        if details.get("city") != "None" and details.get("requires_city", True):
+            is_start = matches_keywords(question_lower, start_keywords)
             
     if is_start:
         from supervisor import extract_all_opening_details
@@ -289,7 +296,10 @@ def chat(req: ChatRequest):
         except Exception as e:
             print(f"Error building real itinerary: {e}")
 
-    if real_itinerary:
+    itinerary_routes = {"calendar", "modify_itinerary", "regenerate_itinerary", "save_itinerary", "delete_itinerary", "google_calendar"}
+    has_itinerary_route = any(r in itinerary_routes for r in result.get("routes", []))
+
+    if real_itinerary and has_itinerary_route:
         city = g_state.get("destination", "Unknown")
         days = int(g_state.get("days", 3))
         budget = g_state.get("budget", "Moderate")
@@ -436,6 +446,558 @@ def chat(req: ChatRequest):
             "generated_at": datetime.now().isoformat()
         }
     }
+
+@app.get("/api/flights/search")
+async def search_flights(
+    from_airport: str = Query(..., alias="from"),
+    to_airport: str = Query(..., alias="to"),
+    date: str = Query(...)
+):
+    import base64
+    import importlib.util
+    import os
+    
+    # 1. Format date (must be YYYY-MM-DD)
+    clean_date = date.strip()
+    if len(clean_date) != 10 or "-" not in clean_date:
+        from datetime import datetime, timedelta
+        clean_date = (datetime.now() + timedelta(days=15)).strftime("%Y-%m-%d")
+        
+    # 2. Build search URL (using the highly robust search query format)
+    origin = from_airport.strip().upper()
+    destination = to_airport.strip().upper()
+    
+    search_url = f"https://www.google.com/travel/flights/search?q=Flights%20from%20{origin}%20to%20{destination}%20on%20{clean_date}&curr=INR"
+
+        
+    print(f"Scraping Google Flights: {search_url}")
+    
+    # 3. Run scraper in a subprocess to avoid event loop conflicts in Uvicorn
+    results = []
+    try:
+        scraper_dir = os.path.join(os.path.dirname(__file__), "google-flightpscraper.py")
+        scraper_path = os.path.join(scraper_dir, "google-flights-scraper.py")
+        
+        if os.path.exists(scraper_path):
+            import subprocess
+            import uuid
+            import tempfile
+            
+            # Save the temp JSON file in the OS temp directory so that Uvicorn's WatchFiles doesn't trigger a server reload
+            temp_json_path = os.path.join(tempfile.gettempdir(), f"temp_flights_{uuid.uuid4().hex}.json")
+            
+            # Run the scraper as a subprocess using the current Python executable
+            cmd = [sys.executable, scraper_path, search_url, temp_json_path]
+            print(f"Executing flight scraper subprocess: {' '.join(cmd)}")
+            
+            # Run in a separate thread to not block the FastAPI event loop
+            def run_proc():
+                return subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                
+            proc_res = await asyncio.to_thread(run_proc)
+            
+            # Print stderr/stdout for backend logs/debugging
+            if proc_res.stdout:
+                print(f"Scraper stdout: {proc_res.stdout.strip()}")
+            if proc_res.stderr:
+                print(f"Scraper stderr: {proc_res.stderr.strip()}")
+                
+            # If the output file exists, read results
+            if os.path.exists(temp_json_path):
+                try:
+                    with open(temp_json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        results = data.get("flights", [])
+                finally:
+                    # Cleanup the temp file
+                    try:
+                        os.remove(temp_json_path)
+                    except Exception as clean_err:
+                        print(f"Failed to remove temp file: {clean_err}")
+            else:
+                print(f"Warning: Scraper subprocess completed, but output file not found at: {temp_json_path}")
+        else:
+            print(f"Warning: Scraper file not found at: {scraper_path}")
+    except Exception as scrap_err:
+        print(f"Scraper error: {scrap_err}")
+        
+    # 4. Fallback to mock data if empty or error
+    if not results:
+        results = [
+            {
+                "airline": "Air India",
+                "departure_time": "10:15 AM",
+                "arrival_time": "12:30 PM",
+                "duration": "2h 15m",
+                "stops": "Nonstop",
+                "price": "$120",
+                "co2_emissions": "120 kg CO2",
+                "emissions_variation": "-15% emissions"
+            },
+            {
+                "airline": "IndiGo",
+                "departure_time": "02:30 PM",
+                "arrival_time": "04:45 PM",
+                "duration": "2h 15m",
+                "stops": "Nonstop",
+                "price": "$98",
+                "co2_emissions": "125 kg CO2",
+                "emissions_variation": "-11% emissions"
+            },
+            {
+                "airline": "Vistara",
+                "departure_time": "06:00 PM",
+                "arrival_time": "08:15 PM",
+                "duration": "2h 15m",
+                "stops": "Nonstop",
+                "price": "$145",
+                "co2_emissions": "118 kg CO2",
+                "emissions_variation": "-16% emissions"
+            }
+        ]
+        
+    return {
+        "success": True,
+        "data": results
+    }
+
+@app.get("/api/buses/search")
+async def search_buses(
+    from_city: str = Query(..., alias="from"),
+    to_city: str = Query(..., alias="to"),
+    date: Optional[str] = None
+):
+    import base64
+    import importlib.util
+    import os
+    import subprocess
+    import uuid
+    import tempfile
+    from datetime import datetime, timedelta
+
+    # 1. Format date (must be doj=DD-MMM-YYYY, e.g., 30-Jul-2026)
+    clean_date = date.strip() if date else ""
+    formatted_date = ""
+    if clean_date and len(clean_date) == 10 and "-" in clean_date:
+        try:
+            parts = clean_date.split("-")
+            year = parts[0]
+            month_idx = int(parts[1]) - 1
+            day = int(parts[2])
+            months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            month_name = months[month_idx]
+            formatted_date = f"{day}-{month_name}-{year}"
+        except Exception as date_err:
+            print(f"Error formatting redbus date: {date_err}")
+            
+    if not formatted_date:
+        # Default to 15 days in advance
+        d = datetime.now() + timedelta(days=15)
+        months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        formatted_date = f"{d.day}-{months[d.month - 1]}-{d.year}"
+
+    # 2. Build search URL
+    clean_from = from_city.lower().strip().replace(" ", "-")
+    clean_to = to_city.lower().strip().replace(" ", "-")
+    search_url = f"https://www.redbus.in/bus-tickets/{clean_from}-to-{clean_to}?doj={formatted_date}"
+    print(f"Scraping redBus: {search_url}")
+
+    # 3. Run scraper in a subprocess to avoid event loop conflicts in Uvicorn
+    results = []
+    try:
+        scraper_dir = os.path.join(os.path.dirname(__file__), "redbus-scraper.py")
+        scraper_path = os.path.join(scraper_dir, "redbus-scraper.py")
+        
+        if os.path.exists(scraper_path):
+            # Save the temp JSON file in the OS temp directory
+            temp_json_path = os.path.join(tempfile.gettempdir(), f"temp_buses_{uuid.uuid4().hex}.json")
+            
+            # Run the scraper as a subprocess using the current Python executable
+            cmd = [sys.executable, scraper_path, search_url, temp_json_path]
+            print(f"Executing bus scraper subprocess: {' '.join(cmd)}")
+            
+            # Run in a separate thread to not block the FastAPI event loop
+            def run_proc():
+                return subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                
+            proc_res = await asyncio.to_thread(run_proc)
+            
+            # Print stderr/stdout for backend logs/debugging
+            if proc_res.stdout:
+                print(f"Bus Scraper stdout: {proc_res.stdout.strip()}")
+            if proc_res.stderr:
+                print(f"Bus Scraper stderr: {proc_res.stderr.strip()}")
+                
+            # If the output file exists, read results
+            if os.path.exists(temp_json_path):
+                try:
+                    with open(temp_json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        results = data.get("buses", [])
+                finally:
+                    # Cleanup the temp file
+                    try:
+                        os.remove(temp_json_path)
+                    except Exception as clean_err:
+                        print(f"Failed to remove temp file: {clean_err}")
+            else:
+                print(f"Warning: Bus scraper subprocess completed, but output file not found at: {temp_json_path}")
+        else:
+            print(f"Warning: Bus scraper file not found at: {scraper_path}")
+    except Exception as scrap_err:
+        print(f"Bus scraper error: {scrap_err}")
+
+    # 4. Fallback to mock data if empty or error
+    if not results:
+        results = [
+            {
+                "operator": "SRS Travels",
+                "type": "A/C Sleeper (2+1)",
+                "departure_time": "21:00",
+                "arrival_time": "05:30",
+                "duration": "8h 30m",
+                "price": "₹950",
+                "rating": "4.2"
+            },
+            {
+                "operator": "Parveen Travels",
+                "type": "Volvo Multi-Axle I-Shift A/C Semi Sleeper (2+2)",
+                "departure_time": "22:15",
+                "arrival_time": "06:15",
+                "duration": "8h 00m",
+                "price": "₹1,150",
+                "rating": "4.5"
+            },
+            {
+                "operator": "IntrCity SmartBus",
+                "type": "A/C Sleeper (2+1) - SmartBus",
+                "departure_time": "21:30",
+                "arrival_time": "05:50",
+                "duration": "8h 20m",
+                "price": "₹1,200",
+                "rating": "4.6"
+            },
+            {
+                "operator": "KPN Travels",
+                "type": "Non A/C Sleeper (2+1)",
+                "departure_time": "20:45",
+                "arrival_time": "05:45",
+                "duration": "9h 00m",
+                "price": "₹750",
+                "rating": "3.8"
+            }
+        ]
+        
+    return {
+        "success": True,
+        "data": results
+    }
+
+
+# -------------------------------------------------------------
+# RailRadar APIs (to support the frontend search interface)
+# -------------------------------------------------------------
+
+@app.get("/api/stations/search")
+def search_stations(q: str):
+    results = []
+    # Local lookup list of common stations
+    common_stations = [
+        {"code": "MAS", "name": "CHENNAI CENTRAL"},
+        {"code": "MS", "name": "CHENNAI EGMORE"},
+        {"code": "MDU", "name": "MADURAI JN"},
+        {"code": "CBE", "name": "COIMBATORE JN"},
+        {"code": "SBC", "name": "KSR BENGALURU"},
+        {"code": "NDLS", "name": "NEW DELHI"},
+        {"code": "NZM", "name": "HAZRAT NIZAMUDDIN"},
+        {"code": "HWH", "name": "HOWRAH JN"},
+        {"code": "SA", "name": "SALEM JN"},
+        {"code": "TPJ", "name": "TIRUCHIRAPPALLI JN"},
+        {"code": "TEN", "name": "TIRUNELVELI JN"},
+        {"code": "CAPE", "name": "KANYAKUMARI"},
+        {"code": "PDY", "name": "PUDUCHERRY"},
+        {"code": "TJ", "name": "THANJAVUR JN"},
+        {"code": "MV", "name": "MAYILADUTURAI JN"},
+    ]
+    query_lower = q.lower().strip()
+    
+    # Try calling the online station finder API via transport_agent key
+    rapid_key = os.getenv("RAILRADAR_API_KEY")
+    if rapid_key:
+        try:
+            import requests
+            # Lookup via railradar lookup or findstations
+            url = "https://irctc1.p.rapidapi.com/findstations.php"
+            headers = {
+                "x-rapidapi-host": "indianrailways.p.rapidapi.com",
+                "x-rapidapi-key": rapid_key
+            }
+            params = {"station": q}
+            res = requests.get(url, headers=headers, params=params, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if "Station" in data and isinstance(data["Station"], list):
+                    for s in data["Station"]:
+                        code = s.get("StationCode")
+                        name = s.get("StationName", "")
+                        if code:
+                            results.append({"code": code.upper(), "name": name.title()})
+        except Exception as e:
+            print(f"Error in backend station search api: {e}")
+            
+    # Merge with local match if empty or to augment
+    local_matches = [
+        s for s in common_stations 
+        if query_lower in s["code"].lower() or query_lower in s["name"].lower()
+    ]
+    for s in local_matches:
+        if not any(r["code"] == s["code"] for r in results):
+            results.append(s)
+            
+    return {
+        "success": True,
+        "data": results[:10]
+    }
+
+def map_railradar_train_to_frontend(t):
+    # Resolve inner train info
+    train_info = t.get("train") or {}
+    if not isinstance(train_info, dict):
+        train_info = {}
+
+    # Resolve train number
+    number = train_info.get("number") or train_info.get("train_number") or t.get("train_number") or t.get("number") or ""
+    # Resolve train name
+    name = train_info.get("name") or train_info.get("train_name") or t.get("train_name") or t.get("name") or "Unknown Train"
+    # Resolve type
+    train_type = train_info.get("type") or train_info.get("train_type") or t.get("train_type") or t.get("type") or "Express"
+    
+    # Resolve run days
+    raw_days = train_info.get("runDays") or train_info.get("run_days") or t.get("runDays") or t.get("run_days") or t.get("days") or []
+    run_days = []
+    if isinstance(raw_days, list):
+        run_days = [str(d).lower()[:3] for d in raw_days]
+    elif isinstance(raw_days, str):
+        run_days = [d.strip().lower()[:3] for d in raw_days.split(",")]
+    if not run_days:
+        run_days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        
+    # Resolve from departure
+    from_data = t.get("from") or {}
+    departure = ""
+    if isinstance(from_data, dict):
+        departure = from_data.get("departure") or from_data.get("time") or t.get("from_std") or t.get("departure") or "09:00"
+    else:
+        departure = t.get("from_std") or t.get("departure") or "09:00"
+        
+    # Resolve to arrival
+    to_data = t.get("to") or {}
+    arrival = ""
+    if isinstance(to_data, dict):
+        arrival = to_data.get("arrival") or to_data.get("time") or t.get("to_std") or t.get("arrival") or "17:00"
+    else:
+        arrival = t.get("to_std") or t.get("arrival") or "17:00"
+        
+    # Resolve distance
+    distance = t.get("distance") or 0
+    try:
+        distance = int(distance)
+    except:
+        distance = 0
+        
+    # Resolve duration
+    duration = t.get("duration") or 0
+    duration_mins = 480
+    if isinstance(duration, (int, float)):
+        duration_mins = int(duration)
+    elif isinstance(duration, str):
+        if ":" in duration:
+            parts = duration.split(":")
+            try:
+                duration_mins = int(parts[0]) * 60 + int(parts[1])
+            except:
+                pass
+        elif "h" in duration or "m" in duration:
+            h = 0
+            m = 0
+            import re
+            h_match = re.search(r'(\d+)\s*h', duration)
+            m_match = re.search(r'(\d+)\s*m', duration)
+            if h_match:
+                h = int(h_match.group(1))
+            if m_match:
+                m = int(m_match.group(1))
+            duration_mins = h * 60 + m
+    
+    # Resolve halts
+    halts = t.get("totalHaltsBetween") or t.get("halt_stations") or t.get("halts") or 0
+    try:
+        halts = int(halts)
+    except:
+        halts = 0
+        
+    return {
+        "train": {
+            "number": str(number),
+            "name": name,
+            "type": train_type,
+            "runDays": run_days
+        },
+        "from": {
+            "departure": departure,
+            "arrival": None,
+            "day": 1,
+            "sequence": 1
+        },
+        "to": {
+            "departure": None,
+            "arrival": arrival,
+            "day": 1,
+            "sequence": 10
+        },
+        "distance": distance,
+        "duration": duration_mins,
+        "totalHaltsBetween": halts
+    }
+@app.get("/api/trains/between")
+async def trains_between(
+    from_code: str = Query(..., alias="from"),
+    to_code: str = Query(..., alias="to"),
+    date: Optional[str] = None,
+    live: Optional[bool] = None
+):
+    from datetime import datetime, timedelta
+    import os
+    import subprocess
+    import uuid
+    import tempfile
+    import json
+    
+    if not date or date == "undefined" or date == "None":
+        date = (datetime.now() + timedelta(days=15)).strftime("%Y-%m-%d")
+        
+    # Format date to DD-MM-YYYY for ConfirmTkt (e.g. 30-07-2026)
+    formatted_date = ""
+    try:
+        if "-" in date:
+            parts = date.split("-")
+            if len(parts) == 3:
+                if len(parts[0]) == 4: # YYYY-MM-DD
+                    formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                else: # DD-MM-YYYY or other
+                    formatted_date = date
+    except Exception as date_err:
+        print(f"Error formatting train date: {date_err}")
+        
+    if not formatted_date:
+        # Default to 15 days in advance
+        d = datetime.now() + timedelta(days=15)
+        formatted_date = f"{d.strftime('%d-%m-%Y')}"
+
+    # Build search URL
+    origin = from_code.strip().upper()
+    destination = to_code.strip().upper()
+    search_url = f"https://www.confirmtkt.com/rbooking/trains/from/{origin}/to/{destination}/{formatted_date}"
+    print(f"Scraping ConfirmTkt: {search_url}")
+
+    # Run scraper in a subprocess
+    trains_list = []
+    try:
+        scraper_path = os.path.join(os.path.dirname(__file__), "train_scraper.py")
+        if os.path.exists(scraper_path):
+            temp_json_path = os.path.join(tempfile.gettempdir(), f"temp_trains_{uuid.uuid4().hex}.json")
+            
+            cmd = [sys.executable, scraper_path, search_url, temp_json_path]
+            print(f"Executing train scraper subprocess: {' '.join(cmd)}")
+            
+            def run_proc():
+                return subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                
+            proc_res = await asyncio.to_thread(run_proc)
+            
+            if proc_res.stdout:
+                print(f"Train Scraper stdout: {proc_res.stdout.strip()}")
+            if proc_res.stderr:
+                print(f"Train Scraper stderr: {proc_res.stderr.strip()}")
+                
+            if os.path.exists(temp_json_path):
+                try:
+                    with open(temp_json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        trains_list = data.get("trains", [])
+                finally:
+                    try:
+                        os.remove(temp_json_path)
+                    except Exception as clean_err:
+                        print(f"Failed to remove temp file: {clean_err}")
+            else:
+                print(f"Warning: Train scraper completed but output file not found at: {temp_json_path}")
+        else:
+            print(f"Warning: Train scraper file not found at: {scraper_path}")
+    except Exception as scrap_err:
+        print(f"Train scraper error: {scrap_err}")
+
+    # Fallback to dummy data if API/scraper failed or returned nothing
+    if not trains_list:
+        trains_list = [
+            {
+                "train": {
+                    "number": "12633",
+                    "name": "Kanyakumari Express",
+                    "type": "Superfast",
+                    "runDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+                },
+                "from": {
+                    "departure": "17:20",
+                    "arrival": None,
+                    "day": 1,
+                    "sequence": 1
+                },
+                "to": {
+                    "departure": None,
+                    "arrival": "01:20",
+                    "day": 2,
+                    "sequence": 15
+                },
+                "distance": 490,
+                "duration": 480,
+                "totalHaltsBetween": 8
+            },
+            {
+                "train": {
+                    "number": "12637",
+                    "name": "Pandian Express",
+                    "type": "Superfast",
+                    "runDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+                },
+                "from": {
+                    "departure": "21:40",
+                    "arrival": None,
+                    "day": 1,
+                    "sequence": 1
+                },
+                "to": {
+                    "departure": None,
+                    "arrival": "05:35",
+                    "day": 2,
+                    "sequence": 10
+                },
+                "distance": 495,
+                "duration": 475,
+                "totalHaltsBetween": 6
+            }
+        ]
+            
+    return {
+        "success": True,
+        "data": {
+            "from": {"code": from_code.upper(), "name": from_code.upper() + " JN"},
+            "to": {"code": to_code.upper(), "name": to_code.upper() + " JN"},
+            "count": len(trains_list),
+            "trains": trains_list
+        }
+    }
+
 
 @app.post("/calendar/save")
 def save_calendar(req: SaveCalendarRequest):

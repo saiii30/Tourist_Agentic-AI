@@ -7,19 +7,25 @@ import AIChat from "./pages/AIChat";
 import TripPlanner from "./pages/TripPlanner";
 import SavedTrips from "./pages/SavedTrips";
 import Profile from "./pages/Profile";
+import TrainSearchHome from "./pages/TrainSearchHome";
+import TrainSearchResults from "./pages/TrainSearchResults";
+import FlightSearchHome from "./pages/FlightSearchHome";
+import FlightSearchResults from "./pages/FlightSearchResults";
+import BusSearchHome from "./pages/BusSearchHome";
+import BusSearchResults from "./pages/BusSearchResults";
 
 function AppContent() {
   return (
-    <div className="h-screen w-screen overflow-hidden flex bg-slate-50 dark:bg-[#0b0f19] text-slate-800 dark:text-slate-200">
-      
+    <div className="h-screen w-screen overflow-hidden flex bg-slate-50 dark:bg-[#0b0f19] text-slate-850 dark:text-slate-200">
+
       {/* 1. Responsive Navigation System (Left Sidebar, Tablet Rail, Mobile Bottom Nav) */}
       <Navigation />
 
       {/* 2. Main Page content area */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        
+
         {/* Top Header bar */}
-        <TopBar onMenuClick={() => {}} />
+        <TopBar onMenuClick={() => { }} />
 
         {/* Scrollable interior page body */}
         <main className="flex-1 overflow-y-auto pb-16 sm:pb-0">
@@ -29,6 +35,12 @@ function AppContent() {
             <Route path="/planner" element={<TripPlanner />} />
             <Route path="/saved" element={<SavedTrips />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/trains" element={<TrainSearchHome />} />
+            <Route path="/trains/between/:from/:to" element={<TrainSearchResults />} />
+            <Route path="/flights" element={<FlightSearchHome />} />
+            <Route path="/flights/between/:from/:to" element={<FlightSearchResults />} />
+            <Route path="/buses" element={<BusSearchHome />} />
+            <Route path="/buses/between/:from/:to" element={<BusSearchResults />} />
           </Routes>
         </main>
       </div>

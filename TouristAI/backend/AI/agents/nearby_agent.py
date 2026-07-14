@@ -22,7 +22,7 @@ for env_path in [
 
 
 
-def get_image_from_website(url, max_images=20):
+def get_image_from_website(url, max_images=1):
     """
     Returns up to max_images image URLs from a website.
     """
@@ -206,7 +206,7 @@ def get_places_from_google(city: str, interests: str) -> str | None:
             lines = []
             places_data = []
 
-            for i, place in enumerate(data["places"][:10], 1):
+            for i, place in enumerate(data["places"][:5], 1):
                 attraction_id = place.get("id", f"mock-attraction-{i}")
                 name = place.get("displayName", {}).get("text", "N/A")
                 rating = place.get("rating", "N/A")
