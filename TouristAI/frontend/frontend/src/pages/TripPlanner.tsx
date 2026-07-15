@@ -14,14 +14,58 @@ import { ActivityCard } from "../components/shared/ActivityCard";
 
 // Icons
 import {
-  Calendar, Users, DollarSign, Edit3, RefreshCw, Save, Share2,
+  Calendar, Users, DollarSign, Edit3, RefreshCw, Share2,
   CheckCircle2, AlertTriangle, AlertCircle, Sparkles,
   ExternalLink, ShieldAlert, BookOpen, Thermometer, FileText,
-  Activity as ActivityIcon, PhoneCall, Wallet, CheckSquare, Square
+  Activity as ActivityIcon, PhoneCall, Wallet, CheckSquare, Square,
+  Bell, Volume2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import VoiceNotificationService from "../services/VoiceNotificationService";
 
-type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Map" | "Budget" | "Notes";
+interface Notification {
+  id: string;
+  type: string;
+  source: string;
+  priority: "critical" | "high" | "medium" | "low";
+  trigger: string;
+  event_time: string | null;
+  title: string;
+  text: string;
+  voice: string;
+  play_voice: boolean;
+  spoken: boolean;
+  status: "pending" | "active" | "spoken" | "dismissed" | "expired";
+  action?: { label: string; type: string } | null;
+}
+
+const parseNotificationTime = (eventTime?: string | null): number | null => {
+  if (!eventTime) return null;
+  const parsed = new Date(eventTime).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const refreshRealtimeNotifications = (items: Notification[], nowMs = Date.now()): Notification[] => {
+  return items.map((item) => {
+    if (item.spoken || item.status === "spoken" || item.status === "dismissed") {
+      return item;
+    }
+
+    const eventMs = parseNotificationTime(item.event_time);
+    const isImmediate = !eventMs && ["immediate", "trip_created", "calendar_saved"].includes(item.trigger);
+
+    if ((eventMs && eventMs <= nowMs) || isImmediate) {
+      if (eventMs && nowMs - eventMs > 60 * 60 * 1000) {
+        return { ...item, status: "expired" };
+      }
+      return { ...item, status: "active" };
+    }
+
+    return item.status === "active" ? { ...item, status: "pending" } : item;
+  });
+};
+
+type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Map" | "Budget" | "Notes" | "Smart Assistant";
 
 export const TripPlanner: React.FC = () => {
   const location = useLocation();
@@ -30,6 +74,7 @@ export const TripPlanner: React.FC = () => {
 
   // Page load and active workspace tab
   const [activeTab, setActiveTab] = useState<PlannerTab>("Overview");
+  const [activeItineraryDay, setActiveItineraryDay] = useState<number>(1);
 
   // Modals / Drawers states
   const [isModifyOpen, setIsModifyOpen] = useState(false);
@@ -41,6 +86,68 @@ export const TripPlanner: React.FC = () => {
   const [isAddItineraryOpen, setIsAddItineraryOpen] = useState(false);
   const [itemToAdd, setItemToAdd] = useState<{ type: 'hotel' | 'restaurant', id: string, name: string, location: string, rating: number, image: string } | null>(null);
   const [mapSearchQuery, setMapSearchQuery] = useState<string | null>(null);
+
+  // Voice alerts state and sync handlers
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+
+  useEffect(() => {
+    if (activeTrip?.notifications) {
+      setNotifications(refreshRealtimeNotifications(activeTrip.notifications));
+    }
+  }, [activeTrip?.notifications]);
+
+  useEffect(() => {
+    if (!activeTrip || notifications.length === 0) return;
+
+    const syncRealtimeStatus = () => {
+      setNotifications((prev) => {
+        const updated = refreshRealtimeNotifications(prev);
+        const changed = updated.some((item, index) => item.status !== prev[index]?.status);
+        if (changed) {
+          updateActiveTrip((trip) => trip ? { ...trip, notifications: updated } : null);
+        }
+        return changed ? updated : prev;
+      });
+    };
+
+    syncRealtimeStatus();
+    const timer = window.setInterval(syncRealtimeStatus, 30000);
+    return () => window.clearInterval(timer);
+  }, [activeTrip?.id, notifications.length, updateActiveTrip]);
+
+  const handlePlayVoice = (notif: Notification) => {
+    VoiceNotificationService.getInstance().speak(notif.voice, () => {
+      handleMarkHeard(notif);
+    });
+  };
+
+  const handleMarkHeard = (notif: Notification) => {
+    setNotifications((prev) => {
+      const updated = prev.map((n) =>
+        n.id === notif.id ? { ...n, spoken: true, status: "spoken" as const } : n
+      );
+      if (activeTrip && updateActiveTrip) {
+        updateActiveTrip((prev) => prev ? { ...prev, notifications: updated } : null);
+      }
+      return updated;
+    });
+  };
+
+  // Automatically trigger voice playback if active, play_voice=true, and not spoken yet
+  useEffect(() => {
+    const autoplay = notifications.find(n => n.play_voice && !n.spoken && n.status === "active");
+    if (autoplay) {
+      handlePlayVoice(autoplay);
+    }
+  }, [notifications]);
+
+  // Cleanup speech synthesis on unmount
+  useEffect(() => {
+    return () => {
+      VoiceNotificationService.getInstance().stop();
+    };
+  }, []);
 
   // Currency converter variables
   const [usdAmount, setUsdAmount] = useState("100");
@@ -61,6 +168,14 @@ export const TripPlanner: React.FC = () => {
       navigate("/planner", { replace: true });
     }
   }, [location.search, navigate]);
+
+  useEffect(() => {
+    if (!activeTrip) return;
+    const days = Object.keys(activeTrip.itinerary).map(Number).sort((a, b) => a - b);
+    if (days.length > 0 && !days.includes(activeItineraryDay)) {
+      setActiveItineraryDay(days[0]);
+    }
+  }, [activeTrip, activeItineraryDay]);
 
   // We removed the mock data fallback here!
   // Simply wait for the real activeTrip from the AI builder.
@@ -84,6 +199,12 @@ export const TripPlanner: React.FC = () => {
   }
 
   // Dynamic Statistics Calculations
+  const itineraryDayEntries = Object.entries(activeTrip.itinerary)
+    .map(([dayStr, list]) => [Number(dayStr), list] as const)
+    .sort(([dayA], [dayB]) => dayA - dayB);
+  const activeDayEntry = itineraryDayEntries.find(([dayNum]) => dayNum === activeItineraryDay) || itineraryDayEntries[0];
+  const activeDayNum = activeDayEntry?.[0] || 1;
+  const activeDayActivities = activeDayEntry?.[1] || [];
   const allActivities = Object.values(activeTrip.itinerary).flat();
 
   // Average Rating
@@ -120,6 +241,34 @@ export const TripPlanner: React.FC = () => {
     return match ? `${match[1]}°C` : "26°C";
   };
   const tempStr = getTemp(activeTrip.weatherSummary);
+
+  const tripHighlights = Array.from(
+    new Set(
+      allActivities
+        .filter((activity) => activity.category !== "Food")
+        .map((activity) => activity.title || activity.location)
+        .filter(Boolean)
+    )
+  ).slice(0, 3);
+  const diningHighlights = Array.from(
+    new Set(
+      [
+        ...(activeTrip.restaurants || []).map((restaurant) => restaurant.name),
+        ...allActivities.map((activity) => activity.restaurant).filter(Boolean)
+      ].filter(Boolean)
+    )
+  ).slice(0, 2);
+  const summaryHighlights = tripHighlights.length > 0
+    ? tripHighlights.join(", ")
+    : `${activeTrip.travelStyle.toLowerCase()} experiences`;
+  const diningSummary = diningHighlights.length > 0
+    ? ` Dining highlights include ${diningHighlights.join(", ")}.`
+    : "";
+  const nextRealtimeNotification = notifications
+    .filter((item) => item.status === "pending")
+    .map((item) => ({ item, eventMs: parseNotificationTime(item.event_time) }))
+    .filter(({ eventMs }) => eventMs !== null && eventMs > Date.now())
+    .sort((a, b) => (a.eventMs || 0) - (b.eventMs || 0))[0]?.item;
 
 
   // Itinerary deletions and modifications
@@ -320,6 +469,102 @@ export const TripPlanner: React.FC = () => {
   const handleViewOnMap = (location: string, title: string) => {
     setMapSearchQuery(`${title}, ${location}`);
     setActiveTab("Map");
+  };
+
+  // Drag and Drop States and Event Handlers
+  const [draggedActivity, setDraggedActivity] = useState<{ dayNum: number; id: string } | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, dayNum: number, activityId: string) => {
+    setDraggedActivity({ dayNum, id: activityId });
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, targetDayNum: number, targetActivityId: string) => {
+    e.preventDefault();
+    if (!draggedActivity) return;
+
+    const sourceDayNum = draggedActivity.dayNum;
+    const sourceId = draggedActivity.id;
+
+    if (sourceDayNum === targetDayNum && sourceId === targetActivityId) {
+      setDraggedActivity(null);
+      return;
+    }
+
+    updateActiveTrip((prev) => {
+      if (!prev) return null;
+
+      const updatedItinerary = { ...prev.itinerary };
+      const sourceList = [...(updatedItinerary[sourceDayNum] || [])];
+      
+      const sourceIndex = sourceList.findIndex((item) => item.id === sourceId);
+      if (sourceIndex === -1) return prev;
+      
+      const [movedItem] = sourceList.splice(sourceIndex, 1);
+
+      if (sourceDayNum === targetDayNum) {
+        const targetIndex = sourceList.findIndex((item) => item.id === targetActivityId);
+        sourceList.splice(targetIndex === -1 ? sourceList.length : targetIndex, 0, movedItem);
+        updatedItinerary[sourceDayNum] = sourceList;
+      } else {
+        const targetList = [...(updatedItinerary[targetDayNum] || [])];
+        const targetIndex = targetList.findIndex((item) => item.id === targetActivityId);
+        targetList.splice(targetIndex === -1 ? targetList.length : targetIndex, 0, movedItem);
+        updatedItinerary[sourceDayNum] = sourceList;
+        updatedItinerary[targetDayNum] = targetList;
+      }
+
+      return {
+        ...prev,
+        itinerary: updatedItinerary
+      };
+    });
+
+    setDraggedActivity(null);
+    triggerToast("Activity order updated!", "success");
+  };
+
+  const handleDropOnDay = (e: React.DragEvent, targetDayNum: number) => {
+    e.preventDefault();
+    if (!draggedActivity) return;
+
+    const sourceDayNum = draggedActivity.dayNum;
+    const sourceId = draggedActivity.id;
+
+    if (sourceDayNum === targetDayNum) return;
+
+    updateActiveTrip((prev) => {
+      if (!prev) return null;
+
+      const updatedItinerary = { ...prev.itinerary };
+      const sourceList = [...(updatedItinerary[sourceDayNum] || [])];
+      const targetList = [...(updatedItinerary[targetDayNum] || [])];
+
+      const sourceIndex = sourceList.findIndex((item) => item.id === sourceId);
+      if (sourceIndex === -1) return prev;
+
+      const [movedItem] = sourceList.splice(sourceIndex, 1);
+      targetList.push(movedItem);
+
+      updatedItinerary[sourceDayNum] = sourceList;
+      updatedItinerary[targetDayNum] = targetList;
+
+      return {
+        ...prev,
+        itinerary: updatedItinerary
+      };
+    });
+
+    setDraggedActivity(null);
+    triggerToast(`Moved activity to Day ${targetDayNum}!`, "success");
+  };
+
+  const handleDragEnd = () => {
+    setDraggedActivity(null);
   };
 
   // Toggle checklist checkbox items
@@ -556,7 +801,7 @@ export const TripPlanner: React.FC = () => {
 
         {/* ──────── 3. WORKSPACE TABS SELECTOR ──────── */}
         <div className="flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar pb-px">
-          {(["Overview", "Itinerary", "Hotels", "Restaurants", "Map", "Budget", "Notes"] as const).map((tab) => {
+          {(["Overview", "Itinerary", "Hotels", "Restaurants", "Map", "Budget", "Notes", "Smart Assistant"] as const).map((tab) => {
             const active = activeTab === tab;
             return (
               <button
@@ -601,7 +846,7 @@ export const TripPlanner: React.FC = () => {
                       Trip Summary
                     </h3>
                     <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">
-                      An immersive {activeTrip.durationDays}-day experience exploring the culture, sights, and traditional foods of {activeTrip.cityName}. Start Date: {activeTrip.startDate}. Includes visits to Meenakshi temple shrines, local cotton mills weaving block prints, and dining slots served on banana leaves.
+                      An immersive {activeTrip.durationDays}-day {activeTrip.travelStyle.toLowerCase()} experience in {activeTrip.cityName}, starting {activeTrip.startDate}. Includes {summaryHighlights}.{diningSummary}
                     </p>
                   </div>
 
@@ -764,39 +1009,79 @@ export const TripPlanner: React.FC = () => {
                 exit={{ opacity: 0 }}
                 className="max-w-4xl mx-auto space-y-6"
               >
-                {Object.entries(activeTrip.itinerary).map(([dayStr, list]) => {
-                  const dayNum = Number(dayStr);
-                  return (
-                    <div key={dayNum} className="space-y-4">
-                      {/* Day Header */}
-                      <div className="flex items-center justify-between bg-white dark:bg-[#111827] p-4 border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm text-left">
-                        <div>
-                          <h3 className="font-heading text-sm font-extrabold text-slate-800 dark:text-slate-100">
-                            Day {dayNum} Timeline
-                          </h3>
-                          <p className="text-[10px] text-slate-400 mt-0.5">Explore historic squares and local dining slots</p>
-                        </div>
-                        <span className="px-3 py-1 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 text-[10px] font-extrabold rounded-lg border border-teal-100 dark:border-teal-900/30">
-                          {list.length} Slots Completed
-                        </span>
-                      </div>
+                <div className="bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-1 overflow-x-auto p-2 border-b border-slate-100 dark:border-slate-850 no-scrollbar">
+                    {itineraryDayEntries.map(([dayNum, list]) => {
+                      const active = activeDayNum === dayNum;
+                      return (
+                        <button
+                          key={dayNum}
+                          onClick={() => setActiveItineraryDay(dayNum)}
+                          className={`relative flex-shrink-0 px-4 py-2.5 text-xs font-bold transition-colors select-none rounded-xl ${
+                            active
+                              ? "bg-teal-600 text-white shadow-sm"
+                              : "text-slate-500 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          Day {dayNum}
+                          <span className={`ml-2 text-[9px] font-extrabold ${active ? "text-teal-100" : "text-slate-400"}`}>
+                            {list.length}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
 
-                      {/* Day activity lists */}
-                      <div className="space-y-4 pl-4 border-l-2 border-slate-200 dark:border-slate-800">
-                        {list.map((act) => (
-                          <ActivityCard
-                            key={act.id}
-                            activity={act}
-                            onDelete={(id: string) => handleDeleteActivity(dayNum, id)}
-                            onFavoriteToggle={(id: string) => handleFavoriteToggle(dayNum, id)}
-                            onReplace={(id: string) => handleReplaceActivity(dayNum, id)}
-                            onViewOnMap={handleViewOnMap}
-                          />
-                        ))}
-                      </div>
+                  {/* Day Header */}
+                  <div className="flex items-center justify-between gap-3 p-4 text-left">
+                    <div>
+                      <h3 className="font-heading text-sm font-extrabold text-slate-800 dark:text-slate-100">
+                        Day {activeDayNum} Timeline
+                      </h3>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Review, reorder, or edit this day's schedule</p>
                     </div>
-                  );
-                })}
+                    <span className="px-3 py-1 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 text-[10px] font-extrabold rounded-lg border border-teal-100 dark:border-teal-900/30">
+                      {activeDayActivities.length} Slots
+                    </span>
+                  </div>
+                </div>
+
+                {/* Active day activity list with drop zone mapping */}
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={`day-${activeDayNum}`}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="space-y-4 pl-4 border-l-2 border-slate-200 dark:border-slate-800 min-h-[60px] transition-all duration-200"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDropOnDay(e, activeDayNum)}
+                  >
+                    {activeDayActivities.map((act) => (
+                      <div
+                        key={act.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, activeDayNum, act.id)}
+                        onDragEnd={handleDragEnd}
+                        onDragOver={handleDragOver}
+                        onDrop={(e) => handleDrop(e, activeDayNum, act.id)}
+                        className={`cursor-grab active:cursor-grabbing transition-all duration-200 ${
+                          draggedActivity?.id === act.id
+                            ? "opacity-30 scale-95 border-2 border-dashed border-teal-500 dark:border-teal-400 rounded-2xl shadow-inner bg-teal-50/10"
+                            : "hover:border-slate-300 dark:hover:border-slate-700"
+                        }`}
+                      >
+                        <ActivityCard
+                          activity={act}
+                          onDelete={(id: string) => handleDeleteActivity(activeDayNum, id)}
+                          onFavoriteToggle={(id: string) => handleFavoriteToggle(activeDayNum, id)}
+                          onReplace={(id: string) => handleReplaceActivity(activeDayNum, id)}
+                          onViewOnMap={handleViewOnMap}
+                        />
+                      </div>
+                    ))}
+                  </motion.div>
+                </AnimatePresence>
               </motion.div>
             )}
 
@@ -1097,6 +1382,163 @@ export const TripPlanner: React.FC = () => {
               </motion.div>
             )}
 
+            {/* TAB: SMART ASSISTANT */}
+            {activeTab === "Smart Assistant" && (
+              <motion.div
+                key="tab-smart-assistant"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="max-w-3xl mx-auto space-y-6 text-left"
+              >
+                {/* Header panel details */}
+                <div className="p-5 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-heading text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                      <Bell className="w-4.5 h-4.5 text-teal-600 animate-bounce" />
+                      AI Travel Companion Speech & Alerts
+                    </h3>
+                    <p className="text-[10.5px] text-slate-400 dark:text-slate-500 mt-0.5 leading-relaxed">
+                      Proactive screen alerts and natural-sounding speech notifications aligned with your itinerary and Google Calendar events.
+                    </p>
+                  </div>
+                  
+                  {/* Speech playback controls */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button
+                      onClick={() => VoiceNotificationService.getInstance().pause()}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold bg-white dark:bg-[#1f2937] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-slate-700 dark:text-slate-300"
+                    >
+                      Pause
+                    </button>
+                    <button
+                      onClick={() => VoiceNotificationService.getInstance().resume()}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[10px] font-bold bg-white dark:bg-[#1f2937] hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors text-slate-700 dark:text-slate-300"
+                    >
+                      Resume
+                    </button>
+                    <button
+                      onClick={() => {
+                        VoiceNotificationService.getInstance().stop();
+                        triggerToast("Speech queue cleared");
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-950/20 text-red-500 bg-red-50/20 hover:bg-red-50 text-[10px] font-bold transition-colors"
+                    >
+                      Stop
+                    </button>
+                  </div>
+                </div>
+
+                {/* Realtime Monitor Status */}
+                <div className="p-4 bg-teal-50/30 dark:bg-teal-950/10 border border-teal-100/60 dark:border-teal-900/30 rounded-2xl text-left">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-teal-700 dark:text-teal-400 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Realtime Alert Monitor
+                      </h4>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                        Alerts now activate automatically from itinerary event times while this planner is open.
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-[#1f2937] border border-teal-100 dark:border-teal-900/40 text-[10px] font-extrabold text-teal-700 dark:text-teal-400">
+                      <span className="w-2 h-2 rounded-full bg-teal-500 animate-pulse" />
+                      Live checks every 30s
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-[10px]">
+                    <div className="p-2.5 rounded-xl bg-white/70 dark:bg-[#111827]/70 border border-slate-100 dark:border-slate-800">
+                      <span className="block font-bold text-slate-400 uppercase">Source</span>
+                      <span className="font-extrabold text-slate-700 dark:text-slate-300">AI + itinerary times</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white/70 dark:bg-[#111827]/70 border border-slate-100 dark:border-slate-800">
+                      <span className="block font-bold text-slate-400 uppercase">Active Voice</span>
+                      <span className="font-extrabold text-slate-700 dark:text-slate-300">Browser speech</span>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-white/70 dark:bg-[#111827]/70 border border-slate-100 dark:border-slate-800">
+                      <span className="block font-bold text-slate-400 uppercase">Next Alert</span>
+                      <span className="font-extrabold text-slate-700 dark:text-slate-300">
+                        {nextRealtimeNotification?.title || "No pending timed alert"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Notifications Lists Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {/* COLUMN 1: Today's Active Alerts */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="text-xs font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        Today's Active
+                      </h4>
+                      <span className="text-[10px] font-bold bg-rose-50 dark:bg-rose-950/20 text-rose-600 px-2 py-0.5 rounded-full">
+                        {notifications.filter(n => n.status === "active" || (n.status === "pending" && n.priority === "critical")).length}
+                      </span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {notifications.filter(n => n.status === "active" || (n.status === "pending" && n.priority === "critical")).map((notif) => (
+                        <NotificationCard key={notif.id} notif={notif} onPlay={handlePlayVoice} onMarkHeard={handleMarkHeard} />
+                      ))}
+                      {notifications.filter(n => n.status === "active" || (n.status === "pending" && n.priority === "critical")).length === 0 && (
+                        <div className="p-5 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[11px] text-slate-400 bg-white dark:bg-[#111827]">
+                          No active notifications.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 2: Upcoming Alerts */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="text-xs font-bold text-slate-700 dark:text-slate-350 flex items-center gap-1">
+                        <Calendar className="w-3.5 h-3.5" />
+                        Upcoming
+                      </h4>
+                      <span className="text-[10px] font-bold bg-slate-100 dark:bg-slate-850 text-slate-600 dark:text-slate-400 px-2 py-0.5 rounded-full">
+                        {notifications.filter(n => n.status === "pending" && n.priority !== "critical").length}
+                      </span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {notifications.filter(n => n.status === "pending" && n.priority !== "critical").map((notif) => (
+                        <NotificationCard key={notif.id} notif={notif} onPlay={handlePlayVoice} onMarkHeard={handleMarkHeard} />
+                      ))}
+                      {notifications.filter(n => n.status === "pending" && n.priority !== "critical").length === 0 && (
+                        <div className="p-5 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[11px] text-slate-400 bg-white dark:bg-[#111827]">
+                          No upcoming notifications.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* COLUMN 3: Completed / Spoken History */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between px-1">
+                      <h4 className="text-xs font-bold text-teal-600 dark:text-teal-400 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        Completed History
+                      </h4>
+                      <span className="text-[10px] font-bold bg-teal-50 dark:bg-teal-950/20 text-teal-605 px-2 py-0.5 rounded-full">
+                        {notifications.filter(n => n.status === "spoken" || n.spoken || n.status === "expired").length}
+                      </span>
+                    </div>
+                    <div className="space-y-2.5">
+                      {notifications.filter(n => n.status === "spoken" || n.spoken || n.status === "expired").map((notif) => (
+                        <NotificationCard key={notif.id} notif={notif} onPlay={handlePlayVoice} onMarkHeard={handleMarkHeard} />
+                      ))}
+                      {notifications.filter(n => n.status === "spoken" || n.spoken || n.status === "expired").length === 0 && (
+                        <div className="p-5 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl text-[11px] text-slate-400 bg-white dark:bg-[#111827]">
+                          Announcements history empty.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
           </AnimatePresence>
         </div>
 
@@ -1134,15 +1576,6 @@ export const TripPlanner: React.FC = () => {
             >
               <RefreshCw className="w-4 h-4 text-teal-605" />
               <span>Regenerate</span>
-            </button>
-
-            {/* Save */}
-            <button
-              onClick={() => setIsSaveOpen(true)}
-              className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-teal-650 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 hover-scale shadow-sm"
-            >
-              <Save className="w-4 h-4" />
-              <span>Save</span>
             </button>
 
             {/* Google Calendar sync/unsync buttons */}
@@ -1260,3 +1693,71 @@ export const TripPlanner: React.FC = () => {
   );
 };
 export default TripPlanner;
+
+const NotificationCard: React.FC<{
+  notif: any;
+  onPlay: (n: any) => void;
+  onMarkHeard: (n: any) => void;
+}> = ({ notif, onPlay, onMarkHeard }) => {
+  const getPriorityBadge = (p: string) => {
+    switch (p) {
+      case "critical":
+        return <span className="inline-flex items-center gap-1 text-[9px] font-bold text-rose-600 dark:text-rose-455 bg-rose-50/50 dark:bg-rose-950/20 px-2 py-0.5 rounded border border-rose-100/50 dark:border-rose-900/30">🔴 Critical</span>;
+      case "high":
+        return <span className="inline-flex items-center gap-1 text-[9px] font-bold text-orange-600 bg-orange-50/50 dark:bg-orange-950/20 px-2 py-0.5 rounded border border-orange-100/50 dark:border-orange-900/30">🟠 High</span>;
+      case "medium":
+        return <span className="inline-flex items-center gap-1 text-[9px] font-bold text-teal-650 dark:text-teal-400 bg-teal-50/50 dark:bg-teal-950/20 px-2 py-0.5 rounded border border-teal-100/50 dark:border-teal-900/30">🔵 Medium</span>;
+      default:
+        return <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-500 bg-slate-50 dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200/50 dark:border-slate-800">⚪ Low</span>;
+    }
+  };
+
+  const getSourceLabel = (s: string) => {
+    return s ? s.charAt(0).toUpperCase() + s.slice(1) : "Trip";
+  };
+
+  return (
+    <div className="p-3.5 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-xl hover:border-slate-350 dark:hover:border-slate-700 shadow-sm transition-all duration-200 space-y-2.5 relative group text-left w-full">
+      <div className="flex items-center justify-between gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5">
+          {getPriorityBadge(notif.priority)}
+          <span className="text-[8px] uppercase tracking-wider font-extrabold text-slate-400 border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-1.5 py-0.5 rounded">
+            {getSourceLabel(notif.source)}
+          </span>
+        </div>
+        {notif.event_time && (
+          <span className="text-[9px] font-bold text-slate-400 dark:text-slate-550">
+            {new Date(notif.event_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
+
+      <div>
+        <h5 className="text-xs font-extrabold text-slate-800 dark:text-slate-200 leading-snug">
+          {notif.title}
+        </h5>
+        <p className="text-[10.5px] text-slate-550 dark:text-slate-400 leading-relaxed mt-0.5">
+          {notif.text}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-end gap-1.5 pt-1.5 border-t border-slate-50 dark:border-slate-850/60">
+        {!notif.spoken && notif.status !== "expired" && (
+          <button
+            onClick={() => onMarkHeard(notif)}
+            className="px-2 py-1 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-[9px] font-bold transition-colors"
+          >
+            Mark Heard
+          </button>
+        )}
+        <button
+          onClick={() => onPlay(notif)}
+          className="px-2 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-[9px] font-bold flex items-center gap-1 transition-colors"
+        >
+          <Volume2 className="w-3 h-3" />
+          <span>{notif.spoken ? "Replay" : "Play Voice"}</span>
+        </button>
+      </div>
+    </div>
+  );
+};

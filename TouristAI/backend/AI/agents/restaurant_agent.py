@@ -154,7 +154,9 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
         query_parts.append(interests)
 
     if budget and budget.lower() != "none":
-        query_parts.append(f"{budget} budget")
+        # Only append descriptive budget words, not raw numbers (which restrict Google Search results)
+        if not any(char.isdigit() for char in budget):
+            query_parts.append(f"{budget} budget")
 
     query = " ".join(query_parts)
 

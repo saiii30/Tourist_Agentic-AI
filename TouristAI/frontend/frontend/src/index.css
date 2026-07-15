@@ -12,6 +12,14 @@
   --color-secondary: #0369a1; /* Sky-700 */
   --color-secondary-light: #38bdf8; /* Sky-500 */
   
+  /* Map standard Tailwind teal slots dynamically */
+  --color-teal-50: var(--theme-teal-50);
+  --color-teal-100: var(--theme-teal-100);
+  --color-teal-500: var(--theme-teal-500);
+  --color-teal-600: var(--theme-teal-600);
+  --color-teal-700: var(--theme-teal-700);
+  --color-teal-800: var(--theme-teal-800);
+  
   --animate-shimmer: shimmer 2s infinite linear;
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 
@@ -25,8 +33,45 @@
   }
 }
 
+@variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light dark;
+  
+  /* Default: Emerald */
+  --theme-teal-50: #f0fdfa;
+  --theme-teal-100: #ccfbf1;
+  --theme-teal-500: #14b8a6;
+  --theme-teal-600: #0d9488;
+  --theme-teal-700: #0f766e;
+  --theme-teal-800: #115e59;
+}
+
+:root.theme-emerald {
+  --theme-teal-50: #f0fdfa;
+  --theme-teal-100: #ccfbf1;
+  --theme-teal-500: #14b8a6;
+  --theme-teal-600: #0d9488;
+  --theme-teal-700: #0f766e;
+  --theme-teal-800: #115e59;
+}
+
+:root.theme-midnight {
+  --theme-teal-50: #f5f3ff;
+  --theme-teal-100: #ede9fe;
+  --theme-teal-500: #8b5cf6;
+  --theme-teal-600: #7c3aed;
+  --theme-teal-700: #6d28d9;
+  --theme-teal-800: #5b21b6;
+}
+
+:root.theme-desert {
+  --theme-teal-50: #fffbeb;
+  --theme-teal-100: #fef3c7;
+  --theme-teal-500: #f59e0b;
+  --theme-teal-600: #d97706;
+  --theme-teal-700: #b45309;
+  --theme-teal-800: #92400e;
 }
 
 body {

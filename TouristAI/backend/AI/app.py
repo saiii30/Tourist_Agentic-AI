@@ -230,11 +230,74 @@ def chat(req: ChatRequest):
                     update_guided_state("trip_id", cached_trip["trip"]["trip_id"])
                     update_guided_state("is_active", "0")
                     
+                    # Regenerate voice notifications for cached trip loads
+                    try:
+                        from agents.voice_notification_agent import generate_voice_notifications_llm
+                        from services.notification_scheduler import NotificationSchedulerService
+                        import re
+                        
+                        trip_data = cached_trip.get("trip", {})
+                        city_name = trip_data.get("city", city)
+                        dur_days = int(trip_data.get("duration", days))
+                        hotels_list = trip_data.get("hotels", [])
+                        restaurants_list = trip_data.get("restaurants", [])
+                        
+                        itinerary_items = []
+                        for day_str, day_items in trip_data.get("itinerary", {}).items():
+                            for item in day_items:
+                                itinerary_items.append({
+                                    "day": int(day_str),
+                                    "start_time": item.get("time", "09:00"),
+                                    "end_time": item.get("duration", "09:00 - 10:00").split(" - ")[-1] if " - " in item.get("duration", "") else "10:00",
+                                    "activity": item.get("title", ""),
+                                    "location": item.get("location", ""),
+                                    "category": item.get("category", "")
+                                })
+                                
+                        weather_summary_text = trip_data.get("weather_summary", "")
+                        match = re.search(r"(\d+(?:\.\d+)?)\s*°C", weather_summary_text)
+                        temp = float(match.group(1)) if match else 26.0
+                        weather_data = {"temp": temp, "description": weather_summary_text}
+                        
+                        notifications = generate_voice_notifications_llm(
+                            city=city_name,
+                            days=dur_days,
+                            itinerary_items=itinerary_items,
+                            hotels=hotels_list,
+                            restaurants=restaurants_list,
+                            nearby=[],
+                            weather=weather_data,
+                            calendar_synced=trip_data.get("calendar", {}).get("synced", False)
+                        )
+                        
+                        scheduled = NotificationSchedulerService.schedule(
+                            notifications,
+                            itinerary_items,
+                            travel_date_str=trip_data.get("travel_date")
+                        )
+                        
+                        # Preserve spoken state from previously loaded notifications if any
+                        old_notifications = trip_data.get("notifications", [])
+                        if old_notifications:
+                            spoken_map = {o.get("title"): o.get("spoken") for o in old_notifications if o.get("title")}
+                            status_map = {o.get("title"): o.get("status") for o in old_notifications if o.get("title")}
+                            for s in scheduled:
+                                title_key = s.get("title")
+                                if title_key in spoken_map:
+                                    s["spoken"] = spoken_map[title_key]
+                                if title_key in status_map:
+                                    s["status"] = status_map[title_key]
+                                    
+                        trip_data["notifications"] = scheduled
+                    except Exception as ex:
+                        print(f"Error regenerating notifications for cache load: {ex}")
+                        
                     return {
                         "status": "success",
                         "answer": f"I found a cached trip plan for {city.title()} matching your request in the local database! Here is your saved itinerary.",
                         "routes": ["calendar", "hotel", "restaurant", "nearby", "weather"],
                         "trip": cached_trip["trip"],
+                        "notifications": cached_trip["trip"].get("notifications", []),
                         "metadata": cached_trip["metadata"]
                     }
             except Exception as e:
@@ -250,7 +313,27 @@ def chat(req: ChatRequest):
             "budget": "None",
             "travelers": 1,
             "travel_style": "None",
-            "interests": "None"
+            "interests": "None",
+            "checkin": "None",
+            "checkout": "None",
+            "guests": 1,
+            "rooms": 1,
+            "breakfast": "None",
+            "hotel_type": "None",
+            "amenities": "None",
+            "budget_per_person": "None",
+            "diet": "None",
+            "cuisine": "None",
+            "meal_time": "None",
+            "family_friendly": "None",
+            "outdoor_seating": "None",
+            "allergies": "None",
+            "max_distance": "None",
+            "price_preference": "None",
+            "traveler_type": "None",
+            "include_hotel": "Yes",
+            "include_transport": "Yes",
+            "shopping_budget": "Yes"
         }
     )
     
@@ -410,12 +493,16 @@ def chat(req: ChatRequest):
                 "synced": False
             }
         }
+        # Get notifications from graph execution result
+        notifications = result.get("notifications", [])
+        trip_response["notifications"] = notifications
         
-        return {
+        response_data = {
             "status": "success",
             "answer": result["answer"],
             "routes": result.get("routes", []),
             "trip": trip_response,
+            "notifications": notifications,
             "metadata": {
                 "source": "llm",
                 "generated_by": "calendar_agent",
@@ -423,8 +510,14 @@ def chat(req: ChatRequest):
                 "generated_at": datetime.now().isoformat()
             }
         }
+        g_state = get_guided_state()
+        active_agent = g_state.get("active_agent")
+        if active_agent and g_state.get("agent_flow_active") == "1":
+            from services.questionnaire_service import get_progress_metadata
+            response_data["questionnaire"] = get_progress_metadata(active_agent, g_state)
+        return response_data
 
-    return {
+    response_data = {
         "status": "success",
         "answer": result["answer"],
         "routes": result.get("routes", []),
@@ -436,6 +529,12 @@ def chat(req: ChatRequest):
             "generated_at": datetime.now().isoformat()
         }
     }
+    g_state = get_guided_state()
+    active_agent = g_state.get("active_agent")
+    if active_agent and g_state.get("agent_flow_active") == "1":
+        from services.questionnaire_service import get_progress_metadata
+        response_data["questionnaire"] = get_progress_metadata(active_agent, g_state)
+    return response_data
 
 @app.post("/calendar/save")
 def save_calendar(req: SaveCalendarRequest):
