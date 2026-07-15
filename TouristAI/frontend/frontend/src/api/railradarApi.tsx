@@ -3,7 +3,7 @@ import type { ApiEnvelope, Station, TrainsBetweenResponse } from "../types/railr
 
 // Points at OUR backend (see /backend folder), never at railradar.in directly —
 // keeps the RailRadar API key server-side only.
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api";
 
 const http = axios.create({
     baseURL: BASE_URL,

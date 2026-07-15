@@ -497,7 +497,7 @@ def route_question(state, details=None):
             complete_agent_questionnaire(paused_agent)
             return [route_for_agent(paused_agent)]
 
-    is_start = any(k in question_lower for k in ["trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"]) or (details and details.get("city") != "None")
+    is_start = (any(k in question_lower for k in ["trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"]) or (details and details.get("city") != "None")) and detected_intent not in ["hotel", "restaurant", "weather", "train", "attraction"]
     if is_start:
         agent_name = "calendar"
         start_agent_questionnaire(agent_name, question)

@@ -540,7 +540,7 @@ const getClickableQuestionOptions = (text: string): string[] => {
 
 export const AIChat: React.FC = () => {
   const navigate = useNavigate();
-  const { chatMessages, askAIChat, isLoadingChat, setActiveTrip, saveTrip } = useTravelPlanner();
+  const { chatMessages, setChatMessages, askAIChat, isLoadingChat, setActiveTrip, saveTrip } = useTravelPlanner();
   
   const [question, setQuestion] = useState("");
   const [selectedDays, setSelectedDays] = useState<number>(3);
@@ -733,18 +733,32 @@ export const AIChat: React.FC = () => {
             AI Travel Assistant
           </h2>
         </div>
-        <button
-          onClick={toggleVoiceOver}
-          className={`px-3 py-1.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
-            isVoiceOverEnabled
-              ? "bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 border-teal-100 dark:border-teal-900/40 shadow-sm"
-              : "bg-slate-50 dark:bg-slate-900 text-slate-455 dark:text-slate-400 border-slate-200 dark:border-slate-800"
-          }`}
-          title="Toggle Smart Voice Notification Aloud Mode"
-        >
-          {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-          <span>{isVoiceOverEnabled ? "Voice notifications ON" : "Voice notifications OFF"}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {chatMessages.length > 0 && (
+            <button
+              onClick={() => {
+                setChatMessages([]);
+                localStorage.removeItem("chatMessages");
+                triggerToast("Chat history cleared!");
+              }}
+              className="px-3 py-1.5 rounded-full border text-[10px] font-extrabold bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-655 dark:text-slate-400 border-slate-200 dark:border-slate-800 transition-all select-none hover-scale cursor-pointer"
+            >
+              Clear Chat
+            </button>
+          )}
+          <button
+            onClick={toggleVoiceOver}
+            className={`px-3 py-1.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
+              isVoiceOverEnabled
+                ? "bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 border-teal-100 dark:border-teal-900/40 shadow-sm"
+                : "bg-slate-50 dark:bg-slate-900 text-slate-455 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+            }`}
+            title="Toggle Smart Voice Notification Aloud Mode"
+          >
+            {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            <span>{isVoiceOverEnabled ? "Voice notifications ON" : "Voice notifications OFF"}</span>
+          </button>
+        </div>
       </div>
 
       {/* 1. Chat Dialog Log */}

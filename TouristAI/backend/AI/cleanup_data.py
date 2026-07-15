@@ -5,8 +5,14 @@ from dotenv import load_dotenv
 
 # Load env variables
 script_dir = os.path.dirname(os.path.abspath(__file__))
-env_path = os.path.join(script_dir, ".env")
-load_dotenv(env_path)
+# Check backend/.env or backend/AI/.env or root .env
+for env_path in [
+    os.path.join(script_dir, ".env"),
+    os.path.join(os.path.dirname(script_dir), ".env"),
+    os.path.join(os.path.dirname(os.path.dirname(script_dir)), ".env")
+]:
+    if os.path.exists(env_path):
+        load_dotenv(env_path)
 
 def cleanup_postgres():
     print("Cleaning up PostgreSQL database...")
@@ -52,10 +58,9 @@ def cleanup_postgres():
 def cleanup_rag():
     print("Cleaning up RAG (FAISS) vector database...")
     paths_to_check = [
-        os.path.join(script_dir, "AI", "rag", "restaurant_db"),
-        os.path.join(script_dir, "AI", "rag", "hotel_db"),  # In case other vector stores exist
-        "AI/rag/restaurant_db",
-        "backend/AI/rag/restaurant_db"
+        os.path.join(script_dir, "rag", "restaurant_db"),
+        os.path.join(script_dir, "rag", "hotel_db"),
+        os.path.join(os.path.dirname(script_dir), "AI", "rag", "restaurant_db"),
     ]
     
     cleaned = False
@@ -77,6 +82,9 @@ def cleanup_rag():
 def cleanup_sqlite():
     print("Cleaning up local SQLite database...")
     sqlite_path = os.path.abspath(os.path.join(script_dir, "tourist_ai.db"))
+    if not os.path.exists(sqlite_path):
+        sqlite_path = os.path.abspath(os.path.join(os.path.dirname(script_dir), "tourist_ai.db"))
+        
     if os.path.exists(sqlite_path):
         try:
             os.remove(sqlite_path)
