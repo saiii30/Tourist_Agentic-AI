@@ -163,8 +163,8 @@ def validate_field(field_key: str, value: str) -> bool:
 
 AGENT_REGISTRY = {
     "hotel": {
-        "fields": ["city", "budget", "checkin", "checkout", "guests", "breakfast", "hotel_type", "amenities"],
-        "priority": ["city", "checkin", "checkout", "guests", "budget", "breakfast", "hotel_type", "amenities"],
+        "fields": ["city", "budget", "checkin", "checkout", "guests", "breakfast", "amenities"],
+        "priority": ["city", "checkin", "checkout", "guests", "budget", "breakfast", "amenities"],
         "extractor": extract_hotel_fields,
         "prompts": {
             "city": "Great! I'll help you find the right hotel. Which city are you looking in?",
@@ -172,8 +172,7 @@ AGENT_REGISTRY = {
             "checkout": "What is your check-out date?",
             "guests": "How many guests?",
             "budget": "What is your hotel budget?\n\n* **Budget**\n* **Moderate**\n* **Luxury**",
-            "breakfast": "Do you need breakfast included?\n\n* **Yes**\n* **No**",
-            "hotel_type": "Preferred hotel type?\n\n* **Resort**\n* **Villa**\n* **Homestay**\n* **Business Hotel**",
+            "breakfast": "Do you need food included?\n\n* **Yes**\n* **No**",
             "amenities": "Any required amenities?\n\n* **Pool**\n* **Parking**\n* **Wi-Fi**\n* **Spa**\n* **Pet Friendly**"
         }
     },

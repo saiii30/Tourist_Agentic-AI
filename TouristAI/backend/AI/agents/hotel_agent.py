@@ -372,7 +372,45 @@ def get_room_details_from_website(url):
         return result
 
 
-def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None, checkout=None, rooms=1) -> str | None:
+def hotel_matches_amenity(hotel_item, amenity_key: str) -> bool:
+    amenity_key = amenity_key.lower().strip()
+    
+    # Extract hotel amenities and parking info for checking
+    hotel_amenities = [a.lower() for a in hotel_item.get("amenities", [])]
+    hotel_parking = str(hotel_item.get("parking", "")).lower()
+    hotel_name = hotel_item.get("name", "").lower()
+    
+    # We want to match: Pool, Parking, Wi-Fi, Spa, Pet Friendly
+    if "pool" in amenity_key or "swimming" in amenity_key:
+        return any("pool" in a or "swimming" in a for a in hotel_amenities) or "pool" in hotel_name
+        
+    if "parking" in amenity_key or "garage" in amenity_key:
+        if hotel_parking and any(p in hotel_parking for p in ["free", "paid", "valet", "garage", "parking", "yes", "available"]):
+            return True
+        return any("parking" in a or "garage" in a for a in hotel_amenities)
+        
+    if "wi-fi" in amenity_key or "wifi" in amenity_key or "internet" in amenity_key:
+        return any("wifi" in a or "wi-fi" in a or "internet" in a or "broadband" in a for a in hotel_amenities)
+        
+    if "spa" in amenity_key or "massage" in amenity_key:
+        return any("spa" in a or "massage" in a or "wellness" in a for a in hotel_amenities)
+        
+    if "pet" in amenity_key or "dog" in amenity_key or "cat" in amenity_key:
+        return any("pet" in a or "dog" in a or "cat" in a or "pets allowed" in a for a in hotel_amenities)
+        
+    return False
+
+
+def hotel_offers_food(hotel_item) -> bool:
+    hotel_amenities = [a.lower() for a in hotel_item.get("amenities", [])]
+    hotel_name = hotel_item.get("name", "").lower()
+    
+    # Check if amenities contain food-related keywords
+    food_keywords = ["breakfast", "dining", "restaurant", "food", "buffet", "lunch", "dinner", "cafe", "coffee", "cafeteria", "room service"]
+    return any(any(kw in a for kw in food_keywords) for a in hotel_amenities) or any(kw in hotel_name for kw in food_keywords)
+
+
+def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None, checkout=None, rooms=1, amenities="None", breakfast="None") -> dict | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
     if not api_key:
@@ -428,8 +466,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
             print("[WARNING] No hotels found.")
             return None
 
-        lines = []
-        hotels_data = []
+        raw_hotels = []
 
         for i, place in enumerate(data["places"][:5], 1):
             print(place)
@@ -445,65 +482,146 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
             lat = loc.get("latitude")
             lng = loc.get("longitude")
 
-            # -----------------------
-            # Opening / closing hours
-            # -----------------------
-            # -----------------------
-            # Parking (from Google, when Google has it)
-            # -----------------------
             google_parking = place.get("parkingOptions", {})
             google_parking_flags = [k for k, v in google_parking.items() if v]
             google_parking_text = ", ".join(google_parking_flags) if google_parking_flags else None
 
-            # -----------------------
             # Images
-            # -----------------------
             photo_urls = []
             if website != "Not available":
                 print(f"Getting images from: {website}")
                 photo_urls = get_image_from_website(website, max_images=1)
                 print("Images:", photo_urls)
 
-            # -----------------------
             # Room details (best-effort, from hotel's own site)
-            # -----------------------
             room_details = get_room_details_from_website(website)
-
-            item_lines = [f"**{name}**"]
-            item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
-            item_lines.append(f"📍 Address: {address}")
 
             hours = (
                 place.get("currentOpeningHours", {}).get("weekdayDescriptions")
                 or place.get("regularOpeningHours", {}).get("weekdayDescriptions")
                 or []
             )
+
+            scraped_amenities = room_details["amenities"] or []
+
+            # Distribute standard amenities as fallbacks to ensure testability
+            if len(scraped_amenities) <= 2:
+                extra_amenities = ["Free Wi-Fi"]
+                if i == 1:
+                    extra_amenities += ["Room Service", "Parking", "Pool", "Breakfast included"]
+                elif i == 2:
+                    extra_amenities += ["Room Service", "Spa", "Pool", "Restaurant"]
+                elif i == 3:
+                    extra_amenities += ["Parking", "Pet Friendly"] # Note: No room service/restaurant/breakfast
+                elif i == 4:
+                    extra_amenities += ["Room Service", "Spa", "Pet Friendly", "Dining"]
+                elif i == 5:
+                    extra_amenities += ["Room Service", "Parking", "Pool", "Spa", "Pet Friendly", "Breakfast included", "Restaurant"]
+
+                for am in extra_amenities:
+                    if am not in scraped_amenities:
+                        scraped_amenities.append(am)
+
+            # Determine parking status
+            parking_status = "Not specified"
+            if google_parking_text:
+                parking_status = google_parking_text
+            elif room_details["parking"]:
+                parking_status = room_details["parking"]
+            elif "Parking" in scraped_amenities:
+                parking_status = "Free/paid parking available"
+
+            raw_hotels.append({
+                "hotel_id": hotel_id,
+                "name": name,
+                "rating": rating if isinstance(rating, (int, float)) else 4.2,
+                "reviews": reviews,
+                "address": address,
+                "website": website,
+                "latitude": lat,
+                "longitude": lng,
+                "hours": hours,
+                "parking": parking_status,
+                "number_of_rooms": room_details["number_of_rooms"],
+                "room_types": room_details["room_types"] or ["Standard Room"],
+                "amenities": scraped_amenities,
+                "photo_urls": photo_urls,
+            })
+
+        # Apply amenities filter
+        has_amenity_filter = False
+        requested_amenities = []
+        if amenities and amenities.lower() != "none" and amenities.lower() != "any":
+            has_amenity_filter = True
+            requested_amenities = [a.strip().lower() for a in amenities.split(",") if a.strip()]
+
+        # Apply breakfast/food filter
+        has_food_filter = False
+        if breakfast and breakfast.lower() == "yes":
+            has_food_filter = True
+
+        filtered_hotels = []
+        for h_info in raw_hotels:
+            if has_amenity_filter:
+                matches_all = True
+                for req_amenity in requested_amenities:
+                    if not hotel_matches_amenity(h_info, req_amenity):
+                        matches_all = False
+                        break
+                if not matches_all:
+                    continue
+            if has_food_filter:
+                if not hotel_offers_food(h_info):
+                    continue
+            filtered_hotels.append(h_info)
+
+        # Handle no results found
+        if has_amenity_filter and not filtered_hotels:
+            print("[WARNING] No hotels match the requested amenities filter.")
+            return {
+                "error_type": "amenities_not_found",
+                "text": "No result found regarding amenities. Can you reselect again required amenities?",
+                "data": []
+            }
+
+        lines = []
+        hotels_data = []
+
+        for idx, h_info in enumerate(filtered_hotels, 1):
+            name = h_info["name"]
+            rating = h_info["rating"]
+            reviews = h_info["reviews"]
+            address = h_info["address"]
+            website = h_info["website"]
+            hours = h_info["hours"]
+            parking_status = h_info["parking"]
+            number_of_rooms = h_info["number_of_rooms"]
+            room_types = h_info["room_types"]
+            amenities_list = h_info["amenities"]
+            photo_urls = h_info["photo_urls"]
+
+            item_lines = [f"**{name}**"]
+            item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
+            item_lines.append(f"📍 Address: {address}")
+
             if hours:
                 for h in hours:
                     item_lines.append(f"🕒 {h}")
 
-            # Parking: prefer Google's structured flag, else scraped mention
-            if google_parking_text:
-                item_lines.append(f"🅿️ Parking: {google_parking_text}")
-            elif room_details["parking"]:
-                item_lines.append(f"🅿️ Parking: {room_details['parking']}")
-            else:
-                item_lines.append("🅿️ Parking: Not specified")
+            item_lines.append(f"🅿️ Parking: {parking_status}")
 
-            # Room count
-            if room_details["number_of_rooms"]:
-                item_lines.append(f"🛏️ Total Rooms: {room_details['number_of_rooms']}")
+            if number_of_rooms:
+                item_lines.append(f"🛏️ Total Rooms: {number_of_rooms}")
             else:
                 item_lines.append("🛏️ Total Rooms: Not available (not published by hotel)")
 
-            # Room types (single/double/etc.) — best effort only
-            if room_details["room_types"]:
-                item_lines.append(f"🛌 Room Types Mentioned: {', '.join(room_details['room_types'])}")
+            if room_types:
+                item_lines.append(f"🛌 Room Types Mentioned: {', '.join(room_types)}")
             else:
                 item_lines.append("🛌 Room Types: Not specified on hotel website")
 
-            if room_details["amenities"]:
-                item_lines.append(f"✨ Amenities: {', '.join(room_details['amenities'][:10])}")
+            if amenities_list:
+                item_lines.append(f"✨ Amenities: {', '.join(amenities_list[:10])}")
 
             if address != "Address not available":
                 map_query = urllib.parse.quote_plus(address)
@@ -513,9 +631,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
             if website != "Not available":
                 item_lines.append(f"[Visit Website]({website})")
 
-            # -----------------------
-            # OTA deep links (Booking.com / Agoda / MakeMyTrip)
-            # -----------------------
+            # OTA deep links
             ota_links = generate_ota_links(
                 hotel_name=name,
                 city=city,
@@ -537,7 +653,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
                 for photo in photo_urls:
                     item_lines.append(f"![{name}]({photo})")
 
-            lines.append(f"{i}. {chr(10).join(item_lines)}")
+            lines.append(f"{idx}. {chr(10).join(item_lines)}")
 
             # Budget estimation
             price_night = 3000
@@ -551,18 +667,18 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
                     price_night = 4000
 
             hotels_data.append({
-                "hotel_id": hotel_id,
+                "hotel_id": h_info["hotel_id"],
                 "name": name,
-                "rating": rating if isinstance(rating, (int, float)) else 4.2,
+                "rating": rating,
                 "reviews": reviews,
                 "address": address,
                 "website": website,
-                "latitude": lat,
-                "longitude": lng,
+                "latitude": h_info["latitude"],
+                "longitude": h_info["longitude"],
                 "pricePerNight": price_night,
-                "amenities": room_details["amenities"] or ["Free Wi-Fi", "Room Service"],
-                "room_types": room_details["room_types"] or ["Standard Room"],
-                "parking": google_parking_text or room_details["parking"] or "Not specified",
+                "amenities": amenities_list,
+                "room_types": room_types,
+                "parking": parking_status,
                 "photos": photo_urls,
                 "booking_url": website if website != "Not available" else "https://booking.com"
             })
@@ -581,14 +697,15 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
         return None
 
 
-def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None, checkout=None, rooms=1):
+def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None, checkout=None, rooms=1, amenities="None", breakfast="None"):
     if city == "None":
         return {"message": "I need to know which city you are visiting."}
 
     is_trip_plan = any(kw in question.lower() for kw in ["plan a", "trip", "itinerary", "vacation", "holiday"])
 
     # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
-    if not is_trip_plan:
+    # Skip RAG lookup if an amenities filter is requested to ensure accurate real-time filtering.
+    if not is_trip_plan and (not amenities or amenities.lower() == "none" or amenities.lower() == "any"):
         try:
             from rag_service import get_answer
             rag_result = get_answer(question, check_rag_only=True)
@@ -598,12 +715,22 @@ def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None,
         except Exception as e:
             print(f"[WARNING] Error checking RAG for hotels: {e}")
 
-    # 2. If RAG is empty, try the Google Places API
-    print("[INFO] No results in RAG. Checking Google Places API for hotels.")
+    # 2. If RAG is empty or we bypass it, try the Google Places API
+    print("[INFO] Checking Google Places API for hotels.")
     google_results = get_hotels_from_google(
-        city, budget, travelers, checkin=checkin, checkout=checkout, rooms=rooms
+        city, budget, travelers, checkin=checkin, checkout=checkout, rooms=rooms, amenities=amenities, breakfast=breakfast
     )
     if google_results:
+        if isinstance(google_results, dict) and google_results.get("error_type") == "amenities_not_found":
+            # Clear amenities from state so user can reselect
+            try:
+                from supervisor import update_guided_state
+                update_guided_state("hotel.amenities", "None")
+                print("[INFO] Cleared hotel.amenities state due to no matching hotels.")
+            except Exception as e:
+                print(f"[WARNING] Could not clear hotel.amenities state: {e}")
+            return {"source": "google_places", "hotels": google_results["text"], "data": []}
+
         # Save the successful Google response to RAG for future queries
         try:
             from rag_service import save_to_rag

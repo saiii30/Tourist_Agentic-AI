@@ -519,6 +519,14 @@ const QUESTION_OPTION_SETS = [
   {
     matcher: /any special interests/i,
     options: ["History", "Nature", "Adventure", "Food", "Photography", "Shopping"]
+  },
+  {
+    matcher: /any required amenities/i,
+    options: ["Pool", "Parking", "Wi-Fi", "Spa", "Pet Friendly"]
+  },
+  {
+    matcher: /do you need food included/i,
+    options: ["Yes", "No"]
   }
 ];
 

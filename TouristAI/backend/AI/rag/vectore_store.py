@@ -9,11 +9,15 @@ embeddings = HuggingFaceEmbeddings(
 
 DB_PATH = "rag/restaurant_db"
 
-if os.path.exists(DB_PATH):
-    db = FAISS.load_local(
-        DB_PATH,
-        embeddings,
-        allow_dangerous_deserialization=True
-    )
-else:
+try:
+    if os.path.exists(DB_PATH) and os.path.exists(os.path.join(DB_PATH, "index.faiss")):
+        db = FAISS.load_local(
+            DB_PATH,
+            embeddings,
+            allow_dangerous_deserialization=True
+        )
+    else:
+        db = None
+except Exception as e:
+    print(f"[WARNING] Failed to load FAISS database at {DB_PATH}: {e}")
     db = None
