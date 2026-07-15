@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Volume2, VolumeX, Edit3, Save, Eye, Coffee, Clock, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Navigation, Pagination } from "swiper/modules";
@@ -322,10 +322,127 @@ function PlaceCard({ lines }: { lines: string[] }) {
   );
 }
 
-function renderStructuredMessage(text: string) {
+type ScheduleSection = {
+  label: string;
+  time?: string;
+  content: string[];
+};
+
+type ScheduleDay = {
+  title: string;
+  sections: ScheduleSection[];
+};
+
+const getScheduleSectionMeta = (label: string) => {
+  const normalized = label.toLowerCase();
+  if (normalized.includes("hotel")) return { icon: Hotel, tone: "text-indigo-500 bg-indigo-50 dark:bg-indigo-950/20", label: "Hotel" };
+  if (normalized.includes("breakfast")) return { icon: Coffee, tone: "text-amber-500 bg-amber-50 dark:bg-amber-950/20", label: "Breakfast" };
+  if (normalized.includes("lunch")) return { icon: Utensils, tone: "text-emerald-500 bg-emerald-50 dark:bg-emerald-950/20", label: "Lunch" };
+  if (normalized.includes("dinner")) return { icon: Utensils, tone: "text-rose-500 bg-rose-50 dark:bg-rose-950/20", label: "Dinner" };
+  if (normalized.includes("morning")) return { icon: Sun, tone: "text-sky-500 bg-sky-50 dark:bg-sky-950/20", label: "Morning" };
+  if (normalized.includes("afternoon")) return { icon: Clock, tone: "text-orange-500 bg-orange-50 dark:bg-orange-950/20", label: "Afternoon" };
+  if (normalized.includes("evening")) return { icon: Moon, tone: "text-violet-500 bg-violet-50 dark:bg-violet-950/20", label: "Evening" };
+  return { icon: Compass, tone: "text-teal-500 bg-teal-50 dark:bg-teal-950/20", label };
+};
+
+const parseScheduleHeading = (line: string): { label: string; time?: string } | null => {
+  const clean = stripMarkdown(line).replace(/^[^\w]+/, "").trim();
+  const match = clean.match(/^(Hotel|Breakfast|Morning|Lunch|Afternoon|Evening|Dinner)(?:\s*\(([^)]+)\))?:?$/i);
+  if (!match) return null;
+  return { label: match[1], time: match[2] };
+};
+
+const parseItinerarySchedule = (text: string): ScheduleDay[] => {
+  const lines = (text || "").split(/\r?\n/);
+  const days: ScheduleDay[] = [];
+  let currentDay: ScheduleDay | null = null;
+  let currentSection: ScheduleSection | null = null;
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line || line === "---" || line === "--") return;
+
+    const dayMatch = line.match(/^Day\s+\d+/i);
+    if (dayMatch) {
+      currentDay = { title: dayMatch[0], sections: [] };
+      days.push(currentDay);
+      currentSection = null;
+      return;
+    }
+
+    const sectionHeading = parseScheduleHeading(line);
+    if (sectionHeading && currentDay) {
+      currentSection = { label: sectionHeading.label, time: sectionHeading.time, content: [] };
+      currentDay.sections.push(currentSection);
+      return;
+    }
+
+    if (currentSection) {
+      currentSection.content.push(line);
+    }
+  });
+
+  return days.filter((day) => day.sections.some((section) => section.content.length > 0));
+};
+
+function ItinerarySchedule({ days }: { days: ScheduleDay[] }) {
+  return (
+    <div className="space-y-3">
+      {days.map((day) => (
+        <section key={day.title} className="overflow-hidden rounded-xl border border-slate-200/70 bg-white text-left shadow-sm dark:border-slate-800 dark:bg-slate-950/30">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5 text-teal-600" />
+              <h3 className="text-xs font-extrabold text-slate-800 dark:text-slate-100">{day.title}</h3>
+            </div>
+            <span className="text-[10px] font-bold text-slate-400">{day.sections.length} stops</span>
+          </div>
+
+          <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+            {day.sections.map((section, sectionIndex) => {
+              const meta = getScheduleSectionMeta(section.label);
+              const Icon = meta.icon;
+              return (
+                <div key={`${day.title}-${section.label}-${sectionIndex}`} className="grid grid-cols-[2.25rem_1fr] gap-2.5 px-3.5 py-3">
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${meta.tone}`}>
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-extrabold uppercase tracking-wide text-slate-700 dark:text-slate-200">{meta.label}</span>
+                      {section.time && (
+                        <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">{section.time}</span>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      {section.content.map((item, itemIndex) => (
+                        <p
+                          key={`${section.label}-${itemIndex}`}
+                          className="text-[12px] font-medium leading-relaxed text-slate-600 dark:text-slate-350"
+                          dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(item)) }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function renderStructuredMessage(text: string, skipOptions = false) {
   const lines = (text || "").split(/\r?\n/);
   const elements: React.ReactNode[] = [];
   let i = 0;
+  const scheduleDays = parseItinerarySchedule(text);
+
+  if (scheduleDays.length > 0) {
+    return <ItinerarySchedule days={scheduleDays} />;
+  }
 
   while (i < lines.length) {
     const line = lines[i].trim();
@@ -333,6 +450,17 @@ function renderStructuredMessage(text: string) {
     if (!line) {
       i += 1;
       continue;
+    }
+
+    if (skipOptions) {
+      const match = line.match(/^(?:[•*\-+]|\d+\.)\s*(.+)$/);
+      if (match && match[1]) {
+        const optionText = match[1].trim().replace(/[*_~`[\]]/g, "").trim();
+        if (optionText.length > 0 && optionText.length < 40) {
+          i += 1;
+          continue;
+        }
+      }
     }
 
     if (/^\d+\.\s+/.test(line)) {
@@ -382,13 +510,33 @@ function renderStructuredMessage(text: string) {
 import { ModifyDrawer } from "../components/dialogs/ModifyDrawer";
 import { SaveDialog } from "../components/dialogs/SaveDialog";
 import { CalendarSyncDialog } from "../components/dialogs/CalendarSyncDialog";
-import { RegenerateDialog } from "../components/dialogs/RegenerateDialog";
+
+const QUESTION_OPTION_SETS = [
+  {
+    matcher: /what kind of trip do you prefer/i,
+    options: ["Family", "Solo", "Friends", "Couple", "Business"]
+  },
+  {
+    matcher: /any special interests/i,
+    options: ["History", "Nature", "Adventure", "Food", "Photography", "Shopping"]
+  }
+];
+
+const getClickableQuestionOptions = (text: string): string[] => {
+  const optionSet = QUESTION_OPTION_SETS.find((set) => set.matcher.test(text));
+  if (!optionSet) return [];
+
+  const normalizedText = text.toLowerCase();
+  return optionSet.options.filter((option) => normalizedText.includes(option.toLowerCase()));
+};
 
 export const AIChat: React.FC = () => {
   const navigate = useNavigate();
   const { chatMessages, askAIChat, isLoadingChat, setActiveTrip, saveTrip } = useTravelPlanner();
   
   const [question, setQuestion] = useState("");
+  const [selectedDays, setSelectedDays] = useState<number>(3);
+  const [selectedTravelers, setSelectedTravelers] = useState<number>(2);
   const [isListening, setIsListening] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -397,10 +545,53 @@ export const AIChat: React.FC = () => {
   const [isModifyOpen, setIsModifyOpen] = useState(false);
   const [isSaveOpen, setIsSaveOpen] = useState(false);
   const [isSyncOpen, setIsSyncOpen] = useState(false);
-  const [isRegenOpen, setIsRegenOpen] = useState(false);
 
   // Toast alert status state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Smart Voice-Over Settings
+  const [isVoiceOverEnabled, setIsVoiceOverEnabled] = useState(() => {
+    return localStorage.getItem("isVoiceOverEnabled") === "true";
+  });
+
+  const toggleVoiceOver = () => {
+    setIsVoiceOverEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem("isVoiceOverEnabled", String(next));
+      if (!next && typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      return next;
+    });
+  };
+
+  const speakText = (text: string) => {
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      
+      // Filter out markdown characters, brackets, URLs, etc. for clear speech synthesis
+      const cleanText = text
+        .replace(/[*#_~`\[\]()]/g, "")
+        .replace(/[-+•]\s+/g, "")
+        .replace(/:\s*(\n|$)/g, ". ")
+        .replace(/\n+/g, ". ");
+        
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  // Automatically read aloud new incoming assistant messages when voice over is enabled
+  useEffect(() => {
+    if (chatMessages.length > 0 && isVoiceOverEnabled) {
+      const lastMsg = chatMessages[chatMessages.length - 1];
+      if (lastMsg.role === "assistant") {
+        speakText(lastMsg.text);
+      }
+    }
+  }, [chatMessages.length, isVoiceOverEnabled]);
 
   // Auto-scroll on messages addition
   useEffect(() => {
@@ -409,6 +600,9 @@ export const AIChat: React.FC = () => {
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
+    if (isVoiceOverEnabled) {
+      speakText(msg);
+    }
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -449,12 +643,6 @@ export const AIChat: React.FC = () => {
     setIsModifyOpen(true);
   };
 
-  const handleCardRegen = (trip: TripDetails) => {
-    setActiveTrip(trip);
-    setTargetTripCard(trip);
-    setIsRegenOpen(true);
-  };
-
   const handleCardSave = (trip: TripDetails) => {
     setActiveTrip(trip);
     setTargetTripCard(trip);
@@ -477,11 +665,6 @@ export const AIChat: React.FC = () => {
         setIsSyncOpen(true);
       }, 300);
     }
-  };
-
-  const handleRegenerateItinerary = (_keeps: { budget: boolean; style: boolean; interests: boolean; duration: boolean }) => {
-    if (!targetTripCard) return;
-    triggerToast("Itinerary Successfully Regenerated!");
   };
 
   // Web Speech API Microphone listener
@@ -534,6 +717,28 @@ export const AIChat: React.FC = () => {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50/50 dark:bg-[#0b0f19] relative">
       
+      {/* Voice-Over Mode Header Bar */}
+      <div className="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 bg-white/55 dark:bg-[#111827]/55 backdrop-blur px-5 py-3 text-left">
+        <div>
+          <h2 className="text-xs font-bold text-slate-800 dark:text-slate-205 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-teal-605" />
+            AI Travel Assistant
+          </h2>
+        </div>
+        <button
+          onClick={toggleVoiceOver}
+          className={`px-3 py-1.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
+            isVoiceOverEnabled
+              ? "bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 border-teal-100 dark:border-teal-900/40 shadow-sm"
+              : "bg-slate-50 dark:bg-slate-900 text-slate-455 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+          }`}
+          title="Toggle Smart Voice Notification Aloud Mode"
+        >
+          {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+          <span>{isVoiceOverEnabled ? "Voice notifications ON" : "Voice notifications OFF"}</span>
+        </button>
+      </div>
+
       {/* 1. Chat Dialog Log */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 no-scrollbar">
         
@@ -593,9 +798,20 @@ export const AIChat: React.FC = () => {
                       className={`relative p-4 rounded-2xl shadow-sm border leading-relaxed ${
                         isUser
                           ? "bg-teal-600 border-teal-650 text-white rounded-br-none"
-                          : "bg-white dark:bg-[#111827] border-slate-200/60 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-none"
+                          : "bg-white dark:bg-[#111827] border-slate-200/60 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-none pr-9"
                       }`}
                     >
+                      {/* Read Aloud button for assistant replies */}
+                      {!isUser && (
+                        <button
+                          onClick={() => speakText(msg.text)}
+                          className="absolute top-2.5 right-2.5 p-1 rounded-lg text-slate-400 hover:text-teal-605 hover:bg-slate-105 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover-scale"
+                          title="Read Aloud"
+                        >
+                          <Volume2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+
                       {/* Message Content */}
                       {!isUser && renderStructuredMessage(msg.text)}
                       {isUser && (
@@ -603,6 +819,25 @@ export const AIChat: React.FC = () => {
                           {msg.text}
                         </p>
                       )}
+
+                      {!isUser && idx === chatMessages.length - 1 && (() => {
+                        const options = getClickableQuestionOptions(msg.text);
+                        if (options.length === 0) return null;
+
+                        return (
+                          <div className="mt-3.5 flex flex-wrap gap-2 border-t border-slate-100 pt-3 text-left dark:border-slate-800/80">
+                            {options.map((option) => (
+                              <button
+                                key={option}
+                                onClick={() => handleSend(option)}
+                                className="min-h-8 rounded-lg border border-teal-100/60 bg-teal-50 px-3 py-1.5 text-[11px] font-extrabold text-teal-700 shadow-sm transition-all hover:bg-teal-100 dark:border-teal-900/40 dark:bg-teal-950/20 dark:text-teal-400 dark:hover:bg-teal-900/40"
+                              >
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })()}
 
                       {/* Timestamps */}
                       <span className={`block text-[9px] mt-2 text-right ${isUser ? "text-slate-200/80" : "text-slate-400"}`}>
@@ -679,35 +914,40 @@ export const AIChat: React.FC = () => {
                         </div>
 
                         {/* Summary Deck Actions */}
-                        <div className="p-3 flex flex-wrap items-center gap-1.5 justify-end bg-white dark:bg-[#111827]">
+                        <div className="p-3 bg-white dark:bg-[#111827]">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">Plan actions</span>
+                            <span className="text-[10px] font-semibold text-slate-400">Open full planner for editing and schedule view</span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
                           <button
                             onClick={() => handleCardModify(msg.tripCard!)}
-                            className="px-3 py-1.5 border border-slate-205 dark:border-slate-800 text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-[10.5px] font-bold flex items-center gap-1 hover-scale"
+                            title="Edit trip preferences and stops"
+                            className="min-h-9 justify-center px-3 py-2 border border-slate-205 dark:border-slate-800 text-slate-600 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-[10.5px] font-bold flex items-center gap-1.5 hover-scale"
                           >
-                            Modify
+                            <Edit3 className="h-3.5 w-3.5" />
+                            Edit Plan
                           </button>
                           
                           <button
-                            onClick={() => handleCardRegen(msg.tripCard!)}
-                            className="px-3 py-1.5 border border-slate-205 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-[10.5px] font-bold flex items-center gap-1 hover-scale"
-                          >
-                            Regenerate
-                          </button>
-
-                          <button
                             onClick={() => handleCardSave(msg.tripCard!)}
-                            className="px-3 py-1.5 border border-slate-205 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-[10.5px] font-bold flex items-center gap-1 hover-scale"
+                            title="Save this trip"
+                            className="min-h-9 justify-center px-3 py-2 border border-slate-205 dark:border-slate-800 text-slate-650 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-900 rounded-xl text-[10.5px] font-bold flex items-center gap-1.5 hover-scale"
                           >
-                            Save
+                            <Save className="h-3.5 w-3.5" />
+                            Save Trip
                           </button>
 
                           <button
                             onClick={() => handleLoadTrip(msg.tripCard!)}
-                            className="px-3.5 py-1.5 bg-teal-650 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[10.5px] font-bold flex items-center gap-1 hover-scale shadow-sm"
+                            title="Open the complete itinerary workspace"
+                            className="min-h-9 justify-center px-3.5 py-2 bg-teal-650 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[10.5px] font-bold flex items-center gap-1.5 hover-scale shadow-sm sm:min-w-32"
                           >
-                            View Itinerary
+                            <Eye className="h-3.5 w-3.5" />
+                            Open Planner
                             <ArrowRight className="w-3.5 h-3.5" />
                           </button>
+                          </div>
                         </div>
                       </motion.div>
                     )}
@@ -759,9 +999,142 @@ export const AIChat: React.FC = () => {
         <div ref={chatEndRef} />
       </div>
 
-      {/* 2. Bottom Chat Input Panel */}
       <div className="bg-white dark:bg-[#111827] border-t border-slate-200/60 dark:border-slate-800/60 p-4 flex-shrink-0">
         <div className="max-w-3xl mx-auto space-y-3">
+          
+          {/* Dynamic Calendar Picker for Travel Date Selection */}
+          {(() => {
+            const lastMsg = chatMessages[chatMessages.length - 1];
+            const isDateQuestion = lastMsg && lastMsg.role === "assistant" && (
+              lastMsg.text.toLowerCase().includes("when are you planning to travel") ||
+              lastMsg.text.toLowerCase().includes("when do you plan to travel") ||
+              lastMsg.text.toLowerCase().includes("travel date") ||
+              lastMsg.text.toLowerCase().includes("start date")
+            );
+            
+            if (!isDateQuestion) return null;
+
+            return (
+              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-teal-50/40 dark:bg-teal-950/15 border border-teal-100/50 dark:border-teal-900/30 text-left justify-between animate-fadeIn mb-2">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-teal-600" />
+                  <span className="text-[11px] font-bold text-teal-700 dark:text-teal-400">Select Travel Start Date:</span>
+                </div>
+                <input
+                  type="date"
+                  min={new Date().toISOString().split("T")[0]}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setQuestion(e.target.value);
+                      setTimeout(() => {
+                        handleSend(e.target.value);
+                      }, 100);
+                    }
+                  }}
+                  className="px-2.5 py-1 bg-white dark:bg-[#1f2937] border border-slate-200 dark:border-slate-800 rounded-lg text-[11px] font-bold text-slate-700 dark:text-slate-300 focus:outline-none focus:border-teal-500 cursor-pointer"
+                />
+              </div>
+            );
+          })()}
+          
+          {/* Dynamic Quantity Selector for Stay Duration */}
+          {(() => {
+            const lastMsg = chatMessages[chatMessages.length - 1];
+            const isDaysQuestion = lastMsg && lastMsg.role === "assistant" && (
+              lastMsg.text.toLowerCase().includes("how many days") ||
+              lastMsg.text.toLowerCase().includes("duration of your stay") ||
+              lastMsg.text.toLowerCase().includes("how long do you plan to stay")
+            );
+            
+            if (!isDaysQuestion) return null;
+
+            return (
+              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-teal-50/40 dark:bg-teal-950/15 border border-teal-100/50 dark:border-teal-900/30 text-left justify-between animate-fadeIn mb-2">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-teal-600" />
+                  <span className="text-[11px] font-bold text-teal-700 dark:text-teal-400">Specify Stay Duration:</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedDays(prev => Math.max(1, prev - 1))}
+                    className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-805 bg-white dark:bg-[#1f2937] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-extrabold flex items-center justify-center text-slate-700 dark:text-slate-300 transition-colors"
+                  >
+                    -
+                  </button>
+                  <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 w-12 text-center select-none">
+                    {selectedDays} {selectedDays === 1 ? "Day" : "Days"}
+                  </span>
+                  <button
+                    onClick={() => setSelectedDays(prev => Math.min(30, prev + 1))}
+                    className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-805 bg-white dark:bg-[#1f2937] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-extrabold flex items-center justify-center text-slate-700 dark:text-slate-300 transition-colors"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => {
+                      setQuestion(selectedDays.toString());
+                      setTimeout(() => {
+                        handleSend(selectedDays.toString());
+                      }, 100);
+                    }}
+                    className="ml-2 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[10px] font-bold shadow-sm transition-colors"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+          
+          {/* Dynamic Quantity Selector for Travelers Count */}
+          {(() => {
+            const lastMsg = chatMessages[chatMessages.length - 1];
+            const isTravelersQuestion = lastMsg && lastMsg.role === "assistant" && (
+              lastMsg.text.toLowerCase().includes("how many people") ||
+              lastMsg.text.toLowerCase().includes("number of people") ||
+              lastMsg.text.toLowerCase().includes("how many travelers") ||
+              lastMsg.text.toLowerCase().includes("number of travelers")
+            );
+            
+            if (!isTravelersQuestion) return null;
+
+            return (
+              <div className="flex items-center gap-2.5 p-3 rounded-2xl bg-teal-50/40 dark:bg-teal-950/15 border border-teal-100/50 dark:border-teal-900/30 text-left justify-between animate-fadeIn mb-2">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-teal-600" />
+                  <span className="text-[11px] font-bold text-teal-700 dark:text-teal-400">Specify Traveler Count:</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => setSelectedTravelers(prev => Math.max(1, prev - 1))}
+                    className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-805 bg-white dark:bg-[#1f2937] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-extrabold flex items-center justify-center text-slate-700 dark:text-slate-300 transition-colors"
+                  >
+                    -
+                  </button>
+                  <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 w-16 text-center select-none">
+                    {selectedTravelers} {selectedTravelers === 1 ? "Person" : "People"}
+                  </span>
+                  <button
+                    onClick={() => setSelectedTravelers(prev => Math.min(20, prev + 1))}
+                    className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-805 bg-white dark:bg-[#1f2937] hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-extrabold flex items-center justify-center text-slate-700 dark:text-slate-300 transition-colors"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => {
+                      setQuestion(selectedTravelers.toString());
+                      setTimeout(() => {
+                        handleSend(selectedTravelers.toString());
+                      }, 100);
+                    }}
+                    className="ml-2 px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[10px] font-bold shadow-sm transition-colors"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
           
           <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl focus-within:border-teal-500 focus-within:ring-1 focus-within:ring-teal-500/20 transition-all duration-150 shadow-inner">
             
@@ -842,11 +1215,6 @@ export const AIChat: React.FC = () => {
             tripName={targetTripCard.cityName}
           />
 
-          <RegenerateDialog
-            isOpen={isRegenOpen}
-            onClose={() => setIsRegenOpen(false)}
-            onRegenerate={handleRegenerateItinerary}
-          />
         </>
       )}
 

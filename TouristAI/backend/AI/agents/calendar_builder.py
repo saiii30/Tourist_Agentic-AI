@@ -59,16 +59,9 @@ class CalendarBuilder:
             start_date = datetime.now() + timedelta(days=1)
 
         # Select baseline hotel
-        selected_hotel = hotels[0] if hotels else {
-            "hotel_id": "fallback-hotel",
-            "name": f"Comfort Hotel {city.title()}",
-            "address": f"Central Area, {city.title()}",
-            "latitude": None,
-            "longitude": None,
-            "pricePerNight": 2500
-        }
-        hotel_lat = selected_hotel.get("latitude")
-        hotel_lng = selected_hotel.get("longitude")
+        selected_hotel = hotels[0] if hotels else None
+        hotel_lat = selected_hotel.get("latitude") if selected_hotel else None
+        hotel_lng = selected_hotel.get("longitude") if selected_hotel else None
 
         # Categorize restaurants
         breakfast_spots = []
@@ -86,23 +79,11 @@ class CalendarBuilder:
             else:
                 lunch_dinner_spots.append(r)
 
-        # Fallbacks if list is empty after categorization
+        # Fallbacks if list is empty after categorization - use general restaurant list
         if not breakfast_spots:
-            breakfast_spots = restaurants if restaurants else [{
-                "restaurant_id": "fallback-breakfast",
-                "name": f"Local Cafe {city.title()}",
-                "address": f"Near Hotel, {city.title()}",
-                "latitude": hotel_lat,
-                "longitude": hotel_lng
-            }]
+            breakfast_spots = restaurants if restaurants else []
         if not lunch_dinner_spots:
-            lunch_dinner_spots = restaurants if restaurants else [{
-                "restaurant_id": "fallback-lunch",
-                "name": f"Traditional Restaurant {city.title()}",
-                "address": f"Near Hotel, {city.title()}",
-                "latitude": hotel_lat,
-                "longitude": hotel_lng
-            }]
+            lunch_dinner_spots = restaurants if restaurants else []
 
         # Check weather conditions
         weather_main = weather.get("main", "Clear").lower()
@@ -147,7 +128,7 @@ class CalendarBuilder:
             # Daily checkpoints for coordinate routing
             current_lat = hotel_lat
             current_lng = hotel_lng
-            last_location_name = selected_hotel.get("name", "Hotel")
+            last_location_name = selected_hotel.get("name") if selected_hotel else "Start"
 
             # Helper to create structured activity dict
             def add_activity(slot_type: str, title: str, category: str, location: str, start_time: str, end_time: str, notes: str, entity_id: str, lat: Optional[float], lng: Optional[float], cost: float = 0.0):
@@ -176,7 +157,7 @@ class CalendarBuilder:
                     "end_time": end_time,
                     "travel_time": trav_time,
                     "transport": transport_mode,
-                    "estimated_cost": cost,
+                    "estimated_cost": 0.0,
                     "google_event_id": None,
                     "status": "pending",
                     f"{category.lower()}_id": entity_id,
@@ -184,94 +165,78 @@ class CalendarBuilder:
                 })
 
             # --- 1. Breakfast (08:00 - 09:00) ---
-            b_spot = breakfast_spots[breakfast_rot_idx % len(breakfast_spots)]
-            breakfast_rot_idx += 1
-            add_activity(
-                slot_type="Breakfast",
-                title=b_spot.get("name"),
-                category="Food",
-                location=b_spot.get("address", "Local Eatery"),
-                start_time="08:00",
-                end_time="09:00",
-                notes="Start your day with local breakfast delicacies.",
-                entity_id=b_spot.get("restaurant_id"),
-                lat=b_spot.get("latitude"),
-                lng=b_spot.get("longitude"),
-                cost=150.0
-            )
+            if breakfast_spots:
+                b_spot = breakfast_spots[breakfast_rot_idx % len(breakfast_spots)]
+                breakfast_rot_idx += 1
+                add_activity(
+                    slot_type="Breakfast",
+                    title=b_spot.get("name"),
+                    category="Food",
+                    location=b_spot.get("address", "Local Eatery"),
+                    start_time="08:00",
+                    end_time="09:00",
+                    notes="Start your day with local breakfast delicacies.",
+                    entity_id=b_spot.get("restaurant_id"),
+                    lat=b_spot.get("latitude"),
+                    lng=b_spot.get("longitude"),
+                    cost=0.0
+                )
 
             # --- 2. Morning Attraction (09:30 - 12:00) ---
             if sorted_attractions:
                 att = sorted_attractions[attraction_idx % len(sorted_attractions)]
                 attraction_idx += 1
-            else:
-                att = {
-                    "attraction_id": "fallback-attr-1",
-                    "name": f"Sightseeing Spot {city.title()}",
-                    "address": f"Scenic Area, {city.title()}",
-                    "latitude": hotel_lat,
-                    "longitude": hotel_lng,
-                    "editorial": "Enjoy the historical sights."
-                }
-            weather_warning = " (Rain fallback indoor activity recommended)" if is_raining and any(t in att.get("types", []) for t in ["park", "beach", "waterfall"]) else ""
-            add_activity(
-                slot_type="Sightseeing",
-                title=att.get("name"),
-                category="Sightseeing",
-                location=att.get("address", "Local Attraction"),
-                start_time="09:30",
-                end_time="12:00",
-                notes=f"{att.get('editorial', 'Popular local attraction.')}{weather_warning}",
-                entity_id=att.get("attraction_id"),
-                lat=att.get("latitude"),
-                lng=att.get("longitude"),
-                cost=50.0
-            )
+                weather_warning = " (Rain fallback indoor activity recommended)" if is_raining and any(t in att.get("types", []) for t in ["park", "beach", "waterfall"]) else ""
+                add_activity(
+                    slot_type="Sightseeing",
+                    title=att.get("name"),
+                    category="Sightseeing",
+                    location=att.get("address", "Local Attraction"),
+                    start_time="09:30",
+                    end_time="12:00",
+                    notes=f"{att.get('editorial', 'Popular local attraction.')}{weather_warning}",
+                    entity_id=att.get("attraction_id"),
+                    lat=att.get("latitude"),
+                    lng=att.get("longitude"),
+                    cost=0.0
+                )
 
             # --- 3. Lunch (12:30 - 13:30) ---
-            l_spot = lunch_dinner_spots[restaurant_rot_idx % len(lunch_dinner_spots)]
-            restaurant_rot_idx += 1
-            add_activity(
-                slot_type="Lunch",
-                title=l_spot.get("name"),
-                category="Food",
-                location=l_spot.get("address", "Lunch Diner"),
-                start_time="12:30",
-                end_time="13:30",
-                notes="Enjoy a traditional regional lunch.",
-                entity_id=l_spot.get("restaurant_id"),
-                lat=l_spot.get("latitude"),
-                lng=l_spot.get("longitude"),
-                cost=250.0
-            )
+            if lunch_dinner_spots:
+                l_spot = lunch_dinner_spots[restaurant_rot_idx % len(lunch_dinner_spots)]
+                restaurant_rot_idx += 1
+                add_activity(
+                    slot_type="Lunch",
+                    title=l_spot.get("name"),
+                    category="Food",
+                    location=l_spot.get("address", "Lunch Diner"),
+                    start_time="12:30",
+                    end_time="13:30",
+                    notes="Enjoy a traditional regional lunch.",
+                    entity_id=l_spot.get("restaurant_id"),
+                    lat=l_spot.get("latitude"),
+                    lng=l_spot.get("longitude"),
+                    cost=0.0
+                )
 
             # --- 4. Afternoon Attraction (14:00 - 16:30) ---
             if sorted_attractions:
                 att = sorted_attractions[attraction_idx % len(sorted_attractions)]
                 attraction_idx += 1
-            else:
-                att = {
-                    "attraction_id": "fallback-attr-2",
-                    "name": f"Museum & Palace {city.title()}",
-                    "address": f"Heritage Block, {city.title()}",
-                    "latitude": hotel_lat,
-                    "longitude": hotel_lng,
-                    "editorial": "Learn about the heritage of the city."
-                }
-            weather_warning = " (Rain fallback indoor activity recommended)" if is_raining and any(t in att.get("types", []) for t in ["park", "beach", "waterfall"]) else ""
-            add_activity(
-                slot_type="Sightseeing",
-                title=att.get("name"),
-                category="Sightseeing",
-                location=att.get("address", "Sightseeing Spot"),
-                start_time="14:00",
-                end_time="16:30",
-                notes=f"{att.get('editorial', 'Fascinating cultural heritage spot.')}{weather_warning}",
-                entity_id=att.get("attraction_id"),
-                lat=att.get("latitude"),
-                lng=att.get("longitude"),
-                cost=50.0
-            )
+                weather_warning = " (Rain fallback indoor activity recommended)" if is_raining and any(t in att.get("types", []) for t in ["park", "beach", "waterfall"]) else ""
+                add_activity(
+                    slot_type="Sightseeing",
+                    title=att.get("name"),
+                    category="Sightseeing",
+                    location=att.get("address", "Sightseeing Spot"),
+                    start_time="14:00",
+                    end_time="16:30",
+                    notes=f"{att.get('editorial', 'Fascinating cultural heritage spot.')}{weather_warning}",
+                    entity_id=att.get("attraction_id"),
+                    lat=att.get("latitude"),
+                    lng=att.get("longitude"),
+                    cost=0.0
+                )
 
             # --- 5. Evening Activity (17:00 - 18:30) ---
             # Try to assign a viewpoint, market or shopping spot
@@ -283,63 +248,58 @@ class CalendarBuilder:
                     if any(t in c_types for t in ["shopping_mall", "store", "point_of_interest", "market", "beach"]):
                         ev_att = candidate
                         break
-            if not ev_att:
-                ev_att = sorted_attractions[attraction_idx % len(sorted_attractions)] if sorted_attractions else {
-                    "attraction_id": "fallback-ev",
-                    "name": f"Local Bazaar & Market",
-                    "address": f"Market Road, {city.title()}",
-                    "latitude": hotel_lat,
-                    "longitude": hotel_lng,
-                    "editorial": "Stroll and explore regional handicrafts."
-                }
-                if sorted_attractions:
+                if not ev_att:
+                    ev_att = sorted_attractions[attraction_idx % len(sorted_attractions)]
                     attraction_idx += 1
             
-            add_activity(
-                slot_type="Sightseeing",
-                title=ev_att.get("name"),
-                category="Sightseeing",
-                location=ev_att.get("address", "Evening Spot"),
-                start_time="17:00",
-                end_time="18:30",
-                notes=f"{ev_att.get('editorial', 'Perfect evening walk to relax or shop.')}",
-                entity_id=ev_att.get("attraction_id"),
-                lat=ev_att.get("latitude"),
-                lng=ev_att.get("longitude"),
-                cost=0.0
-            )
+            if ev_att:
+                add_activity(
+                    slot_type="Sightseeing",
+                    title=ev_att.get("name"),
+                    category="Sightseeing",
+                    location=ev_att.get("address", "Evening Spot"),
+                    start_time="17:00",
+                    end_time="18:30",
+                    notes=f"{ev_att.get('editorial', 'Perfect evening walk to relax or shop.')}",
+                    entity_id=ev_att.get("attraction_id"),
+                    lat=ev_att.get("latitude"),
+                    lng=ev_att.get("longitude"),
+                    cost=0.0
+                )
 
             # --- 6. Dinner (19:00 - 20:30) ---
-            d_spot = lunch_dinner_spots[restaurant_rot_idx % len(lunch_dinner_spots)]
-            restaurant_rot_idx += 1
-            add_activity(
-                slot_type="Dinner",
-                title=d_spot.get("name"),
-                category="Food",
-                location=d_spot.get("address", "Dinner Spot"),
-                start_time="19:00",
-                end_time="20:30",
-                notes="Unwind and enjoy a relaxing multi-course dinner.",
-                entity_id=d_spot.get("restaurant_id"),
-                lat=d_spot.get("latitude"),
-                lng=d_spot.get("longitude"),
-                cost=350.0
-            )
+            if lunch_dinner_spots:
+                d_spot = lunch_dinner_spots[restaurant_rot_idx % len(lunch_dinner_spots)]
+                restaurant_rot_idx += 1
+                add_activity(
+                    slot_type="Dinner",
+                    title=d_spot.get("name"),
+                    category="Food",
+                    location=d_spot.get("address", "Dinner Spot"),
+                    start_time="19:00",
+                    end_time="20:30",
+                    notes="Unwind and enjoy a relaxing multi-course dinner.",
+                    entity_id=d_spot.get("restaurant_id"),
+                    lat=d_spot.get("latitude"),
+                    lng=d_spot.get("longitude"),
+                    cost=0.0
+                )
 
             # --- 7. Hotel (21:00 - 08:00) ---
-            add_activity(
-                slot_type="Hotel",
-                title=selected_hotel.get("name"),
-                category="Hotel",
-                location=selected_hotel.get("address", "Hotel Stay"),
-                start_time="21:00",
-                end_time="08:00",
-                notes="Check in and overnight stay.",
-                entity_id=selected_hotel.get("hotel_id"),
-                lat=selected_hotel.get("latitude"),
-                lng=selected_hotel.get("longitude"),
-                cost=float(selected_hotel.get("pricePerNight", 2500))
-            )
+            if selected_hotel:
+                add_activity(
+                    slot_type="Hotel",
+                    title=selected_hotel.get("name"),
+                    category="Hotel",
+                    location=selected_hotel.get("address", "Hotel Stay"),
+                    start_time="21:00",
+                    end_time="08:00",
+                    notes="Check in and overnight stay.",
+                    entity_id=selected_hotel.get("hotel_id"),
+                    lat=selected_hotel.get("latitude"),
+                    lng=selected_hotel.get("longitude"),
+                    cost=0.0
+                )
 
             itinerary_days.append({
                 "day": d,

@@ -11,6 +11,8 @@ DB_PORT = os.getenv("DB_PORT", "5432")
 DB_USER = os.getenv("DB_USER", "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 DB_NAME = os.getenv("DB_NAME", "tourist_ai")
+if os.environ.get("TOURIST_AI_TESTING") == "1":
+    DB_NAME = "tourist_ai_test"
 
 class PostgresDatabase:
     @staticmethod
@@ -205,6 +207,29 @@ class PostgresDatabase:
             CREATE TABLE IF NOT EXISTS guided_trip_state (
                 key TEXT PRIMARY KEY,
                 value TEXT
+            )
+        """)
+
+        # 10. Agent sessions table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_sessions (
+                agent_name TEXT PRIMARY KEY,
+                status TEXT,
+                last_question TEXT,
+                next_question TEXT,
+                completed_count INTEGER,
+                updated_at TEXT
+            )
+        """)
+
+        # 11. Agent session state table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_session_state (
+                agent_name TEXT,
+                field_name TEXT,
+                field_value TEXT,
+                updated_at TEXT,
+                PRIMARY KEY (agent_name, field_name)
             )
         """)
 

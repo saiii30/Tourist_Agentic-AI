@@ -8,7 +8,7 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
-  const { theme, toggleTheme } = useTravelPlanner();
+  const { theme, toggleTheme, colorTheme, setColorTheme } = useTravelPlanner();
   const location = useLocation();
 
   const getPageTitle = () => {
@@ -60,6 +60,24 @@ export const TopBar: React.FC<TopBarProps> = ({ onMenuClick }) => {
         <div className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-teal-50 dark:bg-teal-950/20 border border-teal-100/50 dark:border-teal-900/30 text-[10.5px] font-semibold text-teal-700 dark:text-teal-400">
           <Wifi className="w-3.5 h-3.5 animate-pulse" />
           <span>AI Core Online</span>
+        </div>
+
+        {/* Premium Color Accent Selector circles */}
+        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 px-2 py-1.5 rounded-xl border border-slate-200/60 dark:border-slate-800/60">
+          {[
+            { id: "emerald", color: "bg-[#0d9488]", name: "Emerald" },
+            { id: "midnight", color: "bg-[#7c3aed]", name: "Midnight" },
+            { id: "desert", color: "bg-[#d97706]", name: "Desert" }
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setColorTheme(item.id as any)}
+              className={`w-3.5 h-3.5 rounded-full ${item.color} transition-all hover:scale-110 relative ${
+                colorTheme === item.id ? "ring-2 ring-slate-400 dark:ring-slate-300 ring-offset-2 ring-offset-white dark:ring-offset-slate-900" : "opacity-80"
+              }`}
+              title={`Switch to ${item.name} theme`}
+            />
+          ))}
         </div>
 
         {/* Theme Toggle Button */}

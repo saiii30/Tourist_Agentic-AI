@@ -208,8 +208,20 @@ def calendar_agent(
     """
     Orchestrator calendar agent that coordinates data preparation and invokes CalendarBuilder.
     """
+    print(f"[DEBUG] Calendar Agent received hotels_data: {len(hotels_data or [])} items")
+    print(f"[DEBUG] Calendar Agent received restaurants_data: {len(restaurants_data or [])} items")
+    print(f"[DEBUG] Calendar Agent received nearby_data: {len(nearby_data or [])} items")
+
     if city == "None":
         return "I can help you build a personalized day plan, but I need to know your destination first."
+
+    # Check for regeneration count in guided state
+    try:
+        from supervisor import get_guided_state
+        g_state = get_guided_state()
+        regen_count = int(g_state.get("regen_count", 0))
+    except Exception:
+        regen_count = 0
 
     # Validate and handle empty structured data fallbacks
     if not hotels_data:
@@ -218,6 +230,20 @@ def calendar_agent(
         restaurants_data = generate_restaurants(city)
     if not nearby_data:
         nearby_data = generate_attractions(city)
+
+    # Rotate lists based on regen_count to choose alternative items programmatically
+    if regen_count > 0:
+        print(f"[INFO] Programmatic regeneration rotation active (offset={regen_count})")
+        if hotels_data:
+            offset = regen_count % len(hotels_data)
+            hotels_data = hotels_data[offset:] + hotels_data[:offset]
+        if restaurants_data:
+            offset = regen_count % len(restaurants_data)
+            restaurants_data = restaurants_data[offset:] + restaurants_data[:offset]
+        if nearby_data:
+            offset = regen_count % len(nearby_data)
+            nearby_data = nearby_data[offset:] + nearby_data[:offset]
+
     if not weather_data:
         weather_data = {"main": "Clear", "temp": 28.0}
 

@@ -98,6 +98,7 @@ export interface TripDetails {
   emergencyContacts: EmergencyContact[];
   notesText: string;
   historyTimeline: HistoryEvent[];
+  notifications?: any[];
 }
 
 export interface Message {
@@ -111,6 +112,8 @@ export interface Message {
 interface TravelPlannerContextType {
   theme: "light" | "dark";
   toggleTheme: () => void;
+  colorTheme: "emerald" | "midnight" | "desert";
+  setColorTheme: (theme: "emerald" | "midnight" | "desert") => void;
   chatMessages: Message[];
   setChatMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   isLoadingChat: boolean;
@@ -148,17 +151,17 @@ const appendHistoryEvent = (history: HistoryEvent[], action: string, iconName = 
 const generateMockTripDetails = (city: string, daysCount = 3): TripDetails => {
   const normCity = city.charAt(0).toUpperCase() + city.slice(1);
   
-  // Try to use a nice generic city-themed Unsplash image if it matches known patterns, otherwise standard travel banner
-  let banner = "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1200&q=80";
+  // Try to use a nice generic city-themed Wikimedia image if it matches known patterns, otherwise standard travel banner
+  let banner = "https://upload.wikimedia.org/wikipedia/commons/b/b8/Pangong_Tso_lake_in_Ladakh_India.jpg";
   const cityLower = city.toLowerCase();
   if (cityLower.includes("madurai")) {
-    banner = "https://images.unsplash.com/photo-1600100397608-f010e423b971?auto=format&fit=crop&w=1200&q=80";
+    banner = "https://upload.wikimedia.org/wikipedia/commons/e/ea/Madurai_Meenakshi_Temple_West_Tower.jpg";
   } else if (cityLower.includes("goa")) {
-    banner = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80";
+    banner = "https://upload.wikimedia.org/wikipedia/commons/f/fe/Calangute_Beach_Goa.jpg";
   } else if (cityLower.includes("chennai")) {
-    banner = "https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=1200&q=80";
+    banner = "https://upload.wikimedia.org/wikipedia/commons/1/15/Chennai_Central_Railway_Station_front_view_2014.jpg";
   } else if (cityLower.includes("ooty")) {
-    banner = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80";
+    banner = "https://upload.wikimedia.org/wikipedia/commons/a/a6/Nilgiri_Mountain_Railway_train%2C_India.jpg";
   }
 
   const itinerary: Record<number, Activity[]> = {};
@@ -341,6 +344,12 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
     return (saved as "light" | "dark") || "light";
   });
 
+  // Color Accent Theme State
+  const [colorTheme, setColorTheme] = useState<"emerald" | "midnight" | "desert">(() => {
+    const saved = localStorage.getItem("colorTheme");
+    return (saved as "emerald" | "midnight" | "desert") || "emerald";
+  });
+
   // Chat message state
   const [chatMessages, setChatMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem("chatMessages");
@@ -394,6 +403,14 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
     }
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  // Synchronize color accent theme class
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.remove("theme-emerald", "theme-midnight", "theme-desert");
+    root.classList.add(`theme-${colorTheme}`);
+    localStorage.setItem("colorTheme", colorTheme);
+  }, [colorTheme]);
 
   // Synchronize localStorage for saved trips
   useEffect(() => {
@@ -652,16 +669,16 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
       let tripCard: TripDetails | undefined = undefined;
       const tripData = res.data.trip;
       if (tripData) {
-        let banner = "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=1200&q=80";
+        let banner = "https://upload.wikimedia.org/wikipedia/commons/b/b8/Pangong_Tso_lake_in_Ladakh_India.jpg";
         const cityLower = tripData.city.toLowerCase();
         if (cityLower.includes("madurai")) {
-          banner = "https://images.unsplash.com/photo-1600100397608-f010e423b971?auto=format&fit=crop&w=1200&q=80";
+          banner = "https://upload.wikimedia.org/wikipedia/commons/e/ea/Madurai_Meenakshi_Temple_West_Tower.jpg";
         } else if (cityLower.includes("goa")) {
-          banner = "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80";
+          banner = "https://upload.wikimedia.org/wikipedia/commons/f/fe/Calangute_Beach_Goa.jpg";
         } else if (cityLower.includes("chennai")) {
-          banner = "https://images.unsplash.com/photo-1582510003544-4d00b7f74220?auto=format&fit=crop&w=1200&q=80";
+          banner = "https://upload.wikimedia.org/wikipedia/commons/1/15/Chennai_Central_Railway_Station_front_view_2014.jpg";
         } else if (cityLower.includes("ooty")) {
-          banner = "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=1200&q=80";
+          banner = "https://upload.wikimedia.org/wikipedia/commons/a/a6/Nilgiri_Mountain_Railway_train%2C_India.jpg";
         }
 
         const tripStart = tripData.travel_date || new Date(Date.now() + 86400000 * 7).toISOString().split("T")[0];
@@ -699,7 +716,8 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
               timestamp: "Just now",
               iconName: "sparkles"
             }
-          ]
+          ],
+          notifications: tripData.notifications || []
         };
       }
 
@@ -742,6 +760,8 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
       value={{
         theme,
         toggleTheme,
+        colorTheme,
+        setColorTheme,
         chatMessages,
         setChatMessages,
         isLoadingChat,
