@@ -35,13 +35,46 @@ const formatInlineMarkdown = (value: string) => {
 };
 
 function ImageSlider({ images }: { images: string[] }) {
-  if (!images || images.length === 0) {
-    return null;
-  }
+  const swiperRef = useRef<any>(null);
+  const showNav = images.length > 3;
 
   return (
-    <div className="my-2 px-3">
-      <img src={images[0]} alt="Place" className="h-40 w-full rounded-lg object-cover" loading="lazy" />
+    <div className="my-2 flex justify-center px-3">
+      <div className="relative w-full max-w-[400px]">
+        <Swiper
+          modules={[Navigation, Pagination]}
+          onSwiper={(swiper) => (swiperRef.current = swiper)}
+          slidesPerView={3}
+          spaceBetween={6}
+          pagination={{ clickable: true }}
+          loop={showNav}
+        >
+          {images.map((img, index) => (
+            <SwiperSlide key={index}>
+              <img src={img} alt={`Photo ${index + 1}`} className="h-24 w-full rounded-lg object-cover" loading="lazy" />
+            </SwiperSlide>
+          ))}
+        </Swiper>
+
+        {showNav && (
+          <>
+            <button
+              onClick={() => swiperRef.current?.slidePrev()}
+              aria-label="Previous"
+              className="absolute left-0 top-1/2 z-10 flex h-6 w-6 -translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 shadow-md hover:bg-slate-700"
+            >
+              <ChevronLeft className="text-[9px]" />
+            </button>
+            <button
+              onClick={() => swiperRef.current?.slideNext()}
+              aria-label="Next"
+              className="absolute right-0 top-1/2 z-10 flex h-6 w-6 translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 shadow-md hover:bg-slate-700"
+            >
+              <ChevronRight className="text-[9px]" />
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -519,14 +552,6 @@ const QUESTION_OPTION_SETS = [
   {
     matcher: /any special interests/i,
     options: ["History", "Nature", "Adventure", "Food", "Photography", "Shopping"]
-  },
-  {
-    matcher: /any required amenities/i,
-    options: ["Pool", "Parking", "Wi-Fi", "Spa", "Pet Friendly"]
-  },
-  {
-    matcher: /do you need food included/i,
-    options: ["Yes", "No"]
   }
 ];
 
@@ -540,7 +565,7 @@ const getClickableQuestionOptions = (text: string): string[] => {
 
 export const AIChat: React.FC = () => {
   const navigate = useNavigate();
-  const { chatMessages, setChatMessages, askAIChat, isLoadingChat, setActiveTrip, saveTrip } = useTravelPlanner();
+  const { chatMessages, askAIChat, isLoadingChat, setActiveTrip, saveTrip } = useTravelPlanner();
   
   const [question, setQuestion] = useState("");
   const [selectedDays, setSelectedDays] = useState<number>(3);
@@ -733,32 +758,18 @@ export const AIChat: React.FC = () => {
             AI Travel Assistant
           </h2>
         </div>
-        <div className="flex items-center gap-2">
-          {chatMessages.length > 0 && (
-            <button
-              onClick={() => {
-                setChatMessages([]);
-                localStorage.removeItem("chatMessages");
-                triggerToast("Chat history cleared!");
-              }}
-              className="px-3 py-1.5 rounded-full border text-[10px] font-extrabold bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 text-slate-655 dark:text-slate-400 border-slate-200 dark:border-slate-800 transition-all select-none hover-scale cursor-pointer"
-            >
-              Clear Chat
-            </button>
-          )}
-          <button
-            onClick={toggleVoiceOver}
-            className={`px-3 py-1.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
-              isVoiceOverEnabled
-                ? "bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 border-teal-100 dark:border-teal-900/40 shadow-sm"
-                : "bg-slate-50 dark:bg-slate-900 text-slate-455 dark:text-slate-400 border-slate-200 dark:border-slate-800"
-            }`}
-            title="Toggle Smart Voice Notification Aloud Mode"
-          >
-            {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            <span>{isVoiceOverEnabled ? "Voice notifications ON" : "Voice notifications OFF"}</span>
-          </button>
-        </div>
+        <button
+          onClick={toggleVoiceOver}
+          className={`px-3 py-1.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
+            isVoiceOverEnabled
+              ? "bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 border-teal-100 dark:border-teal-900/40 shadow-sm"
+              : "bg-slate-50 dark:bg-slate-900 text-slate-455 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+          }`}
+          title="Toggle Smart Voice Notification Aloud Mode"
+        >
+          {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+          <span>{isVoiceOverEnabled ? "Voice notifications ON" : "Voice notifications OFF"}</span>
+        </button>
       </div>
 
       {/* 1. Chat Dialog Log */}

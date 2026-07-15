@@ -282,6 +282,7 @@ def hotel_node(state):
     enriched_question = state["question"]
     hotel_preferences = [
         state.get("breakfast", "None"),
+        state.get("hotel_type", "None"),
         state.get("amenities", "None"),
     ]
     preference_text = ", ".join([p for p in hotel_preferences if p and p != "None"])
@@ -300,9 +301,7 @@ def hotel_node(state):
         state.get("guests", state.get("travelers", 1)),
         checkin=checkin,
         checkout=checkout,
-        rooms=state.get("rooms", 1),
-        amenities=state.get("amenities", "None"),
-        breakfast=state.get("breakfast", "None")
+        rooms=state.get("rooms", 1)
     )
     
     if isinstance(answer, dict):
@@ -697,6 +696,7 @@ builder.add_edge(
 
 
 def merge_router(state):
+    g_state = get_guided_state()
     routes = state.get("routes", [])
     if "calendar" in routes or "calendar_preview" in routes:
         return "calendar_preview"
