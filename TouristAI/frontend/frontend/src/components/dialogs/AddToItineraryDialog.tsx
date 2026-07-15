@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 interface AddToItineraryDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  item: { type: 'hotel' | 'restaurant', id: string, name: string, location: string, rating: number, image: string } | null;
+  item: { type: 'hotel' | 'restaurant' | 'attraction', id: string, name: string, location: string, rating: number, image: string } | null;
   durationDays: number;
   onAdd: (dayNum: number, time: string) => void;
 }
@@ -50,6 +50,13 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
     onAdd(selectedDay, selectedTime);
     onClose();
   };
+
+  const header =
+  item?.type === "hotel"
+    ? "🏨 Add Hotel Stay"
+    : item?.type === "attraction"
+    ? "📍 Add Attraction"
+    : "🍽️ Add Dining Spot";
 
   return (
     <AnimatePresence>
@@ -99,7 +106,14 @@ export const AddToItineraryDialog: React.FC<AddToItineraryDialogProps> = ({
               <div className="p-6 space-y-5">
                 <div>
                   <h3 className="font-heading text-sm font-bold text-slate-800 dark:text-slate-200">
-                    {item.type === "hotel" ? "🏨 Add Stay Accommodation" : "🍽 Add Dining Spot"}
+                    {/* {item.type === "hotel" ? "🏨 Add Stay Accommodation" : "🍽 Add Dining Spot"} */}
+                    {item?.type === "attraction" ? (
+  <p>Add Attraction to itinerary</p>
+) : item?.type === "hotel" ? (
+  <p>Add Hotel Stay to itinerary</p>
+) : (
+  <p>Add Dining Spot to itinerary</p>
+)}
                   </h3>
                   <p className="text-[11px] text-slate-450 dark:text-slate-400 mt-1 font-medium truncate">
                     {item.name}

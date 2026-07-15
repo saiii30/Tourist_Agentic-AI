@@ -24,3 +24,4 @@ class AgentState(TypedDict):
     restaurants_data: list[dict]
     nearby_data: list[dict]
     weather_data: dict
+    nearbyResult: dict | None

@@ -22,10 +22,12 @@ from database.postgres import PostgresDatabase
 import json
 import sys
 import uuid
+from urllib.parse import quote
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, Response, Request, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
+import requests
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -52,6 +54,48 @@ app.add_middleware(
 )
 
 trip_service = TripService()
+
+
+@app.get("/place-photo")
+def place_photo(photo_name: str = Query(...)):
+    """Proxy a Google Places photo without sending the API key to the client."""
+    if not photo_name.startswith("places/") or "/photos/" not in photo_name:
+        return Response(status_code=400)
+
+    api_key = os.getenv("GOOGLE_PLACES_API_KEY")
+    if not api_key:
+        return Response(status_code=503)
+
+    try:
+        google_response = requests.get(
+            f"https://places.googleapis.com/v1/{photo_name}/media",
+            headers={"X-Goog-Api-Key": api_key},
+            params={"maxWidthPx": 640, "maxHeightPx": 480},
+            timeout=20,
+        )
+        if not google_response.ok or not google_response.headers.get("content-type", "").startswith("image/"):
+            return Response(status_code=404)
+
+        return Response(
+            content=google_response.content,
+            media_type=google_response.headers["content-type"],
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except requests.RequestException:
+        return Response(status_code=502)
+
+
+def attach_discovery_photo_urls(discovery_result: Optional[dict]) -> None:
+    """Use the Google image only when Wikipedia did not supply one."""
+    if not isinstance(discovery_result, dict):
+        return
+
+    api_base_url = os.getenv("AI_API_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+    for category in discovery_result.get("categories") or []:
+        for place in category.get("places") or []:
+            photo_name = place.get("googlePhotoName")
+            if not place.get("image") and photo_name:
+                place["image"] = f"{api_base_url}/place-photo?photo_name={quote(photo_name, safe='')}"
 
 class ChatRequest(BaseModel):
     question: str
@@ -260,6 +304,7 @@ def chat(req: ChatRequest):
             "interests": "None"
         }
     )
+    attach_discovery_photo_urls(result.get("nearbyResult"))
     
     g_state = get_guided_state()
     last_items = g_state.get("last_itinerary_items")
@@ -426,6 +471,7 @@ def chat(req: ChatRequest):
             "answer": result["answer"],
             "routes": result.get("routes", []),
             "trip": trip_response,
+            "nearbyResult": result.get("nearbyResult"), #newly added code for nearbyagent single line 429
             "metadata": {
                 "source": "llm",
                 "generated_by": "calendar_agent",
@@ -439,6 +485,7 @@ def chat(req: ChatRequest):
         "answer": result["answer"],
         "routes": result.get("routes", []),
         "trip": None,
+        "nearbyResult": result.get("nearbyResult"), #added new line 443 for nearbyagent
         "metadata": {
             "source": "guided_flow",
             "generated_by": "supervisor",

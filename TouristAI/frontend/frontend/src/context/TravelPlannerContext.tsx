@@ -1,5 +1,53 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import axios from "axios";
+// export type NearbyPlace = {//added new code for nearby agent from line 3
+//   id: string;
+//   name: string;
+//   address: string;
+//   rating: number | null;
+//   ratingCount: number | null;
+//   description: string;
+//   image: string | null;
+//   googlePhotoName?: string | null;
+//   wikiUrl: string | null;
+//   wikiSearchFallback?: boolean;
+//   mapsUrl?: string | null;
+//   website?: string | null;
+// };
+export type NearbyPlace = {
+  id: string;
+  name: string;
+  address: string;
+  rating: number | null;
+  ratingCount: number | null;
+  description: string;
+  image: string | null;
+  googlePhotoName?: string | null;
+  wikiUrl: string | null;
+  wikiSearchFallback?: boolean;
+  mapsUrl?: string | null;
+  website?: string | null;
+  phone?: string | null;              // new
+  hours?: string[];                    // new
+  accessibility?: Record<string, boolean>; // new
+  parking?: Record<string, boolean>;   // new
+  payment?: Record<string, boolean>;   // new
+  priceLevel?: string | null;          // new
+};
+
+
+export type NearbyCategory = {
+  key: string;
+  label: string;
+  icon: string;
+  places: NearbyPlace[];
+};
+
+export type NearbyResult = {
+  location: string;
+  categories: NearbyCategory[];
+  followUp?: string;
+};//added new code for nearbyagent till line 27
 
 export interface Activity {
   id: string;
@@ -98,6 +146,7 @@ export interface TripDetails {
   emergencyContacts: EmergencyContact[];
   notesText: string;
   historyTimeline: HistoryEvent[];
+  discoveredPlaces?: NearbyPlace[];//added new fro nearby agent
 }
 
 export interface Message {
@@ -105,6 +154,7 @@ export interface Message {
   text: string;
   routes?: string[];
   tripCard?: TripDetails;
+  nearbyResult?: NearbyResult;   // added this for nearby agent 133
   timestamp: string;
 }
 
@@ -648,6 +698,10 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
       const res = await axios.post("http://localhost:8000/chat", { question });
       const answerText = res.data.answer;
       const routes = res.data.routes || [];
+      const nearbyResult: NearbyResult | undefined =
+        res.data.nearbyResult ?? res.data.nearby_result;
+      const discoveredPlaces =
+        nearbyResult?.categories.flatMap((category) => category.places) ?? [];
 
       let tripCard: TripDetails | undefined = undefined;
       const tripData = res.data.trip;
@@ -699,14 +753,26 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
               timestamp: "Just now",
               iconName: "sparkles"
             }
-          ]
+          ],
+          discoveredPlaces
         };
+      }
+
+      if (nearbyResult) {
+        updateActiveTrip((prev) =>
+          prev
+            ? {
+                ...prev,
+                discoveredPlaces
+              }
+            : prev
+        );
       }
 
       setChatMessages((prev) => [
         ...prev,
-        { role: "assistant", text: answerText, routes, tripCard, timestamp: timeStr }
-      ]);
+        { role: "assistant", text: answerText, routes, tripCard, nearbyResult, timestamp: timeStr }
+      ]);//added nearbyagent in 734 above near tripcard..
     } catch (err) {
       console.warn("Backend API not reachable, running in Offline Mode:", err);
 
