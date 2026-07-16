@@ -200,7 +200,7 @@ const appendHistoryEvent = (history: HistoryEvent[], action: string, iconName = 
 // High-Fidelity Mock Trip Generator for fallback
 const generateMockTripDetails = (city: string, daysCount = 3): TripDetails => {
   const normCity = city.charAt(0).toUpperCase() + city.slice(1);
-  
+
   // Try to use a nice generic city-themed Wikimedia image if it matches known patterns, otherwise standard travel banner
   let banner = "https://upload.wikimedia.org/wikipedia/commons/b/b8/Pangong_Tso_lake_in_Ladakh_India.jpg";
   const cityLower = city.toLowerCase();
@@ -610,13 +610,13 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
           const width = 600, height = 655;
           const left = window.innerWidth / 2 - width / 2;
           const top = window.innerHeight / 2 - height / 2;
-          
+
           const handleAuthMessage = async (event: MessageEvent) => {
             if (event.data && event.data.type === 'GOOGLE_AUTH_SUCCESS' && event.data.trip_id === targetTrip.id) {
               window.removeEventListener('message', handleAuthMessage);
               try {
                 const finalRes = await axios.post("http://localhost:8000/calendar/save-and-sync", payload);
-                
+
                 // Update local state
                 setSavedTrips((prev) =>
                   prev.map((t) =>
@@ -705,6 +705,17 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const askAIChat = async (question: string) => {
     if (!question.trim()) return;
+
+    if (question.trim().toLowerCase() === "exit") {
+      try {
+        await axios.post("http://localhost:8000/chat", { question });
+      } catch (err) {
+        console.warn("Backend error on exit:", err);
+      }
+      setChatMessages([]);
+      localStorage.removeItem("chatMessages");
+      return;
+    }
 
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -811,7 +822,7 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
       tripCard.status = "Draft";
 
       const answerText = `⚠️ **Offline Mode Active**\n\nI couldn't reach the AI Travel Agent backend server. I have created a dynamic template itinerary card for **${tripCard.cityName}** in offline mode. No real hotels or restaurants are displayed.`;
-      
+
       setChatMessages((prev) => [
         ...prev,
         { role: "assistant", text: answerText, routes: ["general"], tripCard, timestamp: timeStr }

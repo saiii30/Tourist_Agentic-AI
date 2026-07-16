@@ -372,17 +372,42 @@ def get_room_details_from_website(url):
         return result
 
 
-def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None, checkout=None, rooms=1) -> str | None:
+def get_hotels_from_google(
+    city: str,
+    budget: str,
+    travelers: int,
+    checkin=None,
+    checkout=None,
+    rooms=1,
+    breakfast: str = "None",
+    hotel_type: str = "None",
+    amenities: str = "None"
+) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
     if not api_key:
         print("[ERROR] GOOGLE_PLACES_API_KEY not found.")
         return None
 
-    query = f"best hotels in {city}"
+    # Build a highly specific search query from all the collected details
+    query_parts = []
+
+    if hotel_type and hotel_type.lower() not in ["none", "any"]:
+        query_parts.append(hotel_type)
+
+    query_parts.append(f"hotels in {city}")
+
+    if amenities and amenities.lower() not in ["none", "any"]:
+        query_parts.append(f"with {amenities}")
+    
+    if breakfast and breakfast.lower() == "yes":
+        query_parts.append("with breakfast included")
 
     if budget and budget.lower() != "none":
-        query = f"{budget} budget hotels in {city}"
+        query_parts.append(f"{budget} budget")
+
+    print(query_parts)
+        
 
     url = "https://places.googleapis.com/v1/places:searchText"
 
@@ -401,7 +426,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
     )
 
     payload = {
-        "textQuery": query,
+        "textQuery": " ".join(query_parts),
         "maxResultCount": 5
     }
 
@@ -422,7 +447,7 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
         with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode("utf-8"))
 
-        print(json.dumps(data, indent=2))
+        # print(json.dumps(data, indent=2))
 
         if not data.get("places"):
             print("[WARNING] No hotels found.")
@@ -431,8 +456,8 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
         lines = []
         hotels_data = []
 
-        for i, place in enumerate(data["places"][:5], 1):
-            print(place)
+        for i, place in enumerate(data["places"][:10], 1):
+            # print(place)
             hotel_id = place.get("id", f"mock-hotel-{i}")
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
@@ -581,7 +606,18 @@ def get_hotels_from_google(city: str, budget: str, travelers: int, checkin=None,
         return None
 
 
-def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None, checkout=None, rooms=1):
+def hotel_agent(
+    question,
+    city="None",
+    budget="None",
+    travelers=1,
+    checkin=None,
+    checkout=None,
+    rooms=1,
+    breakfast: str = "None",
+    hotel_type: str = "None",
+    amenities: str = "None"
+):
     if city == "None":
         return {"message": "I need to know which city you are visiting."}
 
@@ -601,7 +637,15 @@ def hotel_agent(question, city="None", budget="None", travelers=1, checkin=None,
     # 2. If RAG is empty, try the Google Places API
     print("[INFO] No results in RAG. Checking Google Places API for hotels.")
     google_results = get_hotels_from_google(
-        city, budget, travelers, checkin=checkin, checkout=checkout, rooms=rooms
+        city=city,
+        budget=budget,
+        travelers=travelers,
+        checkin=checkin,
+        checkout=checkout,
+        rooms=rooms,
+        breakfast=breakfast,
+        hotel_type=hotel_type,
+        amenities=amenities
     )
     if google_results:
         # Save the successful Google response to RAG for future queries

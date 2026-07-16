@@ -33,7 +33,7 @@ export const BusSearchResults: React.FC = () => {
     setError(null);
     setCurrentPage(1);
 
-    axios.get(`http://localhost:8000/api/buses/search`, {
+    axios.get(`http://localhost:8001/api/buses/search`, {
       params: {
         from: from,
         to: to,
@@ -62,10 +62,10 @@ export const BusSearchResults: React.FC = () => {
     const year = parts[0];
     const monthIdx = parseInt(parts[1], 10) - 1;
     const day = parseInt(parts[2], 10);
-    
+
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const monthName = months[monthIdx] || "";
-    
+
     return `${day}-${monthName}-${year}`;
   };
 
@@ -75,7 +75,7 @@ export const BusSearchResults: React.FC = () => {
     const cleanFrom = (from || "").toLowerCase().trim().replace(/\s+/g, "-");
     const cleanTo = (to || "").toLowerCase().trim().replace(/\s+/g, "-");
     const formattedDate = formatRedbusDate(date);
-    
+
     const queryUrl = `https://www.redbus.in/bus-tickets/${cleanFrom}-to-${cleanTo}${formattedDate ? `?doj=${formattedDate}` : ""}`;
     window.open(queryUrl, "_blank");
   };
@@ -162,7 +162,7 @@ export const BusSearchResults: React.FC = () => {
         {!loading && !error && buses.length > 0 && (
           <div className="space-y-3">
             {currentBuses.map((bus, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-4 flex items-center justify-between gap-4 hover:border-emerald-600/30 transition-all shadow-sm"
               >
@@ -187,7 +187,7 @@ export const BusSearchResults: React.FC = () => {
                       <span className="text-xs text-slate-500 block">Departure</span>
                       <span className="text-sm font-semibold text-slate-200">{bus.departure_time}</span>
                     </div>
-                    
+
                     <div className="flex flex-col items-center">
                       <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -212,7 +212,7 @@ export const BusSearchResults: React.FC = () => {
                 <div className="text-right border-l border-slate-800 pl-4 flex flex-col justify-center items-end min-w-[100px] h-20">
                   <div className="text-[10px] text-slate-550 uppercase tracking-wider font-semibold">Fare</div>
                   <div className="text-lg font-black text-slate-100 font-mono mt-0.5">{bus.price}</div>
-                  
+
                   <button
                     onClick={handleBookRedirect}
                     className="mt-2 flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-emerald-700 transition-colors"
@@ -241,11 +241,10 @@ export const BusSearchResults: React.FC = () => {
                 <button
                   key={pageNumber}
                   onClick={() => setCurrentPage(pageNumber)}
-                  className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                    currentPage === pageNumber
+                  className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${currentPage === pageNumber
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-900 border border-slate-700/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                  }`}
+                    }`}
                 >
                   {pageNumber}
                 </button>

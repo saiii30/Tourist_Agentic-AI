@@ -132,31 +132,49 @@ def get_image_from_website(url, max_images=1):
         print("Website image error:", e)
         return []
 
-        
-def get_restaurants_from_google(question: str, city: str, budget: str, interests: str) -> str | None:
+
+def get_restaurants_from_google(
+    question: str,
+    city: str,
+    budget: str,
+    cuisine: str,
+    diet: str,
+    meal_time: str,
+    family_friendly: str,
+    outdoor_seating: str,
+    allergies: str
+) -> str | None:
     api_key = os.getenv("GOOGLE_PLACES_API_KEY")
 
     if not api_key:
         print("[ERROR] GOOGLE_PLACES_API_KEY not found.")
         return None
 
-    # Build a more specific search query
-    query_parts = [f"best restaurants in {city}"]
+    # Build a highly specific search query from all the collected details
+    query_parts = ["restaurants"]
 
-    # Add dietary preferences from the original question
-    question_lower = question.lower()
-    if "veg" in question_lower or "vegetarian" in question_lower:
-        query_parts.append("vegetarian")
-    elif "non-veg" in question_lower or "non vegetarian" in question_lower:
-        query_parts.append("non-vegetarian")
+    if cuisine and cuisine.lower() not in ["none", "any"]:
+        query_parts.append(f"{cuisine} cuisine")
 
-    if interests and interests.lower() != "none":
-        query_parts.append(interests)
+    query_parts.append(f"in {city}")
+
+    if diet and diet.lower() not in ["none", "any"]:
+        query_parts.append(diet)
+
+    if meal_time and meal_time.lower() not in ["none", "any"]:
+        query_parts.append(f"for {meal_time}")
+
+    if family_friendly and family_friendly.lower() == "yes":
+        query_parts.append("family-friendly")
 
     if budget and budget.lower() != "none":
-        # Only append descriptive budget words, not raw numbers (which restrict Google Search results)
-        if not any(char.isdigit() for char in budget):
-            query_parts.append(f"{budget} budget")
+        query_parts.append(f"{budget} budget")
+
+    if outdoor_seating and outdoor_seating.lower() == "yes":
+        query_parts.append("with outdoor seating")
+
+    if allergies and allergies.lower() not in ["none", "any"]:
+        query_parts.append(f"avoiding {allergies}")
 
     query = " ".join(query_parts)
 
@@ -209,10 +227,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
         "X-Goog-FieldMask": field_mask
     }
 
-    print("\n========== GOOGLE RESTAURANT REQUEST ==========")
-    print("Query:", query)
-    print("Payload:", payload)
-    print("===============================================\n")
+
 
     try:
         req = urllib.request.Request(
@@ -225,9 +240,6 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
         with urllib.request.urlopen(req, timeout=10) as response:
             data = json.loads(response.read().decode("utf-8"))
 
-        print("\n========== GOOGLE RESPONSE ==========")
-        print(json.dumps(data, indent=2))
-        print("=====================================\n")
 
         lines = []
         rests_data = []
@@ -248,9 +260,8 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
             lng = loc.get("longitude")
 
             if website:
-                print(f"Getting images from: {website}")
                 photo_urls = get_image_from_website(website, max_images=1)
-                print("Images:", photo_urls)
+           
 
             item_lines = [f"**{name}**"]
             item_lines.append(f"⭐ Rating: {rating} ({reviews} reviews)")
@@ -366,7 +377,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
                 "hours": hours
             })
 
-        print("[INFO] Google Places API call successful.")
+        
 
         return {"text": "\n".join(lines), "data": rests_data}
 
@@ -400,8 +411,14 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
 def restaurant_agent(
     question,
     city="None",
-    interests="None",
-    budget="None"
+    interests="None", # Retained for general keyword matching
+    budget="None",
+    cuisine="None",
+    diet="None",
+    meal_time="None",
+    family_friendly="None",
+    outdoor_seating="None",
+    allergies="None"
 ):
     if city == "None":
         return {"message": "I need to know which city you are visiting to suggest restaurants."}
@@ -422,7 +439,15 @@ def restaurant_agent(
     # 2. If RAG is empty, try the Google Places API
     print("[INFO] No results in RAG. Checking Google Places API for restaurants.")
     google_results = get_restaurants_from_google(
-        question, city, budget, interests
+        question=question,
+        city=city,
+        budget=budget,
+        cuisine=cuisine or interests, # Use interests as a fallback for cuisine
+        diet=diet,
+        meal_time=meal_time,
+        family_friendly=family_friendly,
+        outdoor_seating=outdoor_seating,
+        allergies=allergies
     )
     if google_results:
         # Save the successful Google response to RAG for future queries

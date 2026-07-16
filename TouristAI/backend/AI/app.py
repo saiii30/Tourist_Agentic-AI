@@ -187,7 +187,30 @@ def map_restaurants_to_frontend(restaurants_data):
 @app.post("/chat")
 def chat(req: ChatRequest):
     question_lower = req.question.strip().lower()
-    
+    if question_lower == "exit":
+        from supervisor import init_guided_db
+        init_guided_db()
+        from database.postgres import PostgresDatabase
+        conn = PostgresDatabase.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE agent_sessions SET status = 'CANCELLED' WHERE status = 'ACTIVE' OR status = 'PAUSED'")
+        cursor.execute("DELETE FROM agent_session_state")
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        # Reset all hotel fields to None
+        for field in ["city", "checkin", "checkout", "guests", "budget", "breakfast", "amenities"]:
+            update_guided_state(f"hotel.{field}", "None")
+        update_guided_state("active_agent", "")
+        update_guided_state("is_active", "0")
+        update_guided_state("last_completed_agent", "")
+        return {
+            "status": "success",
+            "answer": "Exited hotel search flow.",
+            "routes": ["general"]
+        }
+
     # 0. Intercept Travel Booking / Confirmation Texts
     ticket_keywords = ["confirmation number", "pnr", "boarding pass", "e-ticket", "train to", "flight to", "booking reference", "organiser:", "departure:", "arrival:"]
     is_ticket = any(kw in question_lower for kw in ticket_keywords) or ("train" in question_lower and "mdu" in question_lower)

@@ -34,7 +34,7 @@ export const FlightSearchResults: React.FC = () => {
     setError(null);
     setCurrentPage(1);
 
-    axios.get(`http://localhost:8000/api/flights/search`, {
+    axios.get(`http://localhost:8001/api/flights/search`, {
       params: {
         from: from,
         to: to,
@@ -147,7 +147,7 @@ export const FlightSearchResults: React.FC = () => {
         {!loading && !error && flights.length > 0 && (
           <div className="space-y-3">
             {currentFlights.map((flight, idx) => (
-              <div 
+              <div
                 key={idx}
                 className="rounded-xl border border-slate-700/60 bg-slate-900/60 p-4 flex items-center justify-between gap-4 hover:border-emerald-600/30 transition-all shadow-sm"
               >
@@ -168,7 +168,7 @@ export const FlightSearchResults: React.FC = () => {
                       <span className="text-xs text-slate-500 block">Departure</span>
                       <span className="text-sm font-semibold text-slate-200">{flight.departure_time}</span>
                     </div>
-                    
+
                     <div className="flex flex-col items-center">
                       <span className="text-[10px] text-slate-400 font-medium flex items-center gap-1">
                         <Clock className="h-3 w-3" />
@@ -200,7 +200,7 @@ export const FlightSearchResults: React.FC = () => {
                 <div className="text-right border-l border-slate-800 pl-4 flex flex-col justify-center items-end min-w-[100px] h-20">
                   <div className="text-[10px] text-slate-550 uppercase tracking-wider font-semibold">Price</div>
                   <div className="text-lg font-black text-slate-100 font-mono mt-0.5">{flight.price}</div>
-                  
+
                   <button
                     onClick={handleBookRedirect}
                     className="mt-2 flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white hover:bg-emerald-700 transition-colors"
@@ -229,11 +229,10 @@ export const FlightSearchResults: React.FC = () => {
                 <button
                   key={pageNumber}
                   onClick={() => setCurrentPage(pageNumber)}
-                  className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
-                    currentPage === pageNumber
+                  className={`h-8 w-8 rounded-lg text-xs font-bold transition-colors cursor-pointer ${currentPage === pageNumber
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-900 border border-slate-700/60 text-slate-400 hover:bg-slate-800 hover:text-slate-200"
-                  }`}
+                    }`}
                 >
                   {pageNumber}
                 </button>

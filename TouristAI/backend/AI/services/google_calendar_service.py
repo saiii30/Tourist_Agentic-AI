@@ -47,7 +47,7 @@ class GoogleCalendarService:
         # Fallback to environment variables
         client_id = os.getenv("GOOGLE_CLIENT_ID")
         client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
-        redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/oauth2callback")
+        redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8001/oauth2callback")
         
         if not client_id or not client_secret:
             raise ValueError(

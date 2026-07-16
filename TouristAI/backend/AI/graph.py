@@ -132,6 +132,35 @@ def supervisor_node(state):
             if prefs:
                 question += f". Preferences: {', '.join(prefs)}"
                 
+        elif completed_agent == "restaurant":
+            budget_per_person = agent_context.get("budget_per_person", "None")
+            diet = agent_context.get("diet", "None")
+            cuisine = agent_context.get("cuisine", "None")
+            meal_time = agent_context.get("meal_time", "None")
+            family_friendly = agent_context.get("family_friendly", "None")
+            outdoor_seating = agent_context.get("outdoor_seating", "None")
+            allergies = agent_context.get("allergies", "None")
+            
+            question = f"Suggest restaurants in {city}"
+            if cuisine and cuisine != "None":
+                question += f" serving {cuisine} cuisine"
+            if meal_time and meal_time != "None":
+                question += f" for {meal_time}"
+            if diet and diet != "None":
+                question += f" with {diet} food option"
+            
+            prefs = []
+            if budget_per_person and budget_per_person != "None":
+                prefs.append(f"budget per person: {budget_per_person}")
+            if family_friendly and family_friendly != "None":
+                prefs.append(f"family friendly: {family_friendly}")
+            if outdoor_seating and outdoor_seating != "None":
+                prefs.append(f"outdoor seating: {outdoor_seating}")
+            if allergies and allergies != "None":
+                prefs.append(f"allergies: {allergies}")
+            if prefs:
+                question += f". Preferences: {', '.join(prefs)}"
+                
         elif completed_agent in {"attraction", "nearby"}:
             max_distance = agent_context.get("max_distance", "None")
             price_preference = agent_context.get("price_preference", "None")
@@ -151,6 +180,7 @@ def supervisor_node(state):
             if prefs:
                 question += f". Preferences: {', '.join(prefs)}"
 
+
         return {
             **state,
             "question": question,
@@ -163,20 +193,20 @@ def supervisor_node(state):
             "interests": interests,
             "checkin": agent_context.get("checkin", "None"),
             "checkout": agent_context.get("checkout", "None"),
-            "guests": travelers,
+            "guests": agent_context.get("guests") or travelers,
             "breakfast": agent_context.get("breakfast", "None"),
             "hotel_type": agent_context.get("hotel_type", "None"),
             "amenities": agent_context.get("amenities", "None"),
             "budget_per_person": agent_context.get("budget_per_person", "None"),
             "diet": agent_context.get("diet", "None"),
             "cuisine": agent_context.get("cuisine", "None"),
-            "meal_time": agent_context.get("meal_time", "None"),
+            "meal_time": agent_context.get("meal_time", "None"), # Added
             "family_friendly": agent_context.get("family_friendly", "None"),
             "outdoor_seating": agent_context.get("outdoor_seating", "None"),
             "allergies": agent_context.get("allergies", "None"),
             "max_distance": agent_context.get("max_distance", "None"),
             "price_preference": agent_context.get("price_preference", "None"),
-            "traveler_type": agent_context.get("traveler_type", "None"),
+            "traveler_type": agent_context.get("traveler_type", "None"), # Added
             "include_hotel": agent_context.get("include_hotel", "Yes"),
             "include_transport": agent_context.get("include_transport", "Yes"),
             "shopping_budget": agent_context.get("shopping_budget", "Yes"),
@@ -248,24 +278,29 @@ def supervisor_node(state):
 
 
 def restaurant_node(state):
-    enriched_question = state["question"]
-    restaurant_preferences = [
-        state.get("diet", "None"),
-        state.get("cuisine", "None"),
-        state.get("meal_time", "None"),
-        state.get("family_friendly", "None"),
-        state.get("outdoor_seating", "None"),
-        state.get("allergies", "None"),
-    ]
-    preference_text = ", ".join([p for p in restaurant_preferences if p and p != "None"])
-    if preference_text:
-        enriched_question = f"{enriched_question}. Preferences: {preference_text}"
+    question = state["question"]
+    city = state.get("city", "None")
+    budget = state.get("budget_per_person", state.get("budget", "None"))
+    cuisine = state.get("cuisine", "None")
+    diet = state.get("diet", "None")
+    meal_time = state.get("meal_time", "None")
+    family_friendly = state.get("family_friendly", "None")
+    outdoor_seating = state.get("outdoor_seating", "None")
+    allergies = state.get("allergies", "None")
 
-    budget = state.get("budget", "None")
-    if budget == "None" and state.get("budget_per_person", "None") != "None":
-        budget = state.get("budget_per_person")
-
-    answer = restaurant_agent(enriched_question, state.get("city", "None"), state.get("interests", "None"), budget)
+    # The supervisor already builds a good question, but we can pass structured data too
+    answer = restaurant_agent(
+        question=question,
+        city=city,
+        interests=state.get("interests", "None"), # Interests can be cuisine
+        budget=budget,
+        cuisine=cuisine,
+        diet=diet,
+        meal_time=meal_time,
+        family_friendly=family_friendly,
+        outdoor_seating=outdoor_seating,
+        allergies=allergies
+    )
     text = answer.get("answer") if isinstance(answer, dict) else answer
     source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
     data = answer.get("data", []) if isinstance(answer, dict) else []
@@ -279,29 +314,22 @@ def restaurant_node(state):
 
 
 def hotel_node(state):
-    enriched_question = state["question"]
-    hotel_preferences = [
-        state.get("breakfast", "None"),
-        state.get("hotel_type", "None"),
-        state.get("amenities", "None"),
-    ]
-    preference_text = ", ".join([p for p in hotel_preferences if p and p != "None"])
-    if preference_text:
-        enriched_question = f"{enriched_question}. Preferences: {preference_text}"
-
     checkin = state.get("checkin")
     checkout = state.get("checkout")
     if checkin == "None": checkin = None
     if checkout == "None": checkout = None
 
     answer = hotel_agent(
-        enriched_question,
-        state.get("city", "None"),
-        state.get("budget", "None"),
-        state.get("guests", state.get("travelers", 1)),
+        question=state["question"],
+        city=state.get("city", "None"),
+        budget=state.get("budget", "None"),
+        travelers=state.get("guests", state.get("travelers", 1)),
         checkin=checkin,
         checkout=checkout,
-        rooms=state.get("rooms", 1)
+        rooms=state.get("rooms", 1),
+        breakfast=state.get("breakfast", "None"),
+        hotel_type=state.get("hotel_type", "None"),
+        amenities=state.get("amenities", "None")
     )
     
     if isinstance(answer, dict):
@@ -701,6 +729,7 @@ builder.add_edge(
 
 
 def merge_router(state):
+    g_state = get_guided_state()
     routes = state.get("routes", [])
     if "calendar" in routes or "calendar_preview" in routes:
         return "calendar_preview"
