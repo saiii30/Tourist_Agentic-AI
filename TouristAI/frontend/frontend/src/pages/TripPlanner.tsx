@@ -66,6 +66,7 @@ const refreshRealtimeNotifications = (items: Notification[], nowMs = Date.now())
 };
 
 type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Map" | "Budget" | "Notes" | "Smart Assistant";
+type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Attractions" | "Map" | "Budget" | "Notes";
 
 export const TripPlanner: React.FC = () => {
   const location = useLocation();
@@ -84,7 +85,7 @@ export const TripPlanner: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [isCopilotOpen, setIsCopilotOpen] = useState(false);
   const [isAddItineraryOpen, setIsAddItineraryOpen] = useState(false);
-  const [itemToAdd, setItemToAdd] = useState<{ type: 'hotel' | 'restaurant', id: string, name: string, location: string, rating: number, image: string } | null>(null);
+  const [itemToAdd, setItemToAdd] = useState<{ type: 'hotel' | 'restaurant' | 'attraction', id: string, name: string, location: string, rating: number, image: string } | null>(null);
   const [mapSearchQuery, setMapSearchQuery] = useState<string | null>(null);
 
   // Voice alerts state and sync handlers
@@ -217,12 +218,9 @@ export const TripPlanner: React.FC = () => {
     ? (ratings.reduce((sum, val) => sum + val, 0) / ratings.length).toFixed(1)
     : "4.8";
 
-  // Counts
-  const attractionsCount = allActivities.filter(a => 
-    a.category === "Sightseeing" || 
-    a.category === "Adventure" || 
-    a.category === "Culture"
-  ).length;
+  const discoveredPlaces = activeTrip.discoveredPlaces ?? [];
+  const attractionsCount = discoveredPlaces.length;
+
 
   const restaurantsCount = activeTrip.restaurants && activeTrip.restaurants.length > 0
     ? activeTrip.restaurants.length
@@ -404,21 +402,73 @@ export const TripPlanner: React.FC = () => {
     const endTime = addIntervalToTime(time, 90); // 1.5 hours later
     const timeRange = `${time} - ${endTime}`;
 
+    // const newAct: any = {
+    //   id: `added-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+    //   title: itemToAdd.type === 'hotel' ? `Stay at ${itemToAdd.name}` : `Dine at ${itemToAdd.name}`,
+    //   time: time,
+    //   duration: timeRange,
+    //   category: itemToAdd.type === 'hotel' ? "Relaxation" : "Food",
+    //   rating: itemToAdd.rating || 4.5,
+    //   entryFee: itemToAdd.type === 'hotel' ? "Included" : "Standard pricing",
+    //   description: itemToAdd.type === 'hotel' ? `Stay accommodation at ${itemToAdd.name}.` : `Enjoy meals/dining at ${itemToAdd.name}.`,
+    //   location: itemToAdd.location || "",
+    //   image: itemToAdd.image || "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=400&q=80",
+    //   hotel: itemToAdd.type === 'hotel' ? itemToAdd.name : null,
+    //   restaurant: itemToAdd.type === 'restaurant' ? itemToAdd.name : null,
+    //   google_event_id: null
+    // };
+
     const newAct: any = {
-      id: `added-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-      title: itemToAdd.type === 'hotel' ? `Stay at ${itemToAdd.name}` : `Dine at ${itemToAdd.name}`,
-      time: time,
-      duration: timeRange,
-      category: itemToAdd.type === 'hotel' ? "Relaxation" : "Food",
-      rating: itemToAdd.rating || 4.5,
-      entryFee: itemToAdd.type === 'hotel' ? "Included" : "Standard pricing",
-      description: itemToAdd.type === 'hotel' ? `Stay accommodation at ${itemToAdd.name}.` : `Enjoy meals/dining at ${itemToAdd.name}.`,
-      location: itemToAdd.location || "",
-      image: itemToAdd.image || "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=400&q=80",
-      hotel: itemToAdd.type === 'hotel' ? itemToAdd.name : null,
-      restaurant: itemToAdd.type === 'restaurant' ? itemToAdd.name : null,
-      google_event_id: null
-    };
+  id: `added-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+
+  title:
+    itemToAdd.type === "hotel"
+      ? `Stay at ${itemToAdd.name}`
+      : itemToAdd.type === "restaurant"
+      ? `Dine at ${itemToAdd.name}`
+      : `Visit ${itemToAdd.name}`,
+
+  time,
+  duration: timeRange,
+
+  category:
+    itemToAdd.type === "hotel"
+      ? "Relaxation"
+      : itemToAdd.type === "restaurant"
+      ? "Food"
+      : "Sightseeing",
+
+  rating: itemToAdd.rating || 4.5,
+
+  entryFee:
+    itemToAdd.type === "attraction"
+      ? "Free / varies"
+      : itemToAdd.type === "hotel"
+      ? "Included"
+      : "Standard pricing",
+
+  description:
+    itemToAdd.type === "attraction"
+      ? `Visit ${itemToAdd.name}.`
+      : itemToAdd.type === "hotel"
+      ? `Stay at ${itemToAdd.name}.`
+      : `Dine at ${itemToAdd.name}.`,
+
+  location: itemToAdd.location || "",
+
+  image:
+    itemToAdd.image ||
+    "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=400&q=80",
+
+  hotel: itemToAdd.type === "hotel" ? itemToAdd.name : null,
+
+  restaurant:
+    itemToAdd.type === "restaurant"
+      ? itemToAdd.name
+      : null,
+
+  google_event_id: null,
+};
 
     updateActiveTrip((prev) => {
       if (!prev) return null;
@@ -801,7 +851,7 @@ export const TripPlanner: React.FC = () => {
 
         {/* ──────── 3. WORKSPACE TABS SELECTOR ──────── */}
         <div className="flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar pb-px">
-          {(["Overview", "Itinerary", "Hotels", "Restaurants", "Map", "Budget", "Notes", "Smart Assistant"] as const).map((tab) => {
+          {(["Overview", "Itinerary", "Hotels", "Restaurants", "Attractions", "Map", "Budget", "Notes", "Smart Assistant"] as const).map((tab) => {
             const active = activeTab === tab;
             return (
               <button
@@ -1242,6 +1292,78 @@ export const TripPlanner: React.FC = () => {
                 ))}
               </motion.div>
             )}
+
+
+{activeTab === "Attractions" && (
+  <motion.div
+    key="tab-attractions"
+    initial={{ opacity: 0, y: 10 }}
+    animate={{ opacity: 1, y: 0 }}
+    exit={{ opacity: 0, y: -10 }}
+    className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left"
+  >
+    {discoveredPlaces.length === 0 && (
+      <p className="col-span-full text-sm text-slate-400">
+        No attractions yet. Ask the AI Chat "places to visit in {activeTrip.cityName}".
+      </p>
+    )}
+
+    {discoveredPlaces.map((p) => {
+      const img = p.googlePhotoName
+        ? `${import.meta.env.VITE_API_BASE_URL ?? ""}/place-photo?photo_name=${encodeURIComponent(p.googlePhotoName)}&maxwidth=600`
+        : p.image;
+      return (
+        <div key={p.id} className="bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+          <div className="h-32 relative bg-slate-100 dark:bg-slate-800">
+            {img ? (
+              <img src={img} className="w-full h-full object-cover" alt={p.name} />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-slate-500 text-[10px]">Photo unavailable</div>
+            )}
+            {p.rating != null && (
+              <span className="absolute top-3 right-3 bg-black/60 text-[10px] font-bold text-white px-2 py-0.5 rounded">
+                ★ {p.rating.toFixed(1)}
+              </span>
+            )}
+          </div>
+
+          <div className="p-4 space-y-3">
+            <div>
+              <h4 className="font-heading font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 truncate">{p.name}</h4>
+              {p.address && <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">{p.address}</p>}
+            </div>
+            {p.description && (
+              <p className="text-[10.5px] text-slate-500 dark:text-slate-400 line-clamp-2">{p.description}</p>
+            )}
+
+            <div className="flex items-center justify-end pt-1 border-t border-slate-100 dark:border-slate-850">
+              {/* NOTE: no "Tables Available" / "Reserve Table" here (attractions) */}
+              <button
+                onClick={() => {
+                  setItemToAdd({
+                    type: "attraction",
+                    id: p.id,
+                    name: p.name,
+                    image: img || "",
+                    rating: p.rating ?? 4.5,
+                    location: p.address || "",
+                  });
+                  setIsAddItineraryOpen(true);
+                }}
+                className="px-3 py-1.5 bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 hover:bg-teal-100 rounded-xl text-[10px] font-bold border border-teal-100 dark:border-teal-900/50"
+              >
+                Add to Itinerary
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })}
+  </motion.div>
+)}
+
+
+
 
             {/* TAB: MAP INTERACTIVE OVERLAYS */}
             {activeTab === "Map" && (

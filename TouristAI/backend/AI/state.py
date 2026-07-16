@@ -62,3 +62,4 @@ class AgentState(TypedDict):
     include_hotel: str
     include_transport: str
     shopping_budget: str
+    nearbyResult: dict | None

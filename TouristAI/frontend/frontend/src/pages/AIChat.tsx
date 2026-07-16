@@ -9,6 +9,8 @@ import "swiper/css/navigation";
 import "swiper/css/pagination";
 import { useTravelPlanner } from "../context/TravelPlannerContext";
 import type { TripDetails } from "../context/TravelPlannerContext";
+import { ImageOff } from "lucide-react";
+import type { NearbyResult } from "../context/TravelPlannerContext";//added this import fro nearbyagent
 
 const escapeHtml = (value: string) =>
   value
@@ -35,49 +37,338 @@ const formatInlineMarkdown = (value: string) => {
 };
 
 function ImageSlider({ images }: { images: string[] }) {
-  const swiperRef = useRef<any>(null);
-  const showNav = images.length > 3;
+  if (!images || images.length === 0) {
+    return null;
+  }
 
   return (
-    <div className="my-2 flex justify-center px-3">
-      <div className="relative w-full max-w-[400px]">
-        <Swiper
-          modules={[Navigation, Pagination]}
-          onSwiper={(swiper) => (swiperRef.current = swiper)}
-          slidesPerView={3}
-          spaceBetween={6}
-          pagination={{ clickable: true }}
-          loop={showNav}
-        >
-          {images.map((img, index) => (
-            <SwiperSlide key={index}>
-              <img src={img} alt={`Photo ${index + 1}`} className="h-24 w-full rounded-lg object-cover" loading="lazy" />
-            </SwiperSlide>
-          ))}
-        </Swiper>
+    <div className="my-2 px-3">
+      <img src={images[0]} alt="Place" className="h-40 w-full rounded-lg object-cover" loading="lazy" />
+    </div>
+  );
+}
 
-        {showNav && (
-          <>
-            <button
-              onClick={() => swiperRef.current?.slidePrev()}
-              aria-label="Previous"
-              className="absolute left-0 top-1/2 z-10 flex h-6 w-6 -translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 shadow-md hover:bg-slate-700"
-            >
-              <ChevronLeft className="text-[9px]" />
-            </button>
-            <button
-              onClick={() => swiperRef.current?.slideNext()}
-              aria-label="Next"
-              className="absolute right-0 top-1/2 z-10 flex h-6 w-6 translate-x-2 -translate-y-1/2 items-center justify-center rounded-full border border-slate-700 bg-slate-800 text-slate-300 shadow-md hover:bg-slate-700"
-            >
-              <ChevronRight className="text-[9px]" />
-            </button>
-          </>
+
+// function PlaceMedia({
+//   image,
+//   googlePhotoName,
+//   name,
+// }: {
+//   image: string | null;
+//   googlePhotoName?: string | null;
+//   name: string;
+// }) {
+//   const [failed, setFailed] = React.useState(false);
+
+//   // Priority: Wikipedia image -> Google Places photo (proxied) -> placeholder
+//   const src = !failed && image
+//     ? image
+//     : googlePhotoName
+//       ? `${import.meta.env.VITE_API_BASE_URL ?? ""}/place-photo?photo_name=${encodeURIComponent(googlePhotoName)}`
+//       : null;
+
+//   return (
+//     <div className="aspect-video w-full bg-slate-800 overflow-hidden">
+//       {src ? (
+//         <img
+//           src={src}
+//           alt={name}
+//           className="h-full w-full object-cover"
+//           loading="lazy"
+//           onError={() => setFailed(true)}
+//         />
+//       ) : (
+//         <div className="flex h-full w-full items-center justify-center text-slate-500">
+//           <ImageOff className="h-8 w-8" />
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
+
+const API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"
+).replace(/\/$/, "");
+
+const googlePhotoUrl = (photoName: string) =>
+  `${API_BASE_URL}/place-photo?photo_name=${encodeURIComponent(
+    photoName
+  )}&maxwidth=800`;
+
+function PlaceMedia({
+  image,
+  googlePhotoName,
+  name,
+}: {
+  image: string | null;
+  googlePhotoName?: string | null;
+  name: string;
+}) {
+  const sources = React.useMemo(() => {
+    const next: string[] = [];
+
+    if (googlePhotoName) {
+      next.push(googlePhotoUrl(googlePhotoName));
+    }
+
+    if (image && !next.includes(image)) {
+      next.push(image);
+    }
+
+    return next;
+  }, [googlePhotoName, image]);
+  const [sourceIndex, setSourceIndex] = React.useState(0);
+  const source = sources[sourceIndex];
+
+  React.useEffect(() => {
+    setSourceIndex(0);
+  }, [googlePhotoName, image]);
+
+  return (
+    <div className="aspect-video w-full bg-slate-800 overflow-hidden">
+      {source ? (
+        <img
+          src={source}
+          alt={name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          onError={() => setSourceIndex((current) => current + 1)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-slate-500">
+          <ImageOff className="h-8 w-8" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function PlaceInfoTabs({ place }: { place: any }) {
+  const [tab, setTab] = React.useState<"overview" | "info" | "access">("overview");
+  const acc = place.accessibility || {};
+  const accEntries = Object.entries(acc).filter(([, v]) => v === true);
+
+  const tabs: { key: typeof tab; label: string }[] = [
+    { key: "overview", label: "Overview" },
+    { key: "info",     label: "Info" },
+    { key: "access",   label: "Access" },
+  ];
+
+  return (
+    <div className="mt-2 rounded-md border border-slate-700/60 min-w-0">
+      <div className="grid grid-cols-3 border-b border-slate-700/60">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`min-w-0 truncate whitespace-nowrap px-1 py-1.5 text-[10px] font-medium transition-colors ${
+              tab === t.key
+                ? "text-teal-400 border-b-2 border-teal-400"
+                : "text-slate-400 border-b-2 border-transparent hover:text-slate-200"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-2 text-[11px] leading-snug text-slate-300 break-words">
+        {tab === "overview" && (
+          <p className="line-clamp-4">{place.description || "No overview available."}</p>
+        )}
+        {tab === "info" && (
+          <ul className="space-y-1">
+            {place.address && <li className="line-clamp-2">📍 {place.address}</li>}
+            {place.phone && <li>📞 {place.phone}</li>}
+            {place.hours?.length ? <li className="line-clamp-1">🕒 {place.hours[0]}</li> : null}
+            {place.priceLevel && <li>💰 {place.priceLevel}</li>}
+            {!place.address && !place.phone && !place.hours?.length && !place.priceLevel && (
+              <li className="text-slate-500">No details available.</li>
+            )}
+          </ul>
+        )}
+        {tab === "access" && (
+          accEntries.length ? (
+            <ul className="space-y-0.5">
+              {accEntries.map(([k]) => (
+                <li key={k} className="capitalize">♿ {k.replace(/([A-Z])/g, " $1").toLowerCase()}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-slate-500">No accessibility info.</p>
+          )
         )}
       </div>
     </div>
   );
 }
+
+function NearbyDiscovery({ data }: { data: NearbyResult }) {
+  if (!data?.categories?.length) {
+    return (
+      <p className="text-sm text-slate-300">
+        Couldn't find places for <b>{data?.location}</b>. Try another city.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-6 text-left">
+      <p className="text-sm text-slate-300">
+        <span className="font-semibold text-slate-100">
+          {data.location}
+        </span>
+        {" "}— here are the top places to explore by category:
+      </p>
+
+      {data.categories.map((cat) => (
+        <section key={cat.key} className="space-y-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold text-slate-100">
+            <span className="text-lg">{cat.icon}</span>
+            {cat.label}
+            <span className="text-[10px] font-normal text-slate-500">
+              ({cat.places.length})
+            </span>
+          </h3>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            {cat.places.map((p) => (
+              <div
+                key={p.id}
+                className="rounded-xl overflow-hidden border border-slate-700/70 bg-slate-900 hover:shadow-md transition flex flex-col"
+              >
+                {p.wikiUrl ? (
+                  <a
+                    href={p.wikiUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {/* <PlaceMedia image={p.image} name={p.name} /> */}
+                    <PlaceMedia
+                      image={p.image}
+                      googlePhotoName={p.googlePhotoName}
+                      name={p.name}
+                    />
+                  </a>
+                ) : (
+                  // <PlaceMedia image={p.image}  name={p.name} />
+                  <PlaceMedia
+                    image={p.image}
+                    googlePhotoName={p.googlePhotoName}
+                    name={p.name}
+                  />
+                )}
+
+                <div className="p-2.5 flex flex-col gap-1 flex-1">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <h4 className="text-[12px] font-semibold leading-tight text-slate-100 line-clamp-2">
+                      {p.name}
+                    </h4>
+
+                    {p.rating != null && (
+                      <span className="text-[10px] text-yellow-400 shrink-0">
+                        ★ {p.rating.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
+
+                  {p.description && (
+                    <p className="text-[10.5px] text-slate-400 line-clamp-2">
+                      {p.description}
+                    </p>
+                  )}
+
+                  {p.address && (
+                    <p className="text-[10px] text-slate-500 line-clamp-1 mt-auto pt-1">
+                      {p.address}
+                    </p>
+                  )}
+
+                  <PlaceInfoTabs place={p} />
+
+                  {/* {p.wikiUrl && (
+                    <a
+                      href={p.wikiUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[10px] text-teal-400 hover:underline"
+                    >
+                      {p.wikiSearchFallback ? "Search Wikipedia →" : "Read history on Wikipedia →"}
+                    </a>
+                  )} */}
+
+                <div className="mt-2 flex flex-wrap gap-3 text-[10px]">
+  {p.mapsUrl ? (
+    <a
+      href={p.mapsUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-teal-400 hover:underline"
+    >
+      📍 View Map
+    </a>
+  ) : p.address ? (
+    <a
+      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        p.address
+      )}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-teal-400 hover:underline"
+    >
+      📍 View Map
+    </a>
+  ) : null}
+
+  {p.wikiUrl ? (
+    <a
+      href={p.wikiUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-teal-400 hover:underline"
+    >
+      📖 Read on Wikipedia →
+    </a>
+  ) : (
+    <a
+      href={`https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(
+        p.name
+      )}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-teal-400 hover:underline"
+    >
+      📖 Search Wikipedia →
+    </a>
+  )}
+
+  {p.website && (
+    <a
+      href={p.website}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-teal-400 hover:underline"
+    >
+      🌐 Website
+    </a>
+  )}
+</div>
+
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <p className="text-sm text-slate-200 pt-2 border-t border-slate-800">
+        {data.followUp ??
+          `How many days are you planning to spend in ${data.location}? I can put together the best itinerary for you.`}
+      </p>
+    </div>
+  );
+}//added new code upto this line 177
 
 function PlaceCard({ lines }: { lines: string[] }) {
   const [tab, setTab] = useState<"overview" | "info" | "accessibility" | "paymentOptions" | "parkingOptions" | "dining">("overview");
@@ -845,8 +1136,13 @@ export const AIChat: React.FC = () => {
                         </button>
                       )}
 
+                    
                       {/* Message Content */}
-                      {!isUser && renderStructuredMessage(msg.text)}
+{!isUser && msg.nearbyResult ? (
+  <NearbyDiscovery data={msg.nearbyResult} />
+) : !isUser ? (
+  renderStructuredMessage(msg.text)
+) : null}
                       {isUser && (
                         <p className="text-xs sm:text-sm whitespace-pre-line font-medium leading-relaxed">
                           {msg.text}

@@ -336,12 +336,17 @@ def nearby_node(state):
     text = answer.get("answer") if isinstance(answer, dict) else answer
     source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
     data = answer.get("data", []) if isinstance(answer, dict) else []
+    # Discovery queries return a structured payload used by the frontend to
+    # render image cards. Keep it in graph state instead of reducing it to
+    # the summary text above.
+    nearby_result = answer.get("nearbyResult") if isinstance(answer, dict) else None
 
     return {
         "responses": [
             f"Nearby Places to visit:\n{text}\n[SOURCE:{source}]"
         ],
-        "nearby_data": data
+        "nearby_data": data,
+        "nearbyResult": nearby_result,
     }
 
 
@@ -696,7 +701,6 @@ builder.add_edge(
 
 
 def merge_router(state):
-    g_state = get_guided_state()
     routes = state.get("routes", [])
     if "calendar" in routes or "calendar_preview" in routes:
         return "calendar_preview"

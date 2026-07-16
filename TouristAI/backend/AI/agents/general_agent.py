@@ -16,7 +16,7 @@ from urllib.parse import urljoin, quote
 
 
 
-def get_image_from_website(url, max_images=20):
+def get_image_from_website(url, max_images=1):
     """
     Returns up to max_images image URLs from a website.
     """
@@ -242,7 +242,7 @@ def search_google_places(question: str, city: str, budget: str, travelers: int) 
 
     payload = {
         "textQuery": query,
-        "maxResultCount": 10
+        "maxResultCount": 5
     }
 
     headers = {
@@ -317,7 +317,7 @@ def search_google_places(question: str, city: str, budget: str, travelers: int) 
             if website:
                 photo_urls = get_image_from_website(
                     website,
-                    max_images=20
+                    max_images=1
                 )
 
             item_lines = []

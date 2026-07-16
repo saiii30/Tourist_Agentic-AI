@@ -2,13 +2,17 @@ import os
 import json
 import urllib.request
 import urllib.parse
+
 from rag_service import client
 import urllib.error
 import base64
+import re
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, quote
 from dotenv import load_dotenv
+from agents.discover_places_agent import discover_places, is_discover_query
+
 
 # Load environment variables from possible locations to ensure API keys are populated
 for env_path in [
@@ -20,9 +24,13 @@ for env_path in [
     if os.path.exists(env_path):
         load_dotenv(env_path)
 
+        
 
 
-def get_image_from_website(url, max_images=20):
+   
+
+
+def get_image_from_website(url, max_images=1):
     """
     Returns up to max_images image URLs from a website.
     """
@@ -206,7 +214,7 @@ def get_places_from_google(city: str, interests: str) -> str | None:
             lines = []
             places_data = []
 
-            for i, place in enumerate(data["places"][:10], 1):
+            for i, place in enumerate(data["places"][:5], 1):
                 attraction_id = place.get("id", f"mock-attraction-{i}")
                 name = place.get("displayName", {}).get("text", "N/A")
                 rating = place.get("rating", "N/A")
@@ -324,43 +332,207 @@ def get_places_from_google(city: str, interests: str) -> str | None:
         print("Error:", str(e))
         return None
 
+# def nearby_agent(question, city="None", interests="None"):
+    
+#     if city == "None":
+#         return {"message": "I need to know which city you are visiting to suggest nearby places."}
+
+#     is_trip_plan = any(kw in question.lower() for kw in ["plan a", "trip", "itinerary", "vacation", "holiday"])
+
+#     # 1. Check RAG cache
+#     if not is_trip_plan:
+#         try:
+#             from rag_service import get_answer
+#             rag_result = get_answer(question, check_rag_only=True)
+#             if rag_result:
+#                 print("[INFO] Found nearby place recommendations from RAG (FAISS DB).")
+#                 return rag_result
+#         except Exception as e:
+#             print(f"[WARNING] Error checking RAG for nearby places: {e}")
+
+
+#     # 2. If  fails, try the Google Places API
+#     print("[WARNING] Foursquare failed. Checking Google Places API for nearby places.")
+#     google_results = get_places_from_google(city, interests)
+#     if google_results:
+#         print("[INFO] Found results from Google Places.")
+#         # Save the successful Google response to RAG for future queries
+#         try:
+#             from rag_service import save_to_rag
+#             save_to_rag(question, google_results["text"])
+#             print("[INFO] Saved Google Places response to RAG.")
+#         except Exception as e:
+#             print(f"[WARNING] Could not save Google response to RAG: {e}")
+#         return {"source": "google_places", "answer": google_results["text"], "data": google_results["data"]}
+
+#     # 4. Final fallback to Groq LLM
+#     print("[WARNING] All place APIs failed. Falling back to Groq LLM.")
+#     try:
+#         from rag_service import get_answer
+#         return get_answer(question)
+#     except Exception as e:
+#         print(f"[ERROR] Final fallback to Groq failed: {e}")
+#         return {"message": f"Sorry, I'm having trouble finding sightseeing suggestions for {city} right now."}
+
+
+
 def nearby_agent(question, city="None", interests="None"):
+
+    print("\n===================================")
+    print("NEARBY AGENT CALLED")
+
+    question = re.sub(r"\s+", " ", (question or "")).strip()
+
+    print("QUESTION:", question)
+    print("CITY:", city)
+    print("===================================")
+
+    # ---------------------------------
+    # CHATGPT STYLE DISCOVERY MODE
+    # ---------------------------------
+    discover_mode = is_discover_query(question)
+
+    print("DISCOVER QUERY:", discover_mode)
+
+    if discover_mode:
+        print("[DISCOVER] Running Discover Places Agent")
+
+        result = discover_places(question)
+
+        print(
+            "[DISCOVER] Categories Found:",
+            len(result.get("categories", []))
+        )
+
+        cats = ", ".join(
+            c.get("label", "")
+            for c in result.get("categories", [])
+        )
+
+        answer_text = (
+            f"Here are the top places to explore in "
+            f"{result.get('location','this destination')} "
+            f"across {cats}."
+        )
+
+        return {
+            "source": "discover",
+            "answer": answer_text,
+            "nearbyResult": result
+        }
+
+    # ---------------------------------
+    # EXISTING FLOW
+    # ---------------------------------
+
     if city == "None":
-        return {"message": "I need to know which city you are visiting to suggest nearby places."}
+        return {
+            "message":
+            "I need to know which city you are visiting to suggest nearby places."
+        }
 
-    is_trip_plan = any(kw in question.lower() for kw in ["plan a", "trip", "itinerary", "vacation", "holiday"])
+    is_trip_plan = any(
+        kw in question.lower()
+        for kw in [
+            "plan a",
+            "trip",
+            "itinerary",
+            "vacation",
+            "holiday"
+        ]
+    )
 
-    # 1. Check RAG cache
+    # ---------------------------------
+    # RAG CACHE
+    # Skip RAG for discover queries
+    # ---------------------------------
     if not is_trip_plan:
+
         try:
             from rag_service import get_answer
-            rag_result = get_answer(question, check_rag_only=True)
+
+            rag_result = get_answer(
+                question,
+                check_rag_only=True
+            )
+
             if rag_result:
-                print("[INFO] Found nearby place recommendations from RAG (FAISS DB).")
+                print(
+                    "[INFO] Found nearby place recommendations from RAG."
+                )
                 return rag_result
+
         except Exception as e:
-            print(f"[WARNING] Error checking RAG for nearby places: {e}")
+            print(
+                f"[WARNING] Error checking RAG: {e}"
+            )
 
+    # ---------------------------------
+    # GOOGLE PLACES
+    # ---------------------------------
 
-    # 2. If  fails, try the Google Places API
-    print("[WARNING] Foursquare failed. Checking Google Places API for nearby places.")
-    google_results = get_places_from_google(city, interests)
+    print(
+        "[WARNING] Foursquare failed. "
+        "Checking Google Places API..."
+    )
+
+    google_results = get_places_from_google(
+        city,
+        interests
+    )
+
     if google_results:
-        print("[INFO] Found results from Google Places.")
-        # Save the successful Google response to RAG for future queries
+
+        print(
+            "[INFO] Found results from Google Places."
+        )
+
         try:
             from rag_service import save_to_rag
-            save_to_rag(question, google_results["text"])
-            print("[INFO] Saved Google Places response to RAG.")
-        except Exception as e:
-            print(f"[WARNING] Could not save Google response to RAG: {e}")
-        return {"source": "google_places", "answer": google_results["text"], "data": google_results["data"]}
 
-    # 4. Final fallback to Groq LLM
-    print("[WARNING] All place APIs failed. Falling back to Groq LLM.")
+            save_to_rag(
+                question,
+                google_results["text"]
+            )
+
+            print(
+                "[INFO] Saved Google Places response to RAG."
+            )
+
+        except Exception as e:
+
+            print(
+                f"[WARNING] Could not save Google response: {e}"
+            )
+
+        return {
+            "source": "google_places",
+            "answer": google_results["text"],
+            "data": google_results["data"]
+        }
+
+    # ---------------------------------
+    # FINAL LLM FALLBACK
+    # ---------------------------------
+
+    print(
+        "[WARNING] All APIs failed. "
+        "Falling back to LLM."
+    )
+
     try:
+
         from rag_service import get_answer
+
         return get_answer(question)
+
     except Exception as e:
-        print(f"[ERROR] Final fallback to Groq failed: {e}")
-        return {"message": f"Sorry, I'm having trouble finding sightseeing suggestions for {city} right now."}
+
+        print(
+            f"[ERROR] Final fallback failed: {e}"
+        )
+
+        return {
+            "message":
+            f"Sorry, I'm having trouble finding sightseeing suggestions for {city} right now."
+        }

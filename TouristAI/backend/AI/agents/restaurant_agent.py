@@ -20,7 +20,7 @@ for env_path in [
         load_dotenv(env_path)
 
 
-def get_image_from_website(url, max_images=20):
+def get_image_from_website(url, max_images=1):
     """
     Returns up to max_images image URLs from a website.
     """
@@ -200,7 +200,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
 
     payload = {
         "textQuery": query,
-        "maxResultCount": 10
+        "maxResultCount": 5
     }
 
     headers = {
@@ -232,7 +232,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
         lines = []
         rests_data = []
 
-        for i, place in enumerate(data["places"][:10], 1):
+        for i, place in enumerate(data["places"][:5], 1):
             rest_id = place.get("id", f"mock-rest-{i}")
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
@@ -249,7 +249,7 @@ def get_restaurants_from_google(question: str, city: str, budget: str, interests
 
             if website:
                 print(f"Getting images from: {website}")
-                photo_urls = get_image_from_website(website, max_images=20)
+                photo_urls = get_image_from_website(website, max_images=1)
                 print("Images:", photo_urls)
 
             item_lines = [f"**{name}**"]
