@@ -62,3 +62,23 @@ class AgentState(TypedDict):
     include_hotel: str
     include_transport: str
     shopping_budget: str
+    checkin: str
+    checkout: str
+    guests: int
+    rooms: int
+    breakfast: str
+    hotel_type: str
+    amenities: str
+    budget_per_person: str
+    diet: str
+    cuisine: str
+    meal_time: str
+    family_friendly: str
+    outdoor_seating: str
+    allergies: str
+    max_distance: str
+    price_preference: str
+    traveler_type: str
+    include_hotel: str
+    include_transport: str
+    shopping_budget: str
