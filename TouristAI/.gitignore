@@ -33,3 +33,11 @@ pytest_cache/
 
 # Database
 *.db
+
+# Environment files
+.env
+**/.env
+
+# Google OAuth secrets
+backend/AI/client_secret.json
+backend/client_secret.json
