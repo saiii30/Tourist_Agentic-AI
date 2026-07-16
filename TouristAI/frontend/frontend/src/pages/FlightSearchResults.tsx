@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Plane, Clock, Info, ExternalLink, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Plane, Clock, ExternalLink, ShieldAlert } from "lucide-react";
 import axios from "axios";
 
 interface FlightItem {

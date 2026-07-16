@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Train, MapPin, Clock, AlertTriangle, Calendar } from "lucide-react";
+import { ArrowLeft, Train, MapPin, Clock, AlertTriangle } from "lucide-react";
 import { railradarApi } from "../api/railradarApi";
 
 interface Stop {

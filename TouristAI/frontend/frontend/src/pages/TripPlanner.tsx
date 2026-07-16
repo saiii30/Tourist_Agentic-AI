@@ -65,8 +65,7 @@ const refreshRealtimeNotifications = (items: Notification[], nowMs = Date.now())
   });
 };
 
-type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Map" | "Budget" | "Notes" | "Smart Assistant";
-type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Attractions" | "Map" | "Budget" | "Notes";
+type PlannerTab = "Overview" | "Itinerary" | "Hotels" | "Restaurants" | "Attractions" | "Map" | "Budget" | "Notes" | "Smart Assistant";
 
 export const TripPlanner: React.FC = () => {
   const location = useLocation();

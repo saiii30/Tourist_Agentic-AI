@@ -771,7 +771,7 @@ export const TravelPlannerProvider: React.FC<{ children: React.ReactNode }> = ({
               iconName: "sparkles"
             }
           ],
-          notifications: tripData.notifications || []
+          notifications: tripData.notifications || [],
           discoveredPlaces
         };
       }

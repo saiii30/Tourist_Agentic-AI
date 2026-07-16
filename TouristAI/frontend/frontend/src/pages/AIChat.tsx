@@ -1,12 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronLeft, ChevronRight, ChevronDown, Volume2, VolumeX, Edit3, Save, Eye, Coffee, Clock, Moon } from "lucide-react";
+import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Loader, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronDown, Volume2, VolumeX, Edit3, Save, Eye, Coffee, Clock, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Swiper, SwiperSlide } from "swiper/react";
-import { Navigation, Pagination } from "swiper/modules";
-import "swiper/css";
-import "swiper/css/navigation";
-import "swiper/css/pagination";
 import { useTravelPlanner } from "../context/TravelPlannerContext";
 import type { TripDetails } from "../context/TravelPlannerContext";
 import { ImageOff } from "lucide-react";
