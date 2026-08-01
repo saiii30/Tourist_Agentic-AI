@@ -14,20 +14,41 @@ DB_NAME = os.getenv("DB_NAME", "tourist_ai")
 if os.environ.get("TOURIST_AI_TESTING") == "1":
     DB_NAME = "tourist_ai_test"
 
+import threading
+
+_thread_local = threading.local()
+
+class PooledConnWrapper:
+    def __init__(self, real_conn):
+        self._real = real_conn
+
+    def close(self):
+        # Keep underlying TCP socket open for thread execution
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
 class PostgresDatabase:
     @staticmethod
     def get_connection():
         """
-        Returns a PostgreSQL connection with DictCursor configured by default.
+        Returns a thread-local PostgreSQL connection wrapper to avoid 76+ TCP connection handshakes per request.
         """
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            port=DB_PORT,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            dbname=DB_NAME
-        )
-        return conn
+        raw_conn = getattr(_thread_local, "raw_conn", None)
+        if raw_conn is None or getattr(raw_conn, "closed", 1) != 0:
+            raw_conn = psycopg2.connect(
+                host=DB_HOST,
+                port=DB_PORT,
+                user=DB_USER,
+                password=DB_PASSWORD,
+                dbname=DB_NAME
+            )
+            raw_conn.autocommit = True
+            _thread_local.raw_conn = raw_conn
+            _thread_local.wrapper = PooledConnWrapper(raw_conn)
+            
+        return _thread_local.wrapper
 
     @staticmethod
     def initialize() -> None:
@@ -84,6 +105,7 @@ class PostgresDatabase:
                 interests TEXT,
                 status TEXT,
                 travel_date TEXT,
+                current_location TEXT,
                 created_at TEXT,
                 updated_at TEXT
             )
@@ -91,6 +113,7 @@ class PostgresDatabase:
 
         # Alter table upgrades (safely handles existing tables prior to travel_date column)
         cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS travel_date TEXT")
+        cursor.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS current_location TEXT")
 
         # 3. Itinerary table (stored as structured records)
         cursor.execute("""
@@ -126,6 +149,7 @@ class PostgresDatabase:
         cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS transport TEXT")
         cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS estimated_cost REAL")
         cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS status TEXT")
+        cursor.execute("ALTER TABLE itineraries ADD COLUMN IF NOT EXISTS distance TEXT")
 
 
         # 4. Trip Details metadata table

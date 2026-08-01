@@ -218,7 +218,7 @@ def get_restaurants_from_google(
 
     payload = {
         "textQuery": query,
-        "maxResultCount": 5
+        "maxResultCount": 10
     }
 
     headers = {
@@ -244,7 +244,7 @@ def get_restaurants_from_google(
         lines = []
         rests_data = []
 
-        for i, place in enumerate(data["places"][:5], 1):
+        for i, place in enumerate(data["places"][:10], 1):
             rest_id = place.get("id", f"mock-rest-{i}")
             name = place.get("displayName", {}).get("text", "N/A")
             rating = place.get("rating", "N/A")
@@ -252,6 +252,8 @@ def get_restaurants_from_google(
             address = place.get("formattedAddress", "Address not available")
             price = place.get("priceLevel", "N/A")
             website = place.get("websiteUri", "Not available")
+            photos = place.get("photos", [])
+            google_photo_name = photos[0].get("name") if photos else None
             photo_urls = []
 
             # Get coordinates
@@ -367,13 +369,27 @@ def get_restaurants_from_google(
                 "reviews": reviews,
                 "address": address,
                 "website": website,
+                "mapsUrl": place.get("googleMapsUri"),
+                "phone": place.get("nationalPhoneNumber") or place.get("internationalPhoneNumber"),
                 "latitude": lat,
                 "longitude": lng,
                 "price": price,
+                "googlePhotoName": google_photo_name,
+                "photos": photo_urls,
                 "serves_breakfast": bool(place.get("servesBreakfast")),
                 "serves_lunch": bool(place.get("servesLunch")),
                 "serves_dinner": bool(place.get("servesDinner")),
                 "serves_vegetarian": bool(place.get("servesVegetarianFood")),
+                "takeout": bool(place.get("takeout")),
+                "delivery": bool(place.get("delivery")),
+                "dineIn": bool(place.get("dineIn")),
+                "goodForChildren": bool(place.get("goodForChildren")),
+                "goodForGroups": bool(place.get("goodForGroups")),
+                "allowsDogs": bool(place.get("allowsDogs")),
+                "accessibility": place.get("accessibilityOptions", {}),
+                "parking": place.get("parkingOptions", {}),
+                "payment": place.get("paymentOptions", {}),
+                "summary": editorial,
                 "hours": hours
             })
 
@@ -425,24 +441,18 @@ def restaurant_agent(
 
     is_trip_plan = any(kw in question.lower() for kw in ["plan a", "trip", "itinerary", "vacation", "holiday"])
 
-    # 1. First, try to get a cached answer from the RAG service (FAISS DB only)
-    if not is_trip_plan:
-        try:
-            from rag_service import get_answer
-            rag_result = get_answer(question, check_rag_only=True)
-            if rag_result:
-                print("[INFO] Found restaurant recommendations from RAG (FAISS DB).")
-                return rag_result
-        except Exception as e:
-            print(f"[WARNING] Error checking RAG for restaurants: {e}")
+    q_lower = (question or "").lower()
+    d_lower = (diet or "").lower()
+    is_non_veg = any(kw in q_lower or kw in d_lower for kw in ["non-veg", "non veg", "nonveg", "meat", "chicken", "mutton", "seafood", "fish"])
+    is_pure_veg = not is_non_veg and any(kw in q_lower or kw in d_lower for kw in ["pure veg", "vegetarian", "veg", "swami"])
 
-    # 2. If RAG is empty, try the Google Places API
-    print("[INFO] No results in RAG. Checking Google Places API for restaurants.")
+    # Use Google Places API as the primary restaurant source.
+    print("[INFO] Checking Google Places API for restaurants.")
     google_results = get_restaurants_from_google(
         question=question,
         city=city,
         budget=budget,
-        cuisine=cuisine or interests, # Use interests as a fallback for cuisine
+        cuisine=cuisine or interests,
         diet=diet,
         meal_time=meal_time,
         family_friendly=family_friendly,
@@ -450,20 +460,100 @@ def restaurant_agent(
         allergies=allergies
     )
     if google_results:
-        # Save the successful Google response to RAG for future queries
-        try:
-            from rag_service import save_to_rag
-            save_to_rag(question, google_results["text"])
-            print("[INFO] Saved Google Places response to RAG.")
-        except Exception as e:
-            print(f"[WARNING] Could not save Google response to RAG: {e}")
         return {"source": "google_places", "answer": google_results["text"], "data": google_results["data"]}
 
-    # 3. As a final fallback, call the RAG service again, which will now use the Groq LLM
-    print("[WARNING] Google Places API also failed. Falling back to Groq LLM.")
     try:
-        from rag_service import get_answer
-        return get_answer(question)
+        from services.trip_service import get_structured_restaurants
+        llm_restaurants = get_structured_restaurants(city, budget or "Moderate")
+        if llm_restaurants:
+            return {
+                "source": "llm_fallback",
+                "answer": f"Recommended restaurants in {city} generated after Google Places was unavailable.",
+                "data": llm_restaurants,
+            }
     except Exception as e:
-        print(f"[ERROR] Final fallback to Groq failed: {e}")
-        return {"message": f"Sorry, I'm having trouble finding restaurant recommendations for {city} right now."}
+        print(f"[WARNING] LLM restaurant fallback failed: {e}")
+
+    # Fallback default structured restaurants for city categorized by Veg / Non-Veg
+    if is_pure_veg:
+        fallback_rests = [
+            {
+                "id": f"fallback-veg-1-{city}",
+                "name": f"Sree Sabarees Pure Veg {city}",
+                "rating": 4.8,
+                "reviews": 3200,
+                "address": f"Town Hall Rd, {city}",
+                "diet": "[Pure Veg]",
+                "cuisine": "[Pure Veg] · South Indian Tiffin & Thali",
+                "latitude": 9.9180,
+                "longitude": 78.1170,
+                "price_range": "₹150 - ₹400"
+            },
+            {
+                "id": f"fallback-veg-2-{city}",
+                "name": f"Murugan Idli Shop (100% Veg)",
+                "rating": 4.7,
+                "reviews": 4500,
+                "address": f"West Masi Street, {city}",
+                "diet": "[Pure Veg]",
+                "cuisine": "[Pure Veg] · Soft Idlis & Dosa Delights",
+                "latitude": 9.9175,
+                "longitude": 78.1165,
+                "price_range": "₹100 - ₹300"
+            }
+        ]
+    elif is_non_veg:
+        fallback_rests = [
+            {
+                "id": f"fallback-nonveg-1-{city}",
+                "name": f"Amma Mess (Authentic Non-Veg)",
+                "rating": 4.7,
+                "reviews": 2800,
+                "address": f"Alagar Kovil Main Rd, {city}",
+                "diet": "[Non-Veg]",
+                "cuisine": "[Non-Veg] · Chettinad Mutton & Fish Fry",
+                "latitude": 9.9380,
+                "longitude": 78.1350,
+                "price_range": "₹300 - ₹800"
+            },
+            {
+                "id": f"fallback-nonveg-2-{city}",
+                "name": f"Simmakkal Konar Mess",
+                "rating": 4.6,
+                "reviews": 2100,
+                "address": f"Simmakkal, {city}",
+                "diet": "[Non-Veg]",
+                "cuisine": "[Non-Veg] · Kari Dosa & Local Meat Dishes",
+                "latitude": 9.9240,
+                "longitude": 78.1210,
+                "price_range": "₹250 - ₹700"
+            }
+        ]
+    else:
+        fallback_rests = [
+            {
+                "id": f"fallback-rest-1-{city}",
+                "name": f"Sree Sabarees Pure Veg {city}",
+                "rating": 4.8,
+                "reviews": 3200,
+                "address": f"Town Hall Rd, {city}",
+                "diet": "[Pure Veg]",
+                "cuisine": "[Pure Veg] · South Indian Tiffin",
+                "latitude": 9.9180,
+                "longitude": 78.1170,
+                "price_range": "₹150 - ₹400"
+            },
+            {
+                "id": f"fallback-rest-2-{city}",
+                "name": f"Amma Mess (Famous Non-Veg)",
+                "rating": 4.7,
+                "reviews": 2800,
+                "address": f"Alagar Kovil Main Rd, {city}",
+                "diet": "[Non-Veg]",
+                "cuisine": "[Non-Veg] · Chettinad Mutton & Fish Curry",
+                "latitude": 9.9380,
+                "longitude": 78.1350,
+                "price_range": "₹300 - ₹800"
+            }
+        ]
+    return {"source": "fallback", "answer": f"Recommended restaurants in {city}", "data": fallback_rests}

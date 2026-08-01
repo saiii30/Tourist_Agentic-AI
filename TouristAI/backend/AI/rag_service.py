@@ -1,6 +1,5 @@
 import os
 from groq import Groq
-from langchain_community.vectorstores import FAISS
 import rag.vectore_store as vector_store
 from dotenv import load_dotenv
 
@@ -18,14 +17,7 @@ def load_db():
     """
     Load FAISS database if it exists.
     """
-    if os.path.exists(vector_store.DB_PATH):
-        return FAISS.load_local(
-            vector_store.DB_PATH,
-            vector_store.embeddings,
-            allow_dangerous_deserialization=True
-        )
-
-    return None
+    return vector_store.get_db()
 
 
 def search_data(question):
@@ -78,11 +70,20 @@ def search_data(question):
 def save_to_rag(question, answer):
 
     with db_lock:
+        embeddings = vector_store.get_embeddings()
+        if embeddings is None:
+            print("[INFO] RAG save skipped because embeddings are unavailable.")
+            return False
+        try:
+            from langchain_community.vectorstores import FAISS
+        except Exception as e:
+            print(f"[INFO] RAG save skipped because FAISS is unavailable: {e}")
+            return False
 
         if vector_store.db is None:
             vector_store.db = FAISS.from_texts(
                 [question],
-                vector_store.embeddings,
+                embeddings,
                 metadatas=[{"answer": answer}]
             )
         else:
@@ -96,6 +97,7 @@ def save_to_rag(question, answer):
         )
 
         print("Saved to RAG")
+        return True
 
 
 def call_groq(question):
@@ -138,7 +140,10 @@ def get_answer(question, check_rag_only=False):
     answer = call_groq(question)
 
     if answer:
-        save_to_rag(question, answer)
+        try:
+            save_to_rag(question, answer)
+        except Exception as e:
+            print(f"[WARNING] Could not save Groq answer to RAG: {e}")
 
     return {
         "answer": answer,

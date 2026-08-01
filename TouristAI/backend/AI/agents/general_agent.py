@@ -143,9 +143,27 @@ def general_agent(state):
 
 
     # ------------------------------------
-    # 1. Check RAG
+    # 1. Check RAG Knowledge Base
     # ------------------------------------
-    print("Checking RAG...")
+    print("Checking RAG Knowledge Service...")
+    try:
+        from rag.service import rag_service
+        r_out = rag_service.query_rag(question, agent_name="GeneralAgent", city=city if city != "None" else "Madurai")
+        if r_out.get("coverage_status") == "not_indexed":
+            print(f"[LOG][GENERAL_AGENT] RAG skipped: {r_out.get('coverage_message')}")
+            r_out = {}
+        if r_out.get("has_knowledge") and r_out.get("context_text"):
+            rag_answer = r_out.get("answer_text") or r_out["context_text"]
+            cites = r_out.get("citations", [])
+            cite_str = ""
+            if cites:
+                cite_str = "\n\n**Verified RAG Sources**:\n" + "\n".join([f"- [{c['source_name']}]({c['source_url']}) ({c['trust_score']})" for c in cites])
+            return {
+                "source": "RAG Knowledge Service",
+                "answer": f"{rag_answer}{cite_str}"
+            }
+    except Exception as e:
+        print(f"[WARNING] RAG Knowledge Service error in general_agent: {e}")
 
     rag_result = get_answer(
         question,
@@ -187,7 +205,7 @@ def general_agent(state):
 
     return groq_result
 
-def search_google_places(question: str, city: str, budget: str, travelers: int) -> str | None:
+def search_google_places(question: str, city: str = "Madurai", budget: str = "Moderate", travelers: int = 1) -> str | None:
     import os
     import json
     import urllib.request

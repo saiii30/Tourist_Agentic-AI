@@ -1,0 +1,44 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global resets and smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
+body {
+  @apply bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 antialiased;
+}
+/* Premium input styling */
+.input-primary {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid hsla(0, 0%, 0%, 0.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  font-size: 1rem;
+  color: #111;
+  backdrop-filter: blur(4px);
+  transition: all 0.2s ease;
+}
+.input-primary:focus {
+  outline: none;
+  border-color: hsl(210, 70%, 50%);
+  box-shadow: 0 0 0 3px hsla(210, 70%, 50%, 0.2);
+}
+/* Premium button styling */
+button {
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, hsl(210, 70%, 55%), hsl(210, 60%, 45%));
+  color: white;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  transition: transform 0.1s ease, box-shadow 0.2s ease;
+}
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.16);
+}

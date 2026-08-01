@@ -1,0 +1,148 @@
+{
+  "sources": [
+    {
+      "enabled": true,
+      "name": "Tamil Nadu Tourism - Meenakshi Amman Temple",
+      "url": "https://tamilnadutourism.tn.gov.in/attractions/meenakshi-amman-temple",
+      "destination": "Meenakshi Amman Temple",
+      "city": "Madurai",
+      "category": "Heritage & Temple Customs",
+      "knowledge_type": "temple_information",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Tamil Nadu Tourism - Thirumalai Nayakkar Mahal",
+      "url": "https://tamilnadutourism.tn.gov.in/attractions/thirumalai-nayakar-mahal",
+      "destination": "Thirumalai Nayakkar Palace",
+      "city": "Madurai",
+      "category": "Heritage & Culture",
+      "knowledge_type": "history",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Madurai District Administration - Tourist Places",
+      "url": "https://madurai.nic.in/tourist-places/",
+      "destination": "Madurai Tourist Places",
+      "city": "Madurai",
+      "category": "Official Government Tourism",
+      "knowledge_type": "destination_guide",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Archaeological Survey of India - Tamil Nadu Monuments",
+      "url": "https://asi.nic.in/alphabetical-list-of-monuments-tamil-nadu/",
+      "destination": "Tamil Nadu Heritage Monuments",
+      "city": "Tamil Nadu",
+      "category": "Archaeological Heritage",
+      "knowledge_type": "history",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Incredible India - Tamil Nadu",
+      "url": "https://www.incredibleindia.gov.in/en/tamil-nadu",
+      "destination": "Tamil Nadu",
+      "city": "Tamil Nadu",
+      "category": "Official Tourism Overview",
+      "knowledge_type": "state_tourism_documents",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Incredible India - Delhi",
+      "url": "https://www.incredibleindia.gov.in/en/delhi",
+      "destination": "Delhi",
+      "city": "Delhi",
+      "category": "Official Tourism Overview",
+      "knowledge_type": "destination_guide",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Incredible India - Uttar Pradesh",
+      "url": "https://www.incredibleindia.gov.in/en/uttar-pradesh",
+      "destination": "Uttar Pradesh",
+      "city": "Uttar Pradesh",
+      "category": "Official Tourism Overview",
+      "knowledge_type": "state_tourism_documents",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Incredible India - Rajasthan",
+      "url": "https://www.incredibleindia.gov.in/en/rajasthan",
+      "destination": "Rajasthan",
+      "city": "Rajasthan",
+      "category": "Official Tourism Overview",
+      "knowledge_type": "state_tourism_documents",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Kanniyakumari District Administration - Tourist Spot Index",
+      "url": "https://kanniyakumari.nic.in/ts/",
+      "destination": "Kanniyakumari Tourist Spots",
+      "city": "Kanniyakumari",
+      "category": "Official District Tourism",
+      "knowledge_type": "destination_guide",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Nilgiris District Administration - Ooty Lake",
+      "url": "https://nilgiris.nic.in/tourist-place/ooty-lake/",
+      "destination": "Ooty Lake and Boat House",
+      "city": "Ooty",
+      "category": "Official District Tourism",
+      "knowledge_type": "destination_guide",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": true,
+      "name": "Dindigul District Administration - Kodaikanal",
+      "url": "https://dindigul.nic.in/tourist-place/kodaikanal/",
+      "destination": "Kodaikanal",
+      "city": "Kodaikanal",
+      "category": "Official District Tourism",
+      "knowledge_type": "destination_guide",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": false,
+      "name": "Add More Official Tourism Website",
+      "url": "https://example.com/official-tourism-page",
+      "destination": "Destination Name",
+      "city": "City Name",
+      "category": "Official Tourism",
+      "knowledge_type": "destination_guide",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    }
+  ]
+}

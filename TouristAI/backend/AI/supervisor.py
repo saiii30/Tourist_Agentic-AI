@@ -16,6 +16,17 @@ from services.questionnaire_service import (
     get_progress_metadata,
 )
 
+def demo_log(step: str, message: str) -> None:
+    print(f"[LOG][{step}] {message}")
+
+def clean_val(val, default=None):
+    if val is None:
+        return default
+    s = str(val).strip()
+    if s.lower() in {"none", "null", ""}:
+        return default
+    return s
+
 def get_next_missing_field(g_state: dict) -> tuple[Optional[str], Optional[str]]:
     active_agent = g_state.get("active_agent") or "calendar"
     return get_next_missing_agent_field(active_agent, g_state)
@@ -378,16 +389,44 @@ def extract_query_details(question: str) -> dict:
         return {"city": "None", "destination": "None", "travel_date": "None", "days": 3, "requires_city": True}
 
 def extract_all_opening_details(question: str) -> dict:
-    prompt = (
-        "Analyze the following user query and extract travel details: "
-        "{ \"destination\": \"...\", \"travel_date\": \"...\", \"days\": \"...\", \"budget\": \"...\", \"travelers\": \"...\", \"travel_style\": \"...\", \"interests\": \"...\" }\n\n"
-        f"Query: {question}"
-    )
-    try:
-        response = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}], temperature=0.0)
-        return json.loads(response.choices[0].message.content.strip())
-    except Exception:
-        return {"destination": "None", "travel_date": "None", "days": "None", "budget": "None", "travelers": "None", "travel_style": "None", "interests": "None"}
+    from services.questionnaire_service import extract_calendar_fields
+    local_extracted = extract_calendar_fields(question)
+
+    extracted = {
+        "destination": local_extracted.get("destination", "None"),
+        "current_location": local_extracted.get("current_location", "None"),
+        "travel_date": local_extracted.get("travel_date", "None"),
+        "days": local_extracted.get("days", "None"),
+        "budget": local_extracted.get("budget", "None"),
+        "travelers": local_extracted.get("travelers", "None"),
+        "travel_style": local_extracted.get("travel_style", "None"),
+        "travel_mode": local_extracted.get("travel_mode", "None"),
+        "interests": local_extracted.get("interests", "None")
+    }
+
+    # If destination was already extracted via deterministic regex/rules, skip slow LLM call
+    if extracted["destination"] != "None":
+        return extracted
+
+    if client:
+        try:
+            prompt = (
+                "Analyze the following user query and extract travel details: "
+                "{ \"destination\": \"...\", \"current_location\": \"...\", \"travel_date\": \"...\", \"days\": \"...\", \"budget\": \"...\", \"travelers\": \"...\", \"travel_style\": \"...\", \"travel_mode\": \"...\", \"interests\": \"...\" }\n\n"
+                f"Query: {question}"
+            )
+            response = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}], temperature=0.0)
+            content = response.choices[0].message.content.strip()
+            match = re.search(r'\{.*\}', content, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                for k, v in data.items():
+                    if k in extracted and v and str(v).lower() != "none" and extracted[k] == "None":
+                        extracted[k] = str(v)
+        except Exception:
+            pass
+
+    return extracted
 
 def extract_single_field(field_key: str, user_response: str) -> str:
     prompt = f"The user was asked {field_key}. Response: '{user_response}'. Extract the value. Return only the value."
@@ -421,6 +460,10 @@ def complete_agent_questionnaire(agent_name: str):
 def route_question(state, details=None):
     question = state["question"].strip()
     question_lower = question.lower()
+    demo_log(
+        "SUPERVISOR_ROUTE_START",
+        f"question={question!r}, city={state.get('city', 'None')}, destination={state.get('destination', 'None')}, mode={state.get('travel_mode', 'None')}"
+    )
 
     def is_exact_choice(text, keywords, num):
         cleaned = text.strip().strip('.')
@@ -463,26 +506,55 @@ def route_question(state, details=None):
 
     if active_row:
         active_agent = active_row[0]
-        if detected_intent and detected_intent != active_agent and detected_intent in {"weather", "train"}:
-            update_agent_session(active_agent, status="PAUSED")
-            update_guided_state("active_agent", "")
-            return [detected_intent]
-        
         g_state = get_guided_state()
         missing_key, missing_prompt = get_next_missing_agent_field(active_agent, g_state)
+        demo_log("SUPERVISOR_ACTIVE_SESSION", f"agent={active_agent}, missing={missing_key or 'none'}")
+
+        # During the calendar questionnaire, short answers like "Train",
+        # "Bus", "Car", "Flight", "moderate", or "2" are field answers, not
+        # new intents. Handle the pending field before allowing intent
+        # interruption, otherwise the flow stops early and the app falls back
+        # to a generic trip response.
+        can_interrupt_questionnaire = True
+        if active_agent == "calendar" and missing_key in {
+            "travel_mode",
+            "budget",
+            "travelers",
+            "travel_style",
+            "interests",
+            "days",
+            "current_location",
+            "travel_date",
+        }:
+            can_interrupt_questionnaire = False
+
+        if can_interrupt_questionnaire and detected_intent and detected_intent != active_agent and detected_intent in {"weather", "train"}:
+            update_agent_session(active_agent, status="PAUSED")
+            update_guided_state("active_agent", "")
+            demo_log("SUPERVISOR_ROUTE_DECISION", f"paused_agent={active_agent}, interrupt_intent={detected_intent}, routes={[detected_intent]}")
+            return [detected_intent]
+
         if missing_key:
             save_agent_answer(active_agent, missing_key, question)
             g_state = get_guided_state()
             next_key, next_prompt = get_next_missing_agent_field(active_agent, g_state)
             meta = get_progress_metadata(active_agent, g_state)
+            next_key, next_prompt = get_next_missing_agent_field(active_agent, g_state)
+            meta = get_progress_metadata(active_agent, g_state)
             update_agent_session(active_agent, status="ACTIVE", last_question=missing_prompt, next_question=next_prompt or "", completed_count=meta["completed"])
-            if next_key: return ["merge"]
+            if next_key:
+                demo_log("SUPERVISOR_ROUTE_DECISION", f"agent={active_agent}, saved_field={missing_key}, next_field={next_key}, routes=['merge']")
+                return ["merge"]
             complete_agent_questionnaire(active_agent)
-            return [route_for_agent(active_agent)]
+            completed_routes = [route_for_agent(active_agent)]
+            demo_log("SUPERVISOR_ROUTE_DECISION", f"agent={active_agent}, completed=yes, routes={completed_routes}")
+            return completed_routes
 
     elif paused_row:
         paused_agent = paused_row[0]
-        if detected_intent in {"weather", "train"}: return [detected_intent]
+        if detected_intent in {"weather", "train"}:
+            demo_log("SUPERVISOR_ROUTE_DECISION", f"paused_agent={paused_agent}, interrupt_intent={detected_intent}, routes={[detected_intent]}")
+            return [detected_intent]
         update_agent_session(paused_agent, status="ACTIVE")
         update_guided_state("active_agent", paused_agent)
         g_state = get_guided_state()
@@ -493,22 +565,34 @@ def route_question(state, details=None):
             next_key, next_prompt = get_next_missing_agent_field(paused_agent, g_state)
             meta = get_progress_metadata(paused_agent, g_state)
             update_agent_session(paused_agent, status="ACTIVE", last_question=missing_prompt, next_question=next_prompt or "", completed_count=meta["completed"])
-            if next_key: return ["merge"]
+            if next_key:
+                demo_log("SUPERVISOR_ROUTE_DECISION", f"resumed_agent={paused_agent}, saved_field={missing_key}, next_field={next_key}, routes=['merge']")
+                return ["merge"]
             complete_agent_questionnaire(paused_agent)
-            return [route_for_agent(paused_agent)]
+            completed_routes = [route_for_agent(paused_agent)]
+            demo_log("SUPERVISOR_ROUTE_DECISION", f"resumed_agent={paused_agent}, completed=yes, routes={completed_routes}")
+            return completed_routes
 
-    is_start = (any(k in question_lower for k in ["trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"]) or (details and details.get("city") != "None")) and detected_intent not in ["hotel", "restaurant", "weather", "train", "attraction"]
+    is_start = (any(k in question_lower for k in ["trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"]) or (details and details.get("city") != "None")) and detected_intent not in ["hotel", "restaurant", "weather", "attraction"]
     if is_start:
         agent_name = "calendar"
-        start_agent_questionnaire(agent_name, question)
         g_state = get_guided_state()
-        meta = get_progress_metadata(agent_name, g_state)
-        update_agent_session(agent_name, status="ACTIVE", next_question=get_next_missing_agent_field(agent_name, g_state)[1] or "", completed_count=meta["completed"])
-        return ["merge"] if get_next_missing_agent_field(agent_name, g_state)[0] else ["hotel", "restaurant", "nearby", "weather", "calendar"]
+        missing_field, missing_prompt = get_next_missing_agent_field(agent_name, g_state)
+        if missing_field:
+            start_agent_questionnaire(agent_name, question)
+            g_state = get_guided_state()
+            meta = get_progress_metadata(agent_name, g_state)
+            update_agent_session(agent_name, status="ACTIVE", next_question=get_next_missing_agent_field(agent_name, g_state)[1] or "", completed_count=meta["completed"])
+            demo_log("SUPERVISOR_ROUTE_DECISION", f"start_trip=yes, missing_field={missing_field}, routes=['merge']")
+            return ["merge"]
+        else:
+            routes = ["hotel", "restaurant", "nearby", "weather", "transport", "calendar"]
+            demo_log("SUPERVISOR_ROUTE_DECISION", f"start_trip=yes, all_fields_present=yes, routes={routes}")
+            return routes
 
     routes = []
     mk = lambda q, kw: any(k in q for k in kw)
-    if mk(question_lower, ["train", "railway", "rail"]): routes.append("train")
+    if mk(question_lower, ["train", "railway", "rail"]): routes.append("transport")
     if mk(question_lower, ["restaurant", "food", "eat"]): routes.append("restaurant")
     if mk(question_lower, ["hotel", "stay"]): routes.append("hotel")
     if mk(question_lower, ["nearby", "place", "attraction"]) and not routes: routes.append("nearby")
@@ -523,6 +607,9 @@ def route_question(state, details=None):
         g_state = get_guided_state()
         meta = get_progress_metadata(agent_name, g_state)
         update_agent_session(agent_name, status="ACTIVE", next_question=get_next_missing_agent_field(agent_name, g_state)[1] or "", completed_count=meta["completed"])
-        return ["merge"] if get_next_missing_agent_field(agent_name, g_state)[0] else [route_for_agent(agent_name)]
+        final_routes = ["merge"] if get_next_missing_agent_field(agent_name, g_state)[0] else [route_for_agent(agent_name)]
+        demo_log("SUPERVISOR_ROUTE_DECISION", f"single_agent={agent_name}, routes={final_routes}")
+        return final_routes
 
+    demo_log("SUPERVISOR_ROUTE_DECISION", f"detected_intent={detected_intent or 'none'}, routes={routes}")
     return routes

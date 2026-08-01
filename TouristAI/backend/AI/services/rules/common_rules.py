@@ -6,37 +6,53 @@ from rapidfuzz import process, fuzz
 
 POPULAR_CITIES = [
     "Ooty", "Goa", "Madurai", "Chennai", "Bangalore", "Mysore", "Munnar", 
-    "Hampi", "Kochi", "Hyderabad", "Delhi", "Mumbai", "Jaipur", "Agra", 
+    "Hampi", "Kochi", "Cochin", "Hyderabad", "Delhi", "Mumbai", "Jaipur", "Agra", 
     "Udaipur", "Manali", "Shimla", "Dharamshala", "Rishikesh", "Varanasi", 
     "Pondicherry", "Kolkata", "Pune", "Alleppey", "Wayanad", "Coorg", "Kodaikanal"
 ]
 
-def extract_city(text: str) -> Optional[str]:
+CITY_ALIASES = {
+    "cochin": "Kochi",
+}
+
+ACTION_AND_NOISE_WORDS = {
+    "visit", "see", "go", "travel", "explore", "places", "things", "attractions", 
+    "hotel", "hotels", "restaurant", "restaurants", "trip", "atrip", "itinerary", "budget", "with"
+}
+
+def extract_city(text: str, exclude_cities: Optional[list] = None) -> Optional[str]:
     # Normalize text
     text_clean = text.strip()
     words = re.findall(r"\b[a-zA-Z]+\b", text_clean)
+    excluded_set = {c.lower() for c in (exclude_cities or []) if c}
+    excluded_set.update(ACTION_AND_NOISE_WORDS)
     
     # 1. Check for exact case-insensitive matches in popular cities
     for word in words:
+        if word.lower() in excluded_set:
+            continue
         for city in POPULAR_CITIES:
             if word.lower() == city.lower():
-                return city
+                return CITY_ALIASES.get(city.lower(), city)
                 
     # 2. Try fuzzy matching each word against popular cities
     for word in words:
+        if word.lower() in excluded_set:
+            continue
         if len(word) >= 3:
             match = process.extractOne(word, POPULAR_CITIES, scorer=fuzz.WRatio)
-            if match and match[1] >= 85:
-                return match[0]
+            if match and match[1] >= 85 and match[0].lower() not in excluded_set:
+                return CITY_ALIASES.get(match[0].lower(), match[0])
                 
-    # 3. Fallback to pattern matching
+    # 3. Fallback to pattern matching - remove action verb phrases first
+    text_for_pattern = re.sub(r"\b(?:to|and|or)\s+(?:visit|see|go|travel|explore)\b", "", text_clean, flags=re.IGNORECASE)
     pattern = re.compile(r"\b(?:in|at|to|for)\s+([A-Za-z][A-Za-z\s]{1,30})(?=\s|$|,|\.|\?)", re.IGNORECASE)
-    match = pattern.search(text_clean)
+    match = pattern.search(text_for_pattern)
     if match:
         city_candidate = match.group(1).strip()
-        city_candidate = re.sub(r"\b(hotel|hotels|restaurant|restaurants|places|attractions|budget|trip|itinerary|with)\b", "", city_candidate, flags=re.IGNORECASE).strip()
-        if city_candidate and len(city_candidate) >= 3:
-            return city_candidate.title()
+        city_candidate = re.sub(r"\b(hotel|hotels|restaurant|restaurants|places|attractions|budget|trip|itinerary|with|visit|see|go|travel|explore)\b", "", city_candidate, flags=re.IGNORECASE).strip()
+        if city_candidate and len(city_candidate) >= 3 and city_candidate.lower() not in excluded_set:
+            return CITY_ALIASES.get(city_candidate.lower(), city_candidate.title())
             
     return None
 
@@ -47,15 +63,41 @@ def clean_date_text(text: str) -> str:
     text = re.sub(r"\b(?:luxury|moderate|budget|resort|villa|homestay|hotel|breakfast|pool|wifi|spa|pet friendly)\b", "", text, flags=re.IGNORECASE)
     return text.strip()
 
+def fast_parse_date(s: str):
+    if not s or not s.strip():
+        return None
+    st = s.strip()
+    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%m/%d/%Y", "%Y/%m/%d"):
+        try:
+            return datetime.datetime.strptime(st, fmt)
+        except ValueError:
+            pass
+    try:
+        return dateparser.parse(st, languages=['en'], settings={'PREFER_DATES_FROM': 'future'})
+    except Exception:
+        return None
+
 def extract_dates(text: str) -> Tuple[Optional[str], Optional[str]]:
+    date_regex = re.search(r'\b(\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})\b', text)
+    if date_regex:
+        d_str = date_regex.group(1)
+        parsed_d = fast_parse_date(d_str)
+        if parsed_d:
+            return parsed_d.strftime("%Y-%m-%d"), None
+
     text_clean = clean_date_text(text).lower()
+    
+    # Bare numbers should not be parsed as dates
+    if text_clean.isdigit():
+        return None, None
+        
     today = datetime.date.today()
     
-    if text_clean == "today":
-        return today.strftime("%Y-%m-%d"), None
-    elif text_clean == "tomorrow":
+    if "tomorrow" in text_clean:
         tomorrow = today + datetime.timedelta(days=1)
         return tomorrow.strftime("%Y-%m-%d"), None
+    elif "today" in text_clean:
+        return today.strftime("%Y-%m-%d"), None
         
     split_patterns = [r"\bto\b", r"\buntil\b", r"\bthrough\b", r"-"]
     for pattern in split_patterns:
@@ -65,8 +107,8 @@ def extract_dates(text: str) -> Tuple[Optional[str], Optional[str]]:
             part2 = parts[1].strip()
             part1 = re.sub(r"\bfrom\b", "", part1, flags=re.IGNORECASE).strip()
             
-            d1 = dateparser.parse(part1, settings={'PREFER_DATES_FROM': 'future'})
-            d2 = dateparser.parse(part2, settings={'PREFER_DATES_FROM': 'future'})
+            d1 = fast_parse_date(part1)
+            d2 = fast_parse_date(part2)
             
             if d1 and d2:
                 if d1.year < today.year:
@@ -81,7 +123,7 @@ def extract_dates(text: str) -> Tuple[Optional[str], Optional[str]]:
             elif d2:
                 return None, d2.strftime("%Y-%m-%d")
                 
-    d = dateparser.parse(text_clean, settings={'PREFER_DATES_FROM': 'future'})
+    d = fast_parse_date(text_clean)
     if d:
         if d.year < today.year:
             d = d.replace(year=today.year)
@@ -92,21 +134,30 @@ def extract_dates(text: str) -> Tuple[Optional[str], Optional[str]]:
 def extract_budget(text: str) -> Optional[str]:
     lower = text.lower()
     nums = re.findall(r"\b\d+\b", lower.replace(",", ""))
+    
+    budget_keywords = ["budget", "cheap", "low", "affordable", "economy", "pocket friendly", "less expensive", "rs", "inr", "rupees"]
+    moderate_keywords = ["moderate", "medium", "mid", "average", "normal", "decent", "reasonable"]
+    luxury_keywords = ["luxury", "premium", "expensive", "high", "fancy", "5 star", "five star", "best", "top"]
+    
+    has_budget_context = any(w in lower for w in budget_keywords + moderate_keywords + luxury_keywords)
+    
     if nums:
         val = int(nums[0])
+        # Ignore years unless budget context is explicitly present
+        if 2024 <= val <= 2035 and not has_budget_context:
+            return None
+        # Bare small numbers like 1, 2, 3 should not be parsed as budget unless budget context is present.
+        if val < 500 and not has_budget_context:
+            return None
         if val <= 5000:
-            return "Budget"
+            return "Low"
         elif val <= 15000:
             return "Moderate"
         else:
             return "Luxury"
             
-    budget_keywords = ["budget", "cheap", "low", "affordable", "economy", "pocket friendly", "less expensive"]
-    moderate_keywords = ["moderate", "medium", "mid", "average", "normal", "decent", "reasonable"]
-    luxury_keywords = ["luxury", "premium", "expensive", "high", "fancy", "5 star", "five star", "best", "top", "expensive"]
-    
     if any(w in lower for w in budget_keywords):
-        return "Budget"
+        return "Low"
     if any(w in lower for w in moderate_keywords):
         return "Moderate"
     if any(w in lower for w in luxury_keywords):

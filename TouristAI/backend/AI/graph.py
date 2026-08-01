@@ -10,6 +10,8 @@ from supervisor import (
     get_active_agent_question,
     get_agent_context,
     update_guided_state,
+    clean_val,
+    route_for_agent,
 )
 
 from agents.restaurant_agent import restaurant_agent
@@ -21,6 +23,7 @@ from agents.calendar_agent import calendar_agent
 from agents.transport_agent import transport_agent
 from agents.voice_notification_agent import generate_voice_notifications
 from agents.budget_agent import budget_agent
+from agents.crowd_agent import crowd_agent
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "graph"))
@@ -39,27 +42,60 @@ from rag_service import client
 builder = StateGraph(AgentState)
 
 
+def demo_log(step: str, message: str) -> None:
+    print(f"[LOG][{step}] {message}")
+
+
+def demo_names(items, name_key: str = "name", limit: int = 3) -> str:
+    if not items:
+        return "none"
+    names = []
+    for item in items[:limit]:
+        if isinstance(item, dict):
+            names.append(str(item.get(name_key) or item.get("title") or item.get("activity") or "Unnamed"))
+    return ", ".join(names) if names else "none"
+
+
+def cache_agent_data(key: str, data) -> None:
+    if not data:
+        return
+    try:
+        import json
+        update_guided_state(key, json.dumps(data))
+    except Exception as exc:
+        demo_log("AGENT_CACHE", f"save_failed key={key}, reason={exc}")
+
+
 def supervisor_node(state):
 
     # Route first to update database state
     routes = route_question(state)
     g_state = get_guided_state()
+    demo_log(
+        "GRAPH_SUPERVISOR",
+        f"initial_routes={routes}, city={state.get('city', 'None')}, destination={state.get('destination', 'None')}, active_agent={g_state.get('active_agent', '') or 'none'}"
+    )
     active_agent, missing_key, missing_prompt = get_active_agent_question(g_state)
-    if active_agent and missing_key:
+    if active_agent and missing_key and len(routes) <= 1:
+        demo_log("GRAPH_SUPERVISOR", f"prompting_active_agent={active_agent}, missing={missing_key}, routes=['merge']")
         return {
             **state,
             "answer": missing_prompt,
             "routes": ["merge"]
         }
     completed_agent = g_state.get("last_completed_agent")
-    if completed_agent and routes:
+    if completed_agent and routes and routes != ["weather"] and routes != ["transport"] and not ("weather" in routes and len(routes) == 1):
         agent_context = get_agent_context(completed_agent, g_state)
         update_guided_state("last_completed_agent", "")
-        city = agent_context.get("city") or agent_context.get("destination") or state.get("city", "None")
-        budget = agent_context.get("budget") or agent_context.get("budget_level") or state.get("budget", "None")
-        interests = agent_context.get("interests") or state.get("interests", "None")
-        days = agent_context.get("days") or state.get("days", 3)
-        travelers = agent_context.get("travelers") or agent_context.get("guests") or state.get("travelers", 1)
+        demo_log("GRAPH_SUPERVISOR", f"completed_agent={completed_agent}, rebuilding_context=yes")
+        city = clean_val(agent_context.get("destination")) or clean_val(agent_context.get("city")) or clean_val(g_state.get("destination")) or clean_val(g_state.get("city")) or clean_val(state.get("destination")) or clean_val(state.get("city")) or "Trichy"
+        update_guided_state("destination", city)
+        update_guided_state("city", city)
+        budget = clean_val(agent_context.get("budget")) or clean_val(agent_context.get("budget_level")) or clean_val(g_state.get("budget")) or clean_val(state.get("budget")) or "Moderate"
+        interests = clean_val(agent_context.get("interests")) or clean_val(g_state.get("interests")) or clean_val(state.get("interests")) or "Any"
+        days = clean_val(agent_context.get("days")) or clean_val(g_state.get("days")) or clean_val(state.get("days")) or 3
+        travelers = clean_val(agent_context.get("travelers")) or clean_val(agent_context.get("guests")) or clean_val(g_state.get("travelers")) or clean_val(state.get("travelers")) or 1
+        travel_mode = clean_val(agent_context.get("travel_mode")) or clean_val(g_state.get("travel_mode")) or clean_val(state.get("travel_mode")) or "Car"
         try:
             days = int(days)
         except Exception:
@@ -69,12 +105,13 @@ def supervisor_node(state):
         except Exception:
             travelers = 1
 
-        travel_date = agent_context.get("travel_date") or state.get("travel_date", "None")
+        from datetime import datetime, timedelta
+        travel_date = clean_val(agent_context.get("travel_date")) or clean_val(g_state.get("travel_date")) or clean_val(state.get("travel_date")) or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         question = state.get("question")
         if completed_agent == "calendar":
-            travel_style = agent_context.get("travel_style", "None")
+            travel_style = clean_val(agent_context.get("travel_style")) or clean_val(g_state.get("travel_style")) or clean_val(state.get("travel_style")) or "Cultural"
             question = (
-                f"Plan a {days}-day trip to {city} starting on {travel_date}. "
+                f"Plan a {days}-day trip to {city} starting on {travel_date} by {travel_mode}. "
                 f"Travel style is {travel_style}, travelers is {travelers}, budget is {budget}, interests are {interests}."
             )
         elif completed_agent == "hotel":
@@ -181,7 +218,7 @@ def supervisor_node(state):
                 question += f". Preferences: {', '.join(prefs)}"
 
 
-        return {
+        final_state = {
             **state,
             "question": question,
             "city": city,
@@ -191,6 +228,9 @@ def supervisor_node(state):
             "travelers": travelers,
             "travel_style": agent_context.get("travel_style", state.get("travel_style", "None")),
             "interests": interests,
+            "travel_date": travel_date,
+            "current_location": g_state.get("current_location", "Chennai"),
+            "travel_mode": state.get("travel_mode") or g_state.get("travel_mode", "Car"),
             "checkin": agent_context.get("checkin", "None"),
             "checkout": agent_context.get("checkout", "None"),
             "guests": agent_context.get("guests") or travelers,
@@ -211,21 +251,30 @@ def supervisor_node(state):
             "include_transport": agent_context.get("include_transport", "Yes"),
             "shopping_budget": agent_context.get("shopping_budget", "Yes"),
             "travel_date": travel_date,
+            "current_location": agent_context.get("current_location", "None"),
+            "travel_mode": agent_context.get("travel_mode", "None"),
             "routes": routes
         }
+        demo_log(
+            "GRAPH_SUPERVISOR",
+            f"completed_context_routes={routes}, city={final_state.get('city')}, days={final_state.get('days')}, mode={final_state.get('travel_mode')}"
+        )
+        return final_state
     
     # Direct routing for active preview lifecycle actions
     lifecycle_actions = ["save_itinerary", "google_calendar", "modify_itinerary", "regenerate_itinerary", "delete_itinerary"]
     if len(routes) == 1 and routes[0] in lifecycle_actions:
+        demo_log("GRAPH_SUPERVISOR", f"lifecycle_action={routes[0]}, routes={routes}")
         return {
             **state,
             "routes": routes
         }
 
-    is_active = g_state.get("is_active") == "1"
+    is_active = g_state.get("is_active") == "1" and len(routes) <= 1
     
     if is_active or routes == ["merge"]:
         missing_key, missing_prompt = get_next_missing_field(g_state)
+        demo_log("GRAPH_SUPERVISOR", f"guided_prompt=yes, missing={missing_key}, routes=['merge']")
         return {
             **state,
             "city": "None",
@@ -239,32 +288,78 @@ def supervisor_node(state):
         }
         
     if not is_active and len(routes) > 1 and "calendar" in routes:
-        city = g_state.get("destination", "None")
-        days = int(g_state.get("days", 3))
-        budget = g_state.get("budget", "None")
-        travelers = int(g_state.get("travelers", 1))
-        travel_style = g_state.get("travel_style", "None")
-        interests = g_state.get("interests", "None")
-        travel_date = g_state.get("travel_date", "None")
+        from supervisor import extract_all_opening_details
+        extracted = extract_all_opening_details(state["question"])
         
+        st_dest = clean_val(state.get("destination")) or clean_val(state.get("city"))
+        st_loc = clean_val(state.get("current_location"))
+        st_date = clean_val(state.get("travel_date"))
+        st_days = clean_val(state.get("days"))
+        st_budget = clean_val(state.get("budget"))
+        st_travelers = clean_val(state.get("travelers"))
+        st_style = clean_val(state.get("travel_style"))
+        st_mode = clean_val(state.get("travel_mode"))
+        st_interests = clean_val(state.get("interests"))
+
+        destination = clean_val(g_state.get("destination")) or clean_val(extracted.get("destination")) or st_dest or "Salem"
+        current_loc = clean_val(g_state.get("current_location")) or clean_val(extracted.get("current_location")) or st_loc or "Chennai"
+        travel_date = clean_val(g_state.get("travel_date")) or clean_val(extracted.get("travel_date")) or st_date or (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        
+        days_val = clean_val(g_state.get("days")) or clean_val(extracted.get("days")) or st_days or "3"
+        try:
+            days = int(days_val)
+        except Exception:
+            days = 3
+            
+        budget = clean_val(g_state.get("budget")) or clean_val(extracted.get("budget")) or st_budget or "Moderate"
+        
+        travelers_val = clean_val(g_state.get("travelers")) or clean_val(extracted.get("travelers")) or st_travelers or "1"
+        try:
+            travelers = int(travelers_val)
+        except Exception:
+            travelers = 1
+            
+        travel_style = clean_val(g_state.get("travel_style")) or clean_val(extracted.get("travel_style")) or st_style or "Cultural"
+        travel_mode = clean_val(g_state.get("travel_mode")) or clean_val(extracted.get("travel_mode")) or st_mode or "Car"
+        interests = clean_val(g_state.get("interests")) or clean_val(extracted.get("interests")) or st_interests or "Any"
+        
+        # Persist extracted values into guided state for session consistency
+        update_guided_state("destination", destination)
+        update_guided_state("current_location", current_loc)
+        update_guided_state("travel_date", travel_date)
+        update_guided_state("days", str(days))
+        update_guided_state("budget", budget)
+        update_guided_state("travel_style", travel_style)
+        update_guided_state("travel_mode", travel_mode)
+
         compiled_question = (
-            f"Plan a {days}-day trip to {city} starting on {travel_date}. "
+            f"Plan a {days}-day trip to {destination} starting on {travel_date} by {travel_mode}. "
             f"Travel style is {travel_style}, travelers is {travelers}, budget is {budget}, interests are {interests}."
         )
-        return {
+        final_state = {
             **state,
             "question": compiled_question,
-            "city": city,
+            "city": destination,
+            "destination": destination,
             "days": days,
             "budget": budget,
             "travelers": travelers,
             "travel_style": travel_style,
             "interests": interests,
+            "travel_date": travel_date,
+            "current_location": current_loc,
+            "travel_mode": travel_mode,
             "routes": routes
         }
+        demo_log(
+            "GRAPH_SUPERVISOR",
+            f"multi_agent_calendar_context city={destination}, days={days}, mode={travel_mode}, routes={routes}"
+        )
+        return final_state
 
     details = extract_query_details(state["question"])
-    stateless_routes = route_question(state, details)
+    stateless_routes = route_question(state)
+    demo_log("GRAPH_SUPERVISOR", f"stateless_routes={stateless_routes}, extracted_city={details.get('city', 'None')}")
     return {
         **state,
         "city": details.get("city", "None"),
@@ -280,7 +375,7 @@ def supervisor_node(state):
 def restaurant_node(state):
     question = state["question"]
     city = state.get("city", "None")
-    budget = state.get("budget_per_person", state.get("budget", "None"))
+    budget = clean_val(state.get("budget_per_person")) or clean_val(state.get("budget")) or "None"
     cuisine = state.get("cuisine", "None")
     diet = state.get("diet", "None")
     meal_time = state.get("meal_time", "None")
@@ -304,6 +399,11 @@ def restaurant_node(state):
     text = answer.get("answer") if isinstance(answer, dict) else answer
     source = answer.get("source", "Groq") if isinstance(answer, dict) else "Groq"
     data = answer.get("data", []) if isinstance(answer, dict) else []
+    demo_log(
+        "RESTAURANT_AGENT",
+        f"city={city}, budget={budget}, cuisine={cuisine}, diet={diet}, source={source}, count={len(data)}, sample={demo_names(data)}"
+    )
+    cache_agent_data("restaurants_data", data)
 
     return {
         "responses": [
@@ -340,6 +440,11 @@ def hotel_node(state):
         text = str(answer)
         source = "Groq"
         data = []
+    demo_log(
+        "HOTEL_AGENT",
+        f"city={state.get('city', 'None')}, budget={state.get('budget', 'None')}, source={source}, count={len(data)}, sample={demo_names(data)}"
+    )
+    cache_agent_data("hotels_data", data)
 
     return {
         "responses": [
@@ -368,6 +473,11 @@ def nearby_node(state):
     # render image cards. Keep it in graph state instead of reducing it to
     # the summary text above.
     nearby_result = answer.get("nearbyResult") if isinstance(answer, dict) else None
+    demo_log(
+        "NEARBY_AGENT",
+        f"city={state.get('city', 'None')}, interests={interests}, source={source}, count={len(data)}, sample={demo_names(data)}"
+    )
+    cache_agent_data("nearby_data", data)
 
     return {
         "responses": [
@@ -379,6 +489,10 @@ def nearby_node(state):
 
 
 def budget_node(state):
+    demo_log(
+        "BUDGET_AGENT_START",
+        f"city={state.get('city', 'None')}, days={state.get('days', 3)}, budget={state.get('budget', 'Moderate')}, travelers={state.get('travelers', 1)}"
+    )
     answer = budget_agent(
         state["question"],
         city=state.get("city", "None"),
@@ -391,6 +505,10 @@ def budget_node(state):
     )
     text = answer.get("answer") if isinstance(answer, dict) else str(answer)
     data = answer.get("data", {}) if isinstance(answer, dict) else {}
+    demo_log(
+        "BUDGET_AGENT",
+        f"source={answer.get('source', 'budget_service') if isinstance(answer, dict) else 'budget_service'}, has_data={'yes' if data else 'no'}"
+    )
 
     return {
         "responses": [
@@ -404,6 +522,8 @@ def weather_node(state):
     answer = weather_agent(state["question"], state.get("city", "None"))
     text = answer.get("text") if isinstance(answer, dict) else answer
     data = answer.get("data", {}) if isinstance(answer, dict) else {}
+    weather_summary = data if data else str(text)[:160].replace("\n", " ")
+    demo_log("WEATHER_AGENT", f"city={state.get('city', 'None')}, data={weather_summary}")
 
     return {
         "responses": [
@@ -414,7 +534,9 @@ def weather_node(state):
 
 
 def general_node(state):
+    demo_log("GENERAL_AGENT_START", f"question={state.get('question', '')[:120]!r}")
     answer = general_agent(state)
+    demo_log("GENERAL_AGENT", f"source={answer.get('source', 'Groq') if isinstance(answer, dict) else 'Groq'}")
 
     return {
         "responses": [
@@ -424,31 +546,116 @@ def general_node(state):
 
 
 def transport_node(state):
-    # Extract source, destination, and date from the state if available
-    # The supervisor logic for guided trips populates these.
-    # For stateless queries, we can enhance `extract_query_details` to find them.
-    source_city = state.get("city", "None") # 'city' is often used as the primary location/source
-    destination_city = state.get("destination", "None")
-    travel_date = state.get("travel_date", "None")
+    import re
+    import json
+    from supervisor import get_guided_state, update_guided_state, clean_val, extract_query_details, extract_all_opening_details
+
+    g_state = get_guided_state()
+    current_loc = clean_val(state.get("current_location")) or clean_val(g_state.get("current_location"))
+    dest_city = clean_val(state.get("destination")) or clean_val(state.get("city")) or clean_val(g_state.get("destination")) or clean_val(g_state.get("city")) or "Bangalore"
+    t_date = clean_val(state.get("travel_date")) or clean_val(g_state.get("travel_date"))
+
+    def is_coords(s: str) -> bool:
+        if not s: return True
+        return bool(re.search(r'^\s*[-+]?\d+(?:\.\d+)?\s*,\s*[-+]?\d+(?:\.\d+)?\s*$', str(s)))
+
+    source_city = current_loc if (current_loc and not is_coords(current_loc)) else None
+    destination_city = dest_city
+
+    # Check question for "from X to Y"
+    q_text = state.get("question", "")
+    match = re.search(r'from\s+([A-Za-z\s]{2,20})\s+to\s+([A-Za-z\s]{2,20})', q_text, re.IGNORECASE)
+    if match:
+        s_extracted = match.group(1).strip().title()
+        d_extracted = match.group(2).strip().title()
+        if s_extracted and not is_coords(s_extracted) and s_extracted.lower() not in {"plan", "trip", "days", "day", "a"}:
+            source_city = s_extracted
+        if d_extracted and not is_coords(d_extracted) and d_extracted.lower() not in {"plan", "trip", "days", "day", "a"}:
+            destination_city = d_extracted
+
+    if not source_city or "Plan" in str(source_city):
+        details = extract_query_details(q_text)
+        if details:
+            extracted_src = clean_val(details.get("current_location")) or clean_val(details.get("city"))
+            if extracted_src and not is_coords(extracted_src) and extracted_src.lower() != destination_city.lower():
+                source_city = extracted_src
+            if not t_date:
+                t_date = clean_val(details.get("travel_date"))
+
+    # Ensure source_city is valid and NOT equal to destination_city
+    if not source_city or is_coords(source_city) or source_city.lower() == destination_city.lower():
+        if destination_city.lower() in {"chennai", "madras"}:
+            source_city = "Bangalore"
+        else:
+            source_city = "Chennai"
+
+    if not t_date or t_date.lower() in {"none", "null"}:
+        from datetime import datetime, timedelta
+        t_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    travel_date = t_date
+
+    t_mode = clean_val(state.get("travel_mode")) or clean_val(g_state.get("travel_mode"))
+    if not t_mode or t_mode.lower() in {"none", "null"}:
+        extracted = extract_all_opening_details(q_text)
+        t_mode = clean_val(extracted.get("travel_mode"))
+    if not t_mode or t_mode.lower() in {"none", "null"}:
+        t_mode = "Flight"
+
+    print(f"[TRANSPORT NODE] Source: {source_city}, Destination: {destination_city}, Date: {travel_date}, Mode: {t_mode}")
 
     answer = transport_agent(
-        state["question"],
+        q_text,
         source=source_city,
         destination=destination_city,
-        date=travel_date
+        date=travel_date,
+        preferred_mode=t_mode
     )
 
-    # The transport_agent can return a string or a dict. We need to handle both.
     text = answer.get("answer") if isinstance(answer, dict) else str(answer)
     source = answer.get("source", "transport_api") if isinstance(answer, dict) else "Groq"
+    tickets = answer.get("tickets", []) if isinstance(answer, dict) else []
+    status_obj = {
+        "status": answer.get("status", "success") if isinstance(answer, dict) else "success",
+        "reason": answer.get("reason", "") if isinstance(answer, dict) else ""
+    }
+
+    # Persist in guided state
+    update_guided_state("transport_data", json.dumps(tickets))
+    update_guided_state("transport_status", json.dumps(status_obj))
+
+    demo_log(
+        "TRANSPORT_AGENT",
+        f"from={source_city}, to={destination_city}, date={travel_date}, mode={t_mode}, source={source}, count={len(tickets)}"
+    )
 
     return {
         "responses": [
             f"Transport options:\n{text}\n[SOURCE:{source}]"
-        ]
+        ],
+        "transport_data": tickets,
+        "transport_status": status_obj
+    }
+
+def crowd_node(state):
+    res = crowd_agent(state)
+    crowd_info = res.get("crowd_data", {})
+    return {
+        "responses": [
+            f"Crowd Intelligence:\n{crowd_info.get('summary', '')}"
+        ],
+        "crowd_data": crowd_info
     }
 
 def calendar_node(state):
+    demo_log(
+        "CALENDAR_NODE_START",
+        (
+            f"city={state.get('city', 'None')}, days={state.get('days', 3)}, "
+            f"hotels={len(state.get('hotels_data') or [])}, restaurants={len(state.get('restaurants_data') or [])}, "
+            f"attractions={len(state.get('nearby_data') or [])}, transport={len(state.get('transport_data') or [])}"
+        )
+    )
     answer = calendar_agent(
         question=state["question"],
         city=state.get("city", "None"),
@@ -459,7 +666,8 @@ def calendar_node(state):
         hotels_data=state.get("hotels_data"),
         restaurants_data=state.get("restaurants_data"),
         nearby_data=state.get("nearby_data"),
-        weather_data=state.get("weather_data")
+        weather_data=state.get("weather_data"),
+        transport_data=state.get("transport_data")
     )
 
     return {
@@ -470,9 +678,60 @@ def calendar_node(state):
 
 
 def merge_node(state):
-    print(f"[DEBUG] Merge Node state hotels_data: {len(state.get('hotels_data') or [])} items")
-    print(f"[DEBUG] Merge Node state restaurants_data: {len(state.get('restaurants_data') or [])} items")
-    print(f"[DEBUG] Merge Node state nearby_data: {len(state.get('nearby_data') or [])} items")
+    if not state.get("transport_data") and str(state.get("include_transport", "Yes")).lower() != "no":
+        q_lower = str(state.get("question", "")).lower()
+        is_itinerary_request = any(k in q_lower for k in ["trip", "plan", "itinerary", "vacation", "holiday", "tour"])
+        destination_city = clean_val(state.get("destination")) or clean_val(state.get("city"))
+        source_city = clean_val(state.get("current_location"))
+        travel_mode = clean_val(state.get("travel_mode")) or clean_val(get_guided_state().get("travel_mode")) or "Flight"
+        travel_date = clean_val(state.get("travel_date")) or clean_val(get_guided_state().get("travel_date"))
+
+        if is_itinerary_request and destination_city and source_city and travel_mode:
+            if not travel_date or travel_date.lower() in {"none", "null"}:
+                from datetime import datetime, timedelta
+                travel_date = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+            try:
+                transport_result = transport_agent(
+                    state.get("question", ""),
+                    source=source_city,
+                    destination=destination_city,
+                    date=travel_date,
+                    preferred_mode=travel_mode
+                )
+                tickets = transport_result.get("tickets", []) if isinstance(transport_result, dict) else []
+                status_obj = {
+                    "status": transport_result.get("status", "success") if isinstance(transport_result, dict) else "success",
+                    "reason": transport_result.get("reason", "") if isinstance(transport_result, dict) else ""
+                }
+                if tickets:
+                    state["transport_data"] = tickets
+                    state["transport_status"] = status_obj
+                    import json
+                    update_guided_state("transport_data", json.dumps(tickets))
+                    update_guided_state("transport_status", json.dumps(status_obj))
+                demo_log(
+                    "TRANSPORT_AGENT",
+                    f"merge_fallback=yes, from={source_city}, to={destination_city}, date={travel_date}, mode={travel_mode}, count={len(tickets)}"
+                )
+            except Exception as exc:
+                demo_log("TRANSPORT_AGENT", f"merge_fallback=failed, reason={exc}")
+
+    h_data = state.get('hotels_data') or []
+    r_data = state.get('restaurants_data') or []
+    n_data = state.get('nearby_data') or []
+    if h_data or r_data or n_data:
+        print(f"[DEBUG] Merge Node compiled: {len(h_data)} hotels, {len(r_data)} restaurants, {len(n_data)} attractions")
+    demo_log(
+        "MERGE_INPUTS",
+        (
+            f"hotels={len(h_data)} [{demo_names(h_data)}]; "
+            f"restaurants={len(r_data)} [{demo_names(r_data)}]; "
+            f"attractions={len(n_data)} [{demo_names(n_data)}]; "
+            f"weather={'yes' if state.get('weather_data') else 'no'}; "
+            f"transport={len(state.get('transport_data') or [])}"
+        )
+    )
 
     # If there is only one response, return directly
     if len(state["responses"]) <= 1:
@@ -531,7 +790,8 @@ def merge_node(state):
         restaurants_data=state.get("restaurants_data"),
         nearby_data=state.get("nearby_data"),
         weather_data=state.get("weather_data"),
-        other_agent_info=other_agent_info
+        other_agent_info=other_agent_info,
+        transport_data=state.get("transport_data")
     )
 
     # Process calendar items
@@ -545,6 +805,10 @@ def merge_node(state):
     except Exception as e:
         print(f"Failed to parse calendar items in merge_node: {e}")
         calendar_items = []
+    demo_log(
+        "CALENDAR_OUTPUT",
+        f"items={len(calendar_items)}, days={days}, sample={demo_names(calendar_items, name_key='activity', limit=5)}"
+    )
 
     # Store items natively in state for immediate ingestion
     from supervisor import update_guided_state
@@ -605,7 +869,13 @@ Great! I've planned a {days}-day {city} trip for {travelers} traveler(s) (style:
 
     return {
         "answer": synthesis,
-        "routes": ["calendar_preview"]
+        "routes": ["calendar_preview"],
+        "hotels_data": state.get("hotels_data"),
+        "restaurants_data": state.get("restaurants_data"),
+        "nearby_data": state.get("nearby_data"),
+        "nearbyResult": state.get("nearbyResult"),
+        "transport_data": state.get("transport_data"),
+        "transport_status": state.get("transport_status")
     }
     
 builder.add_node(
@@ -634,7 +904,7 @@ builder.add_node(
 )
 
 builder.add_node(
-    "train",
+    "transport",
     transport_node
 )
 
@@ -672,15 +942,31 @@ builder.set_entry_point(
     "supervisor"
 )
 
+VALID_GRAPH_NODES = {
+    "restaurant", "hotel", "nearby", "budget", "transport", "weather", "crowd", "general",
+    "save_itinerary", "google_calendar", "modify_itinerary", "regenerate_itinerary", "delete_itinerary"
+}
+
 def router(state):
     sends = []
+    seen = set()
 
-    for route in state["routes"]:
-        if route != "calendar":
-            sends.append(
-                Send(route, state)
-            )
+    for route in state.get("routes", []):
+        normalized = route_for_agent(route)
+        if normalized in {"calendar", "calendar_preview"}:
+            for dependency in ["hotel", "restaurant", "nearby", "weather", "transport"]:
+                if dependency in VALID_GRAPH_NODES and dependency not in seen:
+                    seen.add(dependency)
+                    sends.append(Send(dependency, state))
+            continue
+        if normalized in VALID_GRAPH_NODES and normalized not in seen:
+            seen.add(normalized)
+            sends.append(Send(normalized, state))
 
+    demo_log(
+        "GRAPH_ROUTER",
+        f"routes={state.get('routes', [])}, dispatched={[getattr(send, 'node', str(send)) for send in sends]}"
+    )
     return sends
 
 builder.add_conditional_edges(
@@ -709,13 +995,23 @@ builder.add_edge(
 )
 
 builder.add_edge(
-    "train",
+    "transport",
     "merge"
 )
 
 
 builder.add_edge(
     "weather",
+    "merge"
+)
+
+builder.add_node(
+    "crowd",
+    crowd_node
+)
+
+builder.add_edge(
+    "crowd",
     "merge"
 )
 
@@ -732,7 +1028,9 @@ def merge_router(state):
     g_state = get_guided_state()
     routes = state.get("routes", [])
     if "calendar" in routes or "calendar_preview" in routes:
+        demo_log("MERGE_ROUTER", f"routes={routes}, next=calendar_preview")
         return "calendar_preview"
+    demo_log("MERGE_ROUTER", f"routes={routes}, next=voice_notification")
     return "voice_notification"
 
 builder.add_conditional_edges(
@@ -749,6 +1047,7 @@ def regenerate_router(state):
     sends = []
     for route in state.get("routes", []):
         sends.append(Send(route, state))
+    demo_log("REGENERATE_ROUTER", f"routes={state.get('routes', [])}, dispatched={[getattr(send, 'node', str(send)) for send in sends]}")
     return sends
 
 builder.add_conditional_edges(

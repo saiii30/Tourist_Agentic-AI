@@ -55,7 +55,9 @@ def calendar_preview_node(state: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "answer": preview_message,
         "responses": [f"Calendar:\n{itinerary_md}"],
-        "routes": []
+        "routes": [],
+        "transport_data": state.get("transport_data"),
+        "transport_status": state.get("transport_status")
     }
 
 def modify_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,6 +96,85 @@ def modify_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # Perform natural language modification
     modified_items = itinerary_service.modify_itinerary(items, state["question"])
     
+    # Re-geocode and recalculate OSRM routing on modified items
+    from services.osrm_service import geocode_place, get_osrm_route
+    
+    city = g_state.get("destination", state.get("city", "None"))
+    city_lower = city.lower().strip()
+    
+    # Resolve coordinates
+    hotel_item = next((item for item in modified_items if item.category.lower() == "hotel"), None)
+    if hotel_item:
+        hotel_lat = hotel_item.latitude
+        hotel_lng = hotel_item.longitude
+    else:
+        # Fallback to geocoded hotel from initial state
+        hotel_lat, hotel_lng = geocode_place("Hotel", city)
+
+    for item in modified_items:
+        lat_val = item.latitude
+        lng_val = item.longitude
+        is_hyderabad = ("hyderabad" in city_lower)
+        
+        needs_geocoding = (
+            lat_val is None or 
+            lng_val is None or 
+            (not is_hyderabad and lat_val is not None and abs(lat_val - 17.38) < 0.2)
+        )
+        
+        if needs_geocoding and item.category.lower() not in ("transit", "transport"):
+            plat, plng = geocode_place(item.activity or item.location, city)
+            item.latitude = plat
+            item.longitude = plng
+
+    # Recalculate sequential travel times and OSRM routes day-by-day
+    from collections import defaultdict
+    day_groups = defaultdict(list)
+    for item in modified_items:
+        day_groups[item.day].append(item)
+        
+    for day, day_items in day_groups.items():
+        # Sort day items by start_time
+        day_items.sort(key=lambda x: x.start_time)
+        
+        current_lat = hotel_lat
+        current_lng = hotel_lng
+        
+        for item in day_items:
+            if item.category.lower() in ("transit", "transport"):
+                continue
+                
+            lat = item.latitude
+            lng = item.longitude
+            
+            dist = 0.0
+            trav_mins = 0.0
+            
+            if current_lat is not None and current_lng is not None and lat is not None and lng is not None:
+                dist, trav_mins = get_osrm_route(current_lat, current_lng, lat, lng)
+                
+            if dist == 0.0:
+                item.travel_time = "0 mins"
+                item.transport = "Stay"
+                item.distance = "0 km"
+            else:
+                if trav_mins < 1.0:
+                    item.travel_time = "1 min"
+                else:
+                    item.travel_time = f"{int(round(trav_mins))} mins"
+                    
+                if dist <= 1.0:
+                    item.transport = "Walking"
+                elif dist <= 5.0:
+                    item.transport = "Auto Rickshaw"
+                else:
+                    item.transport = "Cab"
+                item.distance = f"{dist:.1f} km"
+                
+            if lat is not None and lng is not None:
+                current_lat = lat
+                current_lng = lng
+
     # Convert modified items back to dicts and save to SQLite guided state cache
     modified_dicts = [item.dict() for item in modified_items]
     import json
@@ -106,7 +187,7 @@ def modify_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
             user_id="guest_user",
             city=g_state.get("destination", state.get("city", "None")),
             days=int(g_state.get("days", state.get("days", 3))),
-            budget=g_state.get("budget", state.get("budget", "Budget")),
+            budget=g_state.get("budget", state.get("budget", "Low")),
             travel_style=g_state.get("travel_style", state.get("travel_style", "Solo")),
             travelers=int(g_state.get("travelers", state.get("travelers", 1))),
             interests=g_state.get("interests", state.get("interests", "None")),
@@ -132,7 +213,7 @@ def modify_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def save_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Saves the itinerary to the SQLite database and prompts for Google Calendar sync.
+    Saves the itinerary to the SQLite database without prompting for Google Calendar sync.
     """
     g_state = get_guided_state()
     trip_id = g_state.get("trip_id")
@@ -161,7 +242,7 @@ def save_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
         user_id="guest_user",
         city=city,
         days=int(g_state.get("days", state.get("days", 3))),
-        budget=g_state.get("budget", state.get("budget", "Budget")),
+        budget=g_state.get("budget", state.get("budget", "Low")),
         travel_style=g_state.get("travel_style", state.get("travel_style", "Solo")),
         travelers=int(g_state.get("travelers", state.get("travelers", 1))),
         interests=g_state.get("interests", state.get("interests", "None")),
@@ -171,13 +252,13 @@ def save_itinerary_node(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     calendar_service.save_itinerary(trip, items)
     
-    # Save confirmation
-    update_guided_state("trip_status", "calendar_sync")
+    # Save confirmation - skip calendar sync prompt
+    update_guided_state("trip_status", "completed")
 
     msg = (
         f"✅ **Itinerary Saved Successfully!**\n\n"
         f"I have saved the structured itinerary for your trip to **{city.title()}** in the local database.\n\n"
-        "Would you like to add this itinerary to your **Google Calendar**? (Yes/No)"
+        "You can use the 'Save Trip' button in the UI to sync with Google Calendar when needed."
     )
 
     return {

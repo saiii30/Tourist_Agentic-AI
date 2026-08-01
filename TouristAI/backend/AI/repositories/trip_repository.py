@@ -25,8 +25,8 @@ class TripRepository:
         try:
             cursor.execute("""
                 INSERT INTO trips 
-                (trip_id, user_id, city, days, budget, travel_style, travelers, interests, status, travel_date, created_at, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (trip_id, user_id, city, days, budget, travel_style, travelers, interests, status, travel_date, current_location, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (trip_id) DO UPDATE SET
                     user_id = EXCLUDED.user_id,
                     city = EXCLUDED.city,
@@ -37,12 +37,13 @@ class TripRepository:
                     interests = EXCLUDED.interests,
                     status = EXCLUDED.status,
                     travel_date = EXCLUDED.travel_date,
+                    current_location = EXCLUDED.current_location,
                     created_at = EXCLUDED.created_at,
                     updated_at = EXCLUDED.updated_at
             """, (
                 trip.trip_id, trip.user_id, trip.city, trip.days, trip.budget, 
                 trip.travel_style, trip.travelers, trip.interests, trip.status, 
-                trip.travel_date, trip.created_at, trip.updated_at
+                trip.travel_date, trip.current_location or "None", trip.created_at, trip.updated_at
             ))
             conn.commit()
         except Exception as e:
@@ -100,14 +101,14 @@ class TripRepository:
                 cursor.execute("""
                     INSERT INTO itineraries 
                     (trip_id, day, start_time, end_time, activity, location, category, restaurant, hotel, notes, activity_id, google_event_id,
-                     hotel_id, restaurant_id, attraction_id, latitude, longitude, start_datetime, end_datetime, travel_time, transport, estimated_cost, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     hotel_id, restaurant_id, attraction_id, latitude, longitude, start_datetime, end_datetime, travel_time, transport, estimated_cost, status, distance)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, (
                     trip_id, item.day, item.start_time, item.end_time, item.activity,
                     item.location, item.category, item.restaurant, item.hotel, item.notes,
                     item.activity_id or str(uuid.uuid4()), item.google_event_id,
                     item.hotel_id, item.restaurant_id, item.attraction_id, item.latitude, item.longitude,
-                    item.start_datetime, item.end_datetime, item.travel_time, item.transport, item.estimated_cost, item.status
+                    item.start_datetime, item.end_datetime, item.travel_time, item.transport, item.estimated_cost, item.status, item.distance
                 ))
             conn.commit()
         except Exception as e:

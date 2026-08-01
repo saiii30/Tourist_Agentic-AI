@@ -31,6 +31,35 @@ CATEGORIES = [
 
 TOP_N_PER_CATEGORY = 5
 
+INTEREST_CATEGORY_MAP = {
+    "nature": {"nature", "mountains", "beaches"},
+    "wildlife": {"nature"},
+    "adventure": {"mountains", "nature", "beaches"},
+    "history": {"heritage", "museums", "temples"},
+    "heritage": {"heritage", "museums", "temples"},
+    "culture": {"heritage", "temples", "museums"},
+    "cultural": {"heritage", "temples", "museums"},
+    "food": {"cuisine"},
+    "cuisine": {"cuisine"},
+    "restaurant": {"cuisine"},
+    "shopping": {"shopping"},
+    "kids": {"nature", "museums", "beaches"},
+    "family": {"nature", "museums", "beaches", "temples"},
+    "photography": {"beaches", "mountains", "heritage", "nature"},
+    "temple": {"temples"},
+    "spiritual": {"temples"},
+    "art": {"museums", "heritage"},
+}
+
+
+def _preferred_category_keys(user_query: str) -> set[str]:
+    q = (user_query or "").lower()
+    preferred = set()
+    for term, category_keys in INTEREST_CATEGORY_MAP.items():
+        if term in q:
+            preferred.update(category_keys)
+    return preferred
+
 # ---------------------------------------------------------------------------
 # Location extraction
 # ---------------------------------------------------------------------------
@@ -76,6 +105,7 @@ def _google_text_search(text_query: str, api_key: str, max_results: int = TOP_N_
                     "places.formattedAddress,"
                     "places.rating,"
                     "places.userRatingCount,"
+                    "places.location,"
                     "places.editorialSummary,"
                     "places.primaryType,"
                     "places.types,"
@@ -97,7 +127,7 @@ def _google_text_search(text_query: str, api_key: str, max_results: int = TOP_N_
             timeout=20,
         )
         if not r.ok:
-            print(f"[discover] Google Places error {r.status_code}: {r.text[:200]}")
+            print(f"[discover] Google Places API returned {r.status_code}. No fallback places source configured.")
             return []
         return r.json().get("places", []) or []
     except Exception as e:
@@ -115,7 +145,7 @@ def _google_place_details(place_id: str, api_key: str) -> dict:
             headers={
                 "X-Goog-Api-Key": api_key,
                 "X-Goog-FieldMask": (
-                    "photos,nationalPhoneNumber,internationalPhoneNumber,"
+                    "location,photos,nationalPhoneNumber,internationalPhoneNumber,"
                     "regularOpeningHours,currentOpeningHours,accessibilityOptions,"
                     "parkingOptions,paymentOptions,priceLevel,businessStatus"
                 ),
@@ -447,12 +477,18 @@ def _build_category(cat: dict, location: str, api_key: str) -> dict:
                 (place.get("photos") or [{}])[0].get("name")
             )
 
+            loc = place.get("location", {})
+            lat = loc.get("latitude")
+            lng = loc.get("longitude")
+
             enriched.append({
                 "id": place.get("id") or name,
                 "name": name,
                 "address": place.get("formattedAddress", "") or "",
                 "rating": place.get("rating"),
                 "ratingCount": place.get("userRatingCount"),
+                "latitude": lat,
+                "longitude": lng,
 
                 "description": (
                     (place.get("editorialSummary") or {}).get("text", "")
@@ -550,6 +586,7 @@ def discover_places(user_query: str) -> dict:
         }
 
     location = extract_location(user_query)
+    preferred_keys = _preferred_category_keys(user_query)
 
     categories_out = []
     # Run categories in parallel too
@@ -570,6 +607,15 @@ def discover_places(user_query: str) -> dict:
         block = results.get(cat["key"])
         if block and block.get("places"):
             categories_out.append(block)
+
+    if preferred_keys:
+        categories_out.sort(
+            key=lambda block: (
+                0 if block.get("key") in preferred_keys else 1,
+                next((idx for idx, cat in enumerate(CATEGORIES) if cat["key"] == block.get("key")), 999),
+            )
+        )
+        print(f"[LOG][DISCOVERY_CATEGORIES] interests={sorted(preferred_keys)}, ordered={[c.get('key') for c in categories_out]}")
 
     return {
         "location": location,

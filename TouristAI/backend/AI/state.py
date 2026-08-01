@@ -31,6 +31,8 @@ class AgentState(TypedDict):
     travelers: int
     travel_style: str
     interests: str
+    current_location: str
+    travel_mode: str
     trip_id: str
     user_action: str
     start_date: str
@@ -41,6 +43,8 @@ class AgentState(TypedDict):
     nearby_data: list[dict]
     weather_data: dict
     notifications: List[Notification]
+    transport_data: list[dict]
+    transport_status: dict
     active_agent: str
     checkin: str
     checkout: str

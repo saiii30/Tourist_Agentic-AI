@@ -26,6 +26,7 @@ class ItineraryItem(BaseModel):
     transport: Optional[str] = None
     estimated_cost: Optional[float] = None
     status: Optional[str] = "pending"
+    distance: Optional[str] = None
 
 
 class Trip(BaseModel):
@@ -39,6 +40,7 @@ class Trip(BaseModel):
     interests: str
     status: str = "GENERATED"
     travel_date: Optional[str] = None
+    current_location: Optional[str] = "None"
     created_at: str
     updated_at: str
 

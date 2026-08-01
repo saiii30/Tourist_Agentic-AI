@@ -14,6 +14,7 @@ from models.itinerary import Trip, ItineraryItem
 from services.packing_service import PackingService
 from services.budget_service import BudgetService
 from services.emergency_service import EmergencyService
+from services.osrm_service import geocode_place
 from rag_service import client
 
 class TripService:
@@ -61,7 +62,8 @@ class TripService:
                 time_str = datetime.strptime(start, "%H:%M").strftime("%I:%M %p")
             except:
                 time_str = start
-                
+
+            item_lat, item_lng = geocode_place(item.location or item.activity, city)
             itinerary[day_str].append({
                 "id": f"cached-act-{item.day}-{len(itinerary[day_str])}",
                 "title": item.activity,
@@ -72,7 +74,12 @@ class TripService:
                 "entryFee": "See Notes",
                 "description": item.notes or "",
                 "location": item.location or "",
-                "image": self._get_image_for_category(item.category, city)
+                "image": self._get_image_for_category(item.category, city),
+                "latitude": item_lat,
+                "longitude": item_lng,
+                "travel_time": item.travel_time,
+                "transport": item.transport,
+                "distance": item.distance
             })
 
         # Enrich with other services
@@ -130,7 +137,7 @@ class TripService:
         city_clean = city.strip().lower()
         budget_clean = budget.strip().lower()
         
-        budget_val = "Budget"
+        budget_val = "Low"
         if "moderate" in budget_clean:
             budget_val = "Moderate"
         elif "luxury" in budget_clean:
@@ -177,13 +184,13 @@ class TripService:
         if not hotels_mapped:
             hotels_mapped = self._generate_llm_hotels(city, budget_val)
             
-        return hotels_mapped
+        return self._with_coordinates(hotels_mapped, city)
 
     def get_structured_restaurants(self, city: str, budget: str) -> List[Dict[str, Any]]:
         city_clean = city.strip().lower()
         budget_clean = budget.strip().lower()
         
-        budget_val = "Budget"
+        budget_val = "Low"
         if "moderate" in budget_clean:
             budget_val = "Moderate"
         elif "luxury" in budget_clean:
@@ -221,33 +228,81 @@ class TripService:
         if not rests_mapped:
             rests_mapped = self._generate_llm_restaurants(city, budget_val)
             
-        return rests_mapped
+        return self._with_coordinates(rests_mapped, city)
+
+    def get_structured_attractions(self, city: str, budget: str = "Moderate") -> List[Dict[str, Any]]:
+        city_clean = city.strip().lower()
+        attractions_mapped = []
+
+        if os.path.exists(self.db_json_path):
+            try:
+                with open(self.db_json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                city_data = data.get(city_clean)
+                source_attractions = city_data.get("attractions", []) if city_data else []
+                for idx, attraction in enumerate(source_attractions[:8]):
+                    name = attraction.get("name") or attraction.get("title") or f"{city.title()} Attraction {idx + 1}"
+                    attractions_mapped.append({
+                        "attraction_id": attraction.get("attraction_id") or attraction.get("id") or f"attr-{idx}",
+                        "name": name,
+                        "address": attraction.get("address") or f"{city.title()}",
+                        "description": attraction.get("description") or attraction.get("notes") or f"Popular place to visit in {city.title()}.",
+                        "rating": attraction.get("rating") or 4.5,
+                        "image": attraction.get("image") or self._get_image_for_category("Sightseeing", city),
+                        "latitude": attraction.get("latitude") or attraction.get("lat"),
+                        "longitude": attraction.get("longitude") or attraction.get("lng"),
+                    })
+            except Exception as e:
+                print(f"Error loading attractions: {e}")
+
+        if not attractions_mapped:
+            attractions_mapped = self._generate_llm_attractions(city, budget)
+
+        return self._with_coordinates(attractions_mapped, city)
+
+    def _with_coordinates(self, items: List[Dict[str, Any]], city: str) -> List[Dict[str, Any]]:
+        for item in items:
+            lat = item.get("latitude") or item.get("lat")
+            lng = item.get("longitude") or item.get("lng")
+            if lat is not None and lng is not None:
+                try:
+                    item["latitude"] = float(lat)
+                    item["longitude"] = float(lng)
+                    continue
+                except (TypeError, ValueError):
+                    pass
+
+            name = item.get("name") or item.get("title") or city
+            plat, plng = geocode_place(name, city)
+            item["latitude"] = plat
+            item["longitude"] = plng
+        return items
 
     def _get_hotel_image(self, idx: int, city: str) -> str:
         images = [
-            "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=80",
-            "https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=400&q=80",
-            "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=400&q=80"
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Indian_hotel.jpg/400px-Indian_hotel.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/63/Hotel_room.jpg/400px-Hotel_room.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Hotel_lobby.jpg/400px-Hotel_lobby.jpg"
         ]
         return images[idx % len(images)]
 
     def _get_food_image(self, idx: int) -> str:
         images = [
-            "https://images.unsplash.com/photo-1589301760014-d929f3979dbc?auto=format&fit=crop&w=400&q=80",
-            "https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=400&q=80",
-            "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=400&q=80"
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Indian_dinner.jpg/400px-Indian_dinner.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Indian_cuisine.jpg/400px-Indian_cuisine.jpg",
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Indian_breakfast.jpg/400px-Indian_breakfast.jpg"
         ]
         return images[idx % len(images)]
 
     def _get_image_for_category(self, category: str, city: str) -> str:
         cat_lower = category.lower()
         if "food" in cat_lower or "restaurant" in cat_lower:
-            return "https://images.unsplash.com/photo-1565557623262-b51c2513a641?auto=format&fit=crop&w=400&q=80"
+            return "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5a/Indian_dinner.jpg/400px-Indian_dinner.jpg"
         elif "hotel" in cat_lower or "accommodation" in cat_lower or "stay" in cat_lower:
-            return "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=400&q=80"
+            return "https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/Indian_hotel.jpg/400px-Indian_hotel.jpg"
         elif "nature" in cat_lower or "beach" in cat_lower or "waterfall" in cat_lower:
-            return "https://images.unsplash.com/photo-1472214222541-d510753a4907?auto=format&fit=crop&w=400&q=80"
-        return "https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=400&q=80"
+            return "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3d/Indian_park.jpg/400px-Indian_park.jpg"
+        return "https://upload.wikimedia.org/wikipedia/commons/thumb/8/87/Tourism_in_India.jpg/400px-Tourism_in_India.jpg"
 
     def _generate_llm_hotels(self, city: str, budget_val: str) -> List[Dict[str, Any]]:
         prompt = (
@@ -346,3 +401,85 @@ class TripService:
                     "reservationAvailable": False
                 }
             ]
+
+    def _generate_llm_attractions(self, city: str, budget_val: str) -> List[Dict[str, Any]]:
+        prompt = (
+            f"Generate a JSON list of 6 realistic tourist attractions or experiences for a traveler visiting {city} "
+            f"on a {budget_val} budget.\n"
+            "Return strictly a valid JSON array matching this format and nothing else:\n"
+            "[\n"
+            "  {\n"
+            "    \"attraction_id\": \"attr-1\",\n"
+            "    \"name\": \"Attraction Name\",\n"
+            "    \"address\": \"Area or full address\",\n"
+            "    \"description\": \"One concise sentence explaining why to visit\",\n"
+            "    \"rating\": 4.5,\n"
+            "    \"category\": \"Sightseeing\"\n"
+            "  }\n"
+            "]\n"
+            "Only return raw valid JSON. Do not include markdown code block backticks."
+        )
+        try:
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2
+            )
+            content = response.choices[0].message.content.strip()
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+            if "[" in content:
+                content = content[content.find("["):content.rfind("]")+1]
+            data = json.loads(content)
+            mapped = []
+            for idx, item in enumerate(data):
+                name = item.get("name") or f"{city.title()} Attraction {idx + 1}"
+                mapped.append({
+                    "attraction_id": item.get("attraction_id") or item.get("id") or f"attr-llm-{idx + 1}",
+                    "name": name,
+                    "address": item.get("address") or f"{name}, {city.title()}",
+                    "description": item.get("description") or f"A recommended stop for travelers exploring {city.title()}.",
+                    "rating": item.get("rating") or 4.4,
+                    "category": item.get("category") or "Sightseeing",
+                    "image": self._get_image_for_category(item.get("category", "Sightseeing"), city),
+                })
+            return mapped
+        except Exception as e:
+            print(f"Error generating LLM attractions for {city}: {e}")
+            seed_names = [
+                f"{city.title()} Scenic View Point",
+                f"{city.title()} Local Market",
+                f"{city.title()} Heritage Walk",
+                f"{city.title()} Nature Spot",
+                f"{city.title()} Cultural Center",
+                f"{city.title()} Evening Viewpoint",
+            ]
+            return [
+                {
+                    "attraction_id": f"attr-fallback-{idx + 1}",
+                    "name": name,
+                    "address": f"{name}, {city.title()}",
+                    "description": f"A recommended stop for travelers exploring {city.title()}.",
+                    "rating": 4.4,
+                    "category": "Sightseeing",
+                    "image": self._get_image_for_category("Sightseeing", city),
+                }
+                for idx, name in enumerate(seed_names)
+            ]
+
+
+_trip_service_singleton = TripService()
+
+
+def get_structured_hotels(city: str, budget: str) -> List[Dict[str, Any]]:
+    return _trip_service_singleton.get_structured_hotels(city, budget)
+
+
+def get_structured_restaurants(city: str, budget: str) -> List[Dict[str, Any]]:
+    return _trip_service_singleton.get_structured_restaurants(city, budget)
+
+
+def get_structured_attractions(city: str, budget: str = "Moderate") -> List[Dict[str, Any]]:
+    return _trip_service_singleton.get_structured_attractions(city, budget)

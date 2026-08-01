@@ -4,6 +4,20 @@ from database.postgres import PostgresDatabase
 from rag_service import client
 from agents.calendar_builder import CalendarBuilder
 
+
+def demo_log(step: str, message: str) -> None:
+    print(f"[LOG][{step}] {message}")
+
+
+def demo_names(items, name_key: str = "name", limit: int = 3) -> str:
+    if not items:
+        return "none"
+    names = []
+    for item in items[:limit]:
+        if isinstance(item, dict):
+            names.append(str(item.get(name_key) or item.get("title") or item.get("activity") or "Unnamed"))
+    return ", ".join(names) if names else "none"
+
 def extract_trip_details(question: str) -> tuple[str, int]:
     prompt = (
         "Analyze the following user query and extract: \n"
@@ -65,132 +79,106 @@ def get_db_places(city: str) -> list:
         print(f"Error querying database for city '{city}': {e}")
     return places
 
-# Dedicated LLM fallback generators
+# Instant structured data generators
 def generate_hotels(city: str) -> list:
-    print(f"[FALLBACK] Calling dedicated fallback generator for hotels in {city}.")
-    prompt = (
-        f"Generate a list of 5 realistic, actual hotels in the city of {city}.\n"
-        "Return the output STRICTLY as a JSON list of objects matching this schema:\n"
-        "[\n"
-        "  {\n"
-        "    \"hotel_id\": \"hotel-1\",\n"
-        "    \"name\": \"Grand Palace Hotel\",\n"
-        "    \"rating\": 4.6,\n"
-        "    \"reviews\": 340,\n"
-        "    \"address\": \"123 Palace Road, Central Block\",\n"
-        "    \"website\": \"http://grandpalacehotel.com\",\n"
-        "    \"latitude\": 17.3850,\n"
-        "    \"longitude\": 78.4867,\n"
-        "    \"pricePerNight\": 4500,\n"
-        "    \"amenities\": [\"Free Wi-Fi\", \"Swimming Pool\", \"Room Service\"],\n"
-        "    \"room_types\": [\"Standard\", \"Deluxe\", \"Suite\"],\n"
-        "    \"parking\": \"Valet parking available\",\n"
-        "    \"photos\": [],\n"
-        "    \"booking_url\": \"http://booking.com\"\n"
-        "  }\n"
-        "]\n"
-        "Output only valid JSON. Do not include markdown codeblocks or explanations."
-    )
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0
-        )
-        content = response.choices[0].message.content.strip()
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        if "[" in content:
-            content = content[content.find("["):content.rfind("]")+1]
-        return json.loads(content)
-    except Exception as e:
-        print(f"Error generating fallback hotels: {e}")
-        return []
+    from services.trip_service import get_structured_hotels
+    return get_structured_hotels(city, "Moderate")
 
 def generate_restaurants(city: str) -> list:
-    print(f"[FALLBACK] Calling dedicated fallback generator for restaurants in {city}.")
-    prompt = (
-        f"Generate a list of 8 realistic, actual restaurants in the city of {city}. Include breakfast cafes as well as lunch/dinner spots.\n"
-        "Return the output STRICTLY as a JSON list of objects matching this schema:\n"
-        "[\n"
-        "  {\n"
-        "    \"restaurant_id\": \"rest-1\",\n"
-        "    \"name\": \"Chutneys Restaurant\",\n"
-        "    \"rating\": 4.4,\n"
-        "    \"reviews\": 1200,\n"
-        "    \"address\": \"Begumpet, Main Road\",\n"
-        "    \"website\": \"http://chutneysrest.com\",\n"
-        "    \"latitude\": 17.4410,\n"
-        "    \"longitude\": 78.4815,\n"
-        "    \"price\": \"Moderate\",\n"
-        "    \"serves_breakfast\": true,\n"
-        "    \"serves_lunch\": true,\n"
-        "    \"serves_dinner\": true,\n"
-        "    \"serves_vegetarian\": true,\n"
-        "    \"hours\": [\"07:00 AM - 11:00 PM\"]\n"
-        "  }\n"
-        "]\n"
-        "Output only valid JSON. Do not include markdown codeblocks or explanations."
-    )
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0
-        )
-        content = response.choices[0].message.content.strip()
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        if "[" in content:
-            content = content[content.find("["):content.rfind("]")+1]
-        return json.loads(content)
-    except Exception as e:
-        print(f"Error generating fallback restaurants: {e}")
-        return []
+    from services.trip_service import get_structured_restaurants
+    return get_structured_restaurants(city, "Moderate")
 
 def generate_attractions(city: str) -> list:
-    print(f"[FALLBACK] Calling dedicated fallback generator for attractions in {city}.")
-    prompt = (
-        f"Generate a list of 10 realistic, actual tourist attractions and sightseeing places in the city of {city}.\n"
-        "Return the output STRICTLY as a JSON list of objects matching this schema:\n"
-        "[\n"
-        "  {\n"
-        "    \"attraction_id\": \"attr-1\",\n"
-        "    \"name\": \"Golconda Fort\",\n"
-        "    \"rating\": 4.7,\n"
-        "    \"reviews\": 25000,\n"
-        "    \"address\": \"Ibrahim Bagh, Hyderabad\",\n"
-        "    \"website\": \"https://golcondafort.com\",\n"
-        "    \"latitude\": 17.3833,\n"
-        "    \"longitude\": 78.4011,\n"
-        "    \"types\": [\"historical_monument\", \"fort\", \"sightseeing\"],\n"
-        "    \"hours\": [\"09:00 AM - 05:30 PM\"],\n"
-        "    \"editorial\": \"A massive, historic fort famous for its acoustics and architecture.\"\n"
-        "  }\n"
-        "]\n"
-        "Output only valid JSON. Do not include markdown codeblocks or explanations."
-    )
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0
-        )
-        content = response.choices[0].message.content.strip()
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        if "[" in content:
-            content = content[content.find("["):content.rfind("]")+1]
-        return json.loads(content)
-    except Exception as e:
-        print(f"Error generating fallback attractions: {e}")
+    from services.trip_service import get_structured_attractions
+    return get_structured_attractions(city, "Moderate")
+
+def _extract_agent_data(result) -> list:
+    if not isinstance(result, dict):
         return []
+    data = result.get("data")
+    return data if isinstance(data, list) else []
+
+def _load_cached_agent_data(key: str) -> list:
+    try:
+        import json
+        from supervisor import get_guided_state
+        raw = get_guided_state().get(key)
+        if not raw:
+            return []
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+def _load_hotels_google_first(question: str, city: str, budget: str, days: int) -> list:
+    try:
+        from agents.hotel_agent import hotel_agent
+        demo_log("CALENDAR_FALLBACK_HOTELS", "No upstream hotel data. Calling Hotel Agent first.")
+        result = hotel_agent(
+            question=question,
+            city=city,
+            budget=budget,
+            travelers=1,
+        )
+        data = _extract_agent_data(result)
+        if data:
+            demo_log(
+                "CALENDAR_FALLBACK_HOTELS",
+                f"Hotel Agent returned source={result.get('source', 'unknown')}, count={len(data)}, sample={demo_names(data)}"
+            )
+            return data
+    except Exception as e:
+        print(f"[WARNING] Hotel Agent failed while preparing calendar data: {e}")
+
+    from services.trip_service import get_structured_hotels
+    data = get_structured_hotels(city, budget)
+    demo_log("CALENDAR_FALLBACK_HOTELS", f"LLM/TripService fallback count={len(data)}, sample={demo_names(data)}")
+    return data
+
+def _load_restaurants_google_first(question: str, city: str, budget: str, interests: str) -> list:
+    try:
+        from agents.restaurant_agent import restaurant_agent
+        demo_log("CALENDAR_FALLBACK_RESTAURANTS", "No upstream restaurant data. Calling Restaurant Agent first.")
+        result = restaurant_agent(
+            question=question,
+            city=city,
+            interests=interests,
+            budget=budget,
+        )
+        data = _extract_agent_data(result)
+        if data:
+            demo_log(
+                "CALENDAR_FALLBACK_RESTAURANTS",
+                f"Restaurant Agent returned source={result.get('source', 'unknown')}, count={len(data)}, sample={demo_names(data)}"
+            )
+            return data
+    except Exception as e:
+        print(f"[WARNING] Restaurant Agent failed while preparing calendar data: {e}")
+
+    from services.trip_service import get_structured_restaurants
+    data = get_structured_restaurants(city, budget)
+    demo_log("CALENDAR_FALLBACK_RESTAURANTS", f"LLM/TripService fallback count={len(data)}, sample={demo_names(data)}")
+    return data
+
+def _load_attractions_google_first(question: str, city: str, budget: str, interests: str) -> list:
+    try:
+        from agents.nearby_agent import nearby_agent
+        demo_log("CALENDAR_FALLBACK_ATTRACTIONS", "No upstream attraction data. Calling Nearby Agent first.")
+        result = nearby_agent(question, city, interests)
+        data = _extract_agent_data(result)
+        if data:
+            demo_log(
+                "CALENDAR_FALLBACK_ATTRACTIONS",
+                f"Nearby Agent returned source={result.get('source', 'unknown')}, count={len(data)}, sample={demo_names(data)}"
+            )
+            return data
+    except Exception as e:
+        print(f"[WARNING] Nearby Agent failed while preparing calendar data: {e}")
+
+    from services.trip_service import get_structured_attractions
+    data = get_structured_attractions(city, budget)
+    demo_log("CALENDAR_FALLBACK_ATTRACTIONS", f"LLM/TripService fallback count={len(data)}, sample={demo_names(data)}")
+    return data
 
 def calendar_agent(
     question: str,
@@ -203,7 +191,8 @@ def calendar_agent(
     restaurants_data: list = None,
     nearby_data: list = None,
     weather_data: dict = None,
-    other_agent_info: str = ""
+    other_agent_info: str = "",
+    transport_data: list = None
 ) -> str:
     """
     Orchestrator calendar agent that coordinates data preparation and invokes CalendarBuilder.
@@ -211,9 +200,22 @@ def calendar_agent(
     print(f"[DEBUG] Calendar Agent received hotels_data: {len(hotels_data or [])} items")
     print(f"[DEBUG] Calendar Agent received restaurants_data: {len(restaurants_data or [])} items")
     print(f"[DEBUG] Calendar Agent received nearby_data: {len(nearby_data or [])} items")
+    demo_log(
+        "CALENDAR_START",
+        (
+            f"city={city}, days={days}, budget={budget}, style={travel_style}, interests={interests}, "
+            f"upstream_hotels={len(hotels_data or [])}, upstream_restaurants={len(restaurants_data or [])}, "
+            f"upstream_attractions={len(nearby_data or [])}, weather={'yes' if weather_data else 'no'}, "
+            f"transport={len(transport_data or [])}"
+        )
+    )
 
-    if city == "None":
-        return "I can help you build a personalized day plan, but I need to know your destination first."
+    if city == "None" or not city or city == "":
+        extracted_city, _ = extract_trip_details(question)
+        if extracted_city != "None":
+            city = extracted_city
+        else:
+            return "I can help you build a personalized day plan, but I need to know your destination first."
 
     # Check for regeneration count in guided state
     try:
@@ -223,13 +225,27 @@ def calendar_agent(
     except Exception:
         regen_count = 0
 
-    # Validate and handle empty structured data fallbacks
+    # Validate and handle empty structured data by asking each proper agent first.
+    # Those agents use Google Places as the primary data source and fall back only
+    # when the API is unavailable or returns no usable data.
     if not hotels_data:
-        hotels_data = generate_hotels(city)
+        hotels_data = _load_cached_agent_data("hotels_data")
+    if not hotels_data:
+        hotels_data = _load_hotels_google_first(question, city, budget, days)
+    else:
+        demo_log("CALENDAR_USE_HOTELS", f"Using upstream hotels count={len(hotels_data)}, sample={demo_names(hotels_data)}")
     if not restaurants_data:
-        restaurants_data = generate_restaurants(city)
+        restaurants_data = _load_cached_agent_data("restaurants_data")
+    if not restaurants_data:
+        restaurants_data = _load_restaurants_google_first(question, city, budget, interests)
+    else:
+        demo_log("CALENDAR_USE_RESTAURANTS", f"Using upstream restaurants count={len(restaurants_data)}, sample={demo_names(restaurants_data)}")
     if not nearby_data:
-        nearby_data = generate_attractions(city)
+        nearby_data = _load_cached_agent_data("nearby_data")
+    if not nearby_data:
+        nearby_data = _load_attractions_google_first(question, city, budget, interests)
+    else:
+        demo_log("CALENDAR_USE_ATTRACTIONS", f"Using upstream attractions count={len(nearby_data)}, sample={demo_names(nearby_data)}")
 
     # Rotate lists based on regen_count to choose alternative items programmatically
     if regen_count > 0:
@@ -246,20 +262,58 @@ def calendar_agent(
 
     if not weather_data:
         weather_data = {"main": "Clear", "temp": 28.0}
+        demo_log("CALENDAR_WEATHER", "No upstream weather data. Using default clear-weather fallback.")
+    else:
+        demo_log("CALENDAR_WEATHER", f"Using upstream weather data: {str(weather_data)[:180]}")
+
+    # Extract real parameters from guided state
+    try:
+        from supervisor import get_guided_state
+        g_state = get_guided_state()
+        travel_date = g_state.get("calendar.travel_date", g_state.get("travel_date", "2026-07-12"))
+        
+        # Safe integer cast for travelers count
+        raw_travelers = g_state.get("calendar.travelers", g_state.get("travelers", 4))
+        try:
+            travelers = int(raw_travelers)
+        except ValueError:
+            travelers = 4
+            
+        current_location = g_state.get("calendar.current_location", g_state.get("current_location", "None"))
+        travel_mode = g_state.get("calendar.travel_mode", g_state.get("travel_mode", "None"))
+        diet = g_state.get("calendar.diet", g_state.get("diet", "None"))
+    except Exception:
+        travel_date = "2026-07-12"
+        travelers = 4
+        current_location = "None"
+        travel_mode = "None"
+        diet = "None"
 
     # Invoke programmatic builder
     itinerary_struct = CalendarBuilder.build_itinerary(
         city=city,
-        start_date_str="2026-07-12",  # Default or extract
+        start_date_str=travel_date,
         days=days,
         budget=budget,
         travel_style=travel_style,
         interests=interests,
-        travelers=4,  # Default
+        travelers=travelers,
         hotels=hotels_data,
         restaurants=restaurants_data,
         attractions=nearby_data,
-        weather=weather_data
+        weather=weather_data,
+        current_location=current_location,
+        travel_mode=travel_mode,
+        diet=diet,
+        transport_data=transport_data
+    )
+    day_count = len(itinerary_struct.get("days", [])) if isinstance(itinerary_struct, dict) else 0
+    demo_log(
+        "CALENDAR_BUILD",
+        (
+            f"CalendarBuilder received hotels={len(hotels_data or [])}, restaurants={len(restaurants_data or [])}, "
+            f"attractions={len(nearby_data or [])}, transport={len(transport_data or [])}, built_days={day_count}"
+        )
     )
 
     # Flatten the day-by-day structure into the flat list layout expected by the system
@@ -290,8 +344,13 @@ def calendar_agent(
                 "travel_time": activity.get("travel_time"),
                 "transport": activity.get("transport"),
                 "estimated_cost": activity.get("estimated_cost"),
+                "googlePhotoName": activity.get("googlePhotoName"),
                 "status": activity.get("status")
             }
             flat_itinerary.append(flat_item)
 
+    demo_log(
+        "CALENDAR_FLATTEN",
+        f"flat_items={len(flat_itinerary)}, sample={demo_names(flat_itinerary, name_key='activity', limit=6)}"
+    )
     return json.dumps(flat_itinerary, indent=2)

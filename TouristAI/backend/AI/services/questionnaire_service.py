@@ -21,6 +21,7 @@ AGENT_ROUTE_MAP = {
     "restaurant": "restaurant",
     "calendar": "calendar",
     "budget": "budget",
+    "train": "transport",
 }
 
 def normalize_agent(agent: str) -> str:
@@ -206,14 +207,16 @@ AGENT_REGISTRY = {
         }
     },
     "calendar": {
-        "fields": ["destination", "travel_date", "days", "budget", "travelers", "travel_style", "interests", "start_time", "end_time", "free_time", "shopping", "nightlife", "google_calendar"],
-        "priority": ["destination", "travel_date", "days", "budget", "travelers", "travel_style", "interests", "start_time", "end_time", "free_time", "shopping", "nightlife", "google_calendar"],
+        "fields": ["destination", "current_location", "travel_date", "days", "travel_mode", "budget", "travelers", "travel_style", "interests", "start_time", "end_time", "free_time", "shopping", "nightlife", "google_calendar"],
+        "priority": ["destination", "current_location", "travel_date", "days", "travel_mode", "budget", "travelers", "travel_style", "interests"],
         "extractor": extract_calendar_fields,
         "prompts": {
             "destination": "Where would you like to go?",
+            "current_location": "Where are you starting your trip from? (Your current location)",
             "travel_date": "When are you planning to travel?",
             "days": "How many days?",
-            "budget": "What is your budget?\n\n* **Budget**\n* **Moderate**\n* **Luxury**",
+            "travel_mode": "What is your preferred mode of travel?\n\n* **Car**\n* **Bus**\n* **Train**\n* **Flight**",
+            "budget": "What is your budget?\n\n* **Low**\n* **Moderate**\n* **Luxury**",
             "travelers": "How many travelers?",
             "travel_style": "What kind of trip?\n\n* **Family**\n* **Solo**\n* **Friends**\n* **Couple**\n* **Business**",
             "interests": "Any interests?\n\n* **Nature**\n* **Adventure**\n* **History**\n* **Food**\n* **Photography**\n* **Shopping**\n* **Kids Friendly**\n* **Senior Citizen Friendly**",
@@ -436,7 +439,17 @@ def save_agent_answer(agent_name: str, field_key: str, answer: str):
 
     # Smart Extraction Flow on the answer text:
     # 1. Run local agent-specific rule extraction
-    extracted = config["extractor"](answer)
+    if agent_name == "calendar" and field_key == "current_location":
+        extracted = {"current_location": answer.strip()}
+    else:
+        extracted = config["extractor"](answer)
+
+    if agent_name == "calendar" and field_key != "destination":
+        # A short single-field answer like "Madurai" for current_location can
+        # look like a destination to the broad calendar extractor. Do not let
+        # non-destination answers overwrite the already collected trip
+        # destination.
+        extracted.pop("destination", None)
     
     # 2. If the active field is not extracted, fallback to parse_field rule
     if field_key not in extracted:
@@ -444,20 +457,15 @@ def save_agent_answer(agent_name: str, field_key: str, answer: str):
         if parsed and parsed != "None":
             extracted[field_key] = parsed
             
-    # 3. If field is still missing and user answer is complex (> 4 words), call LLM fallback
-    word_count = len(answer.split())
-    if field_key not in extracted and word_count > 4:
-        llm_extracted = extract_values_with_llm(agent_name, answer)
-        if field_key in llm_extracted:
-            extracted[field_key] = llm_extracted[field_key]
-            
-    # 4. If the field is STILL missing, but it's a valid non-empty answer,
+    # 3. If the field is STILL missing, but it's a valid non-empty answer,
     # save the raw answer (fallback) to prevent stuck loops
     if field_key not in extracted and answer.strip():
         extracted[field_key] = answer.strip()
         
-    # 5. Validate and save all extracted fields to SQLite
+    # 4. Validate and save all extracted fields to guided state
     from supervisor import update_guided_state
     for k, v in extracted.items():
-        if k in config["fields"] and validate_field(k, v):
-            update_guided_state(state_key(agent_name, k), v)
+        if k in config["fields"] and validate_field(k, str(v)):
+            norm_val = str(v).strip().title() if isinstance(v, str) and k in {"destination", "current_location", "city", "travel_style", "interests", "travel_mode"} else str(v).strip()
+            update_guided_state(state_key(agent_name, k), norm_val)
+            update_guided_state(k, norm_val)

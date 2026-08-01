@@ -33,12 +33,22 @@ class NotificationSchedulerService:
                     parts = start_time.split(":")
                     hour = int(parts[0])
                     minute = int(parts[1][:2])
-                except:
-                    pass
+                except Exception as e:
+                    print(f"[NotificationScheduler] Error parsing time '{start_time}': {e}")
+                    hour, minute = 9, 0
+            
+            # Sanitize hour and minute to valid range
+            hour = hour % 24
+            minute = minute % 60
             
             # Compute exact event time
             event_datetime = base_date + timedelta(days=(day - 1))
-            event_datetime = event_datetime.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            try:
+                event_datetime = event_datetime.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            except ValueError as e:
+                print(f"[NotificationScheduler] Error setting time hour={hour}, minute={minute}: {e}")
+                # Fallback to default time
+                event_datetime = event_datetime.replace(hour=9, minute=0, second=0, microsecond=0)
             
             # Save mapping
             key = f"day{day}_{start_time}_{activity.lower()[:15]}"

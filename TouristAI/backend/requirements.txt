@@ -1,0 +1,17 @@
+fastapi
+uvicorn[standard]
+httpx
+aiohttp
+python-dotenv
+rapidfuzz
+dateparser
+langgraph
+langchain
+langchain-community
+langchain-huggingface
+faiss-cpu
+sentence-transformers
+requests
+beautifulsoup4
+pypdf
+playwright

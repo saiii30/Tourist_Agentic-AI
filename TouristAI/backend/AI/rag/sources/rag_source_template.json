@@ -1,0 +1,64 @@
+{
+  "sources": [
+    {
+      "enabled": false,
+      "file_path": "C:/path/to/local-tourism-brochure.pdf",
+      "name": "Local Tourism PDF Brochure",
+      "destination": "State Or Destination Name",
+      "city": "City Or State Name",
+      "category": "State Tourism Document",
+      "knowledge_type": "state_tourism_documents",
+      "source_type": "tourism_board_pdf",
+      "trust_score": 95,
+      "language": "en"
+    },
+    {
+      "enabled": false,
+      "name": "State Tourism PDF Brochure",
+      "url": "https://example.gov.in/tourism-brochure.pdf",
+      "destination": "State Or Destination Name",
+      "city": "City Or State Name",
+      "category": "State Tourism Document",
+      "knowledge_type": "state_tourism_documents",
+      "source_type": "tourism_board_pdf",
+      "trust_score": 95,
+      "language": "en"
+    },
+    {
+      "enabled": false,
+      "name": "UNESCO Heritage Information",
+      "url": "https://whc.unesco.org/en/list/example",
+      "destination": "Heritage Site Name",
+      "city": "City Name",
+      "category": "UNESCO Heritage",
+      "knowledge_type": "history",
+      "source_type": "unesco_information",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": false,
+      "name": "Temple Customs Page",
+      "url": "https://example-temple.gov.in/visitor-info",
+      "destination": "Temple Name",
+      "city": "City Name",
+      "category": "Temple Information",
+      "knowledge_type": "temple_information",
+      "source_type": "official_tourism_website",
+      "trust_score": 100,
+      "language": "en"
+    },
+    {
+      "enabled": false,
+      "name": "Trekking Route Guide",
+      "url": "https://forest.example.gov.in/trek-route",
+      "destination": "Trek Or Hill Name",
+      "city": "City Or District Name",
+      "category": "Trekking Route",
+      "knowledge_type": "trekking_routes",
+      "source_type": "government_brochure",
+      "trust_score": 100,
+      "language": "en"
+    }
+  ]
+}
