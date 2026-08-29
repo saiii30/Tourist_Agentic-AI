@@ -85,7 +85,7 @@ def save_itinerary_to_db(itinerary_text: str, trip_name: str = None) -> dict:
     
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
@@ -376,7 +376,7 @@ def extract_query_details(question: str) -> dict:
         f"Query: {question}"
     )
     try:
-        response = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}], temperature=0.0)
+        response = client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], temperature=0.0)
         data = json.loads(response.choices[0].message.content.strip())
         return {
             "city": data.get("city", "None"),
@@ -415,7 +415,7 @@ def extract_all_opening_details(question: str) -> dict:
                 "{ \"destination\": \"...\", \"current_location\": \"...\", \"travel_date\": \"...\", \"days\": \"...\", \"budget\": \"...\", \"travelers\": \"...\", \"travel_style\": \"...\", \"travel_mode\": \"...\", \"interests\": \"...\" }\n\n"
                 f"Query: {question}"
             )
-            response = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}], temperature=0.0)
+            response = client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], temperature=0.0)
             content = response.choices[0].message.content.strip()
             match = re.search(r'\{.*\}', content, re.DOTALL)
             if match:
@@ -431,7 +431,7 @@ def extract_all_opening_details(question: str) -> dict:
 def extract_single_field(field_key: str, user_response: str) -> str:
     prompt = f"The user was asked {field_key}. Response: '{user_response}'. Extract the value. Return only the value."
     try:
-        response = client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}], temperature=0.0)
+        response = client.chat.completions.create(model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], temperature=0.0)
         return response.choices[0].message.content.strip()
     except Exception:
         return "None"
@@ -591,7 +591,7 @@ def route_question(state, details=None):
             return routes
 
     routes = []
-    mk = lambda q, kw: any(k in q for k in kw)
+    mk = lambda q, kw: matches_keywords(q, kw)
     if mk(question_lower, ["train", "railway", "rail"]): routes.append("transport")
     if mk(question_lower, ["restaurant", "food", "eat"]): routes.append("restaurant")
     if mk(question_lower, ["hotel", "stay"]): routes.append("hotel")
@@ -602,6 +602,9 @@ def route_question(state, details=None):
     routes = list(set(routes))
     if not routes: routes.append("general")
     if len(routes) == 1 and routes[0] in {"hotel", "restaurant", "nearby", "calendar", "budget"}:
+        if routes[0] != "calendar" and (clean_val(state.get("destination")) or clean_val(state.get("city"))):
+            demo_log("SUPERVISOR_ROUTE_DECISION", f"single_agent={routes[0]}, city_present=yes, routes={routes}")
+            return routes
         agent_name = "attraction" if routes[0] == "nearby" else routes[0]
         start_agent_questionnaire(agent_name, question)
         g_state = get_guided_state()

@@ -1,5 +1,5 @@
-import React from "react";
-import { Bike, Bus, Car, ExternalLink, Navigation } from "lucide-react";
+import React, { useState } from "react";
+import { Bike, Bus, Car, ChevronDown, ExternalLink, Navigation } from "lucide-react";
 
 interface LocalTransportBookingCardProps {
   mode?: string;
@@ -7,6 +7,7 @@ interface LocalTransportBookingCardProps {
   distance?: string;
   destination?: string;
   compact?: boolean;
+  inline?: boolean;
 }
 
 const parseDistanceKm = (distance?: string): number | null => {
@@ -47,7 +48,9 @@ export const LocalTransportBookingCard: React.FC<LocalTransportBookingCardProps>
   distance,
   destination,
   compact = false,
+  inline = false,
 }) => {
+  const [showProviders, setShowProviders] = useState(false);
   if (!shouldShowLocalTransportBooking(mode, distance)) return null;
 
   const normalizedMode = (mode || "").toLowerCase();
@@ -56,6 +59,33 @@ export const LocalTransportBookingCard: React.FC<LocalTransportBookingCardProps>
   const isAuto = normalizedMode.includes("auto") || normalizedMode.includes("rickshaw");
   const primaryLabel = isBus ? "View Bus Route" : isBike ? "Book Bike" : isAuto ? "Book Auto" : "Book Cab";
   const primaryProvider = isBus ? "bus" : isBike ? "bike" : isAuto ? "auto" : "cab";
+
+  if (inline) {
+    const destinationQuery = encodeURIComponent(destination || "destination");
+    const providers = [
+      { label: "Local Cab", url: `https://www.google.com/maps/search/local+taxi+near+${destinationQuery}` },
+      { label: "Rapido", url: "https://www.rapido.bike/" },
+      { label: "Uber", url: `https://m.uber.com/ul/?action=setPickup&dropoff[formatted_address]=${destinationQuery}` },
+      { label: "Ola", url: "https://www.olacabs.com/" },
+      { label: "Auto", url: `https://www.google.com/maps/search/auto+rickshaw+near+${destinationQuery}` },
+    ];
+    return (
+      <div className="relative my-1.5 flex items-center gap-2 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1.5 text-left dark:border-slate-800 dark:bg-slate-900/60">
+        <Car className="h-3.5 w-3.5 shrink-0 text-teal-600 dark:text-teal-400" />
+        <span className="min-w-0 flex-1 truncate text-[10.5px] font-bold text-slate-600 dark:text-slate-300">
+          Travel {duration || "Time pending"}{distance ? ` (${distance})` : ""}
+        </span>
+        <button type="button" onClick={() => setShowProviders((value) => !value)} className="inline-flex shrink-0 items-center gap-1 rounded-md bg-teal-600 px-2 py-1 text-[9px] font-extrabold text-white hover:bg-teal-700" aria-expanded={showProviders}>
+          Book <ChevronDown className="h-3 w-3" />
+        </button>
+        {showProviders && (
+          <div className="absolute right-0 top-full z-40 mt-1.5 w-36 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+            {providers.map((provider) => <button key={provider.label} type="button" onClick={() => { window.open(provider.url, "_blank", "noopener,noreferrer"); setShowProviders(false); }} className="block w-full rounded-lg px-2.5 py-2 text-left text-[10px] font-bold text-slate-600 hover:bg-teal-50 hover:text-teal-700 dark:text-slate-300 dark:hover:bg-teal-950/30">{provider.label}</button>)}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`my-2 rounded-xl border border-slate-200 bg-slate-50/80 text-left shadow-sm dark:border-slate-800 dark:bg-slate-900/50 ${compact ? "p-2.5" : "p-3"}`}>

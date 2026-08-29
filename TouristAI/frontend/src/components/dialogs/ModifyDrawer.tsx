@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Calendar, DollarSign, Compass, Users, FileText, Check, Plus, Zap, RotateCcw } from "lucide-react";
+import { X, Calendar, DollarSign, Compass, Users, FileText, Check, Plus, RotateCcw } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTravelPlanner } from "../../context/TravelPlannerContext";
 import type { TripDetails, Activity } from "../../context/TravelPlannerContext";
@@ -26,7 +26,6 @@ export const ModifyDrawer: React.FC<ModifyDrawerProps> = ({ isOpen, onClose, onS
   const [undoCache, setUndoCache] = useState<TripDetails | null>(null);
 
   // Custom action toggles
-  const [isOptimizing, setIsOptimizing] = useState(false);
   const [selectedHotelId, setSelectedHotelId] = useState("");
   const [selectedRestId, setSelectedRestId] = useState("");
 
@@ -132,32 +131,6 @@ export const ModifyDrawer: React.FC<ModifyDrawerProps> = ({ isOpen, onClose, onS
     }
   };
 
-  const handleOptimizeRoute = async () => {
-    setIsOptimizing(true);
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsOptimizing(false);
-    
-    // Shuffle slightly to simulate optimization
-    setActivitiesByDay(prev => {
-      const updated = { ...prev };
-      Object.keys(updated).forEach(day => {
-        const list = [...updated[Number(day)]];
-        if (list.length > 2) {
-          // Move morning activity to index 1 and breakfast to 0
-          const morning = list.find(a => a.slot === "Morning Activity");
-          const rest = list.filter(a => a.slot !== "Morning Activity");
-          if (morning) {
-            rest.splice(1, 0, morning);
-          }
-          updated[Number(day)] = rest;
-        }
-      });
-      return updated;
-    });
-
-    alert("✨ Route Optimized! Connected timeline path reordered for minimal travel time & distance.");
-  };
-
   const handleAddRestaurantActivity = () => {
     if (!selectedRestId || !activeTrip) return;
     const rest = activeTrip.restaurants.find((r) => r.id === selectedRestId);
@@ -225,7 +198,7 @@ export const ModifyDrawer: React.FC<ModifyDrawerProps> = ({ isOpen, onClose, onS
                   Modify Trip Experience
                 </h3>
                 <p className="text-xs text-slate-400 font-medium">
-                  Refine parameters or optimize timeline maps
+                  Refine trip parameters and itinerary events
                 </p>
               </div>
               <button
@@ -244,21 +217,7 @@ export const ModifyDrawer: React.FC<ModifyDrawerProps> = ({ isOpen, onClose, onS
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
                   Quick Tasks
                 </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={handleOptimizeRoute}
-                    disabled={isOptimizing}
-                    className="p-3 bg-teal-50/50 dark:bg-teal-950/20 border border-teal-100 dark:border-teal-900/30 rounded-xl text-left flex items-center gap-2 hover:bg-teal-50 transition-colors group"
-                  >
-                    <Zap className={`w-4 h-4 text-teal-605 group-hover:scale-110 transition-transform ${isOptimizing ? "animate-bounce" : ""}`} />
-                    <div className="text-left">
-                      <p className="text-[11px] font-bold text-teal-800 dark:text-teal-400">
-                        {isOptimizing ? "Optimizing..." : "Optimize Route"}
-                      </p>
-                      <p className="text-[9px] text-slate-450 truncate">Reorders timeline path</p>
-                    </div>
-                  </button>
-
+                <div className="grid grid-cols-1 gap-2">
                   <button
                     onClick={handleUndo}
                     className="p-3 bg-slate-50 dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl text-left flex items-center gap-2 hover:bg-slate-100 transition-colors"

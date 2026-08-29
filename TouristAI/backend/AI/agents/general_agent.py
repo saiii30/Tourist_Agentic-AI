@@ -157,7 +157,7 @@ def general_agent(state):
             cites = r_out.get("citations", [])
             cite_str = ""
             if cites:
-                cite_str = "\n\n**Verified RAG Sources**:\n" + "\n".join([f"- [{c['source_name']}]({c['source_url']}) ({c['trust_score']})" for c in cites])
+                cite_str = "\n\n**Verified sources**\n" + "\n".join([f"- [{c['source_name']}]({c['source_url']})" for c in cites])
             return {
                 "source": "RAG Knowledge Service",
                 "answer": f"{rag_answer}{cite_str}"

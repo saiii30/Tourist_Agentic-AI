@@ -10,7 +10,32 @@ load_dotenv()
 db_lock = threading.Lock()
 
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+class LazyGroqClient:
+    """Create the Groq SDK client only when an AI operation needs it.
+
+    Keeping this lazy allows the API server, health routes, cached trips, and
+    non-Groq features to start when GROQ_API_KEY has not been configured.
+    """
+
+    def __init__(self):
+        self._client = None
+
+    def _get_client(self):
+        if self._client is None:
+            api_key = os.getenv("GROQ_API_KEY", "").strip()
+            if not api_key:
+                raise RuntimeError(
+                    "GROQ_API_KEY is not configured. Add it to the project .env "
+                    "before using Groq-powered AI features."
+                )
+            self._client = Groq(api_key=api_key)
+        return self._client
+
+    def __getattr__(self, name):
+        return getattr(self._get_client(), name)
+
+
+client = LazyGroqClient()
 
 
 def load_db():
@@ -103,7 +128,7 @@ def save_to_rag(question, answer):
 def call_groq(question):
 
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-20b",
         messages=[
             {
                 "role": "user",

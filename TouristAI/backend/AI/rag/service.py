@@ -31,11 +31,13 @@ KNOWN_DESTINATION_CITIES = {
     "nilgiris": "Ooty",
     "kodaikanal": "Kodaikanal",
     "madurai": "Madurai",
+    "salem": "Salem",
     "delhi": "Delhi",
     "new delhi": "Delhi",
     "uttar pradesh": "Uttar Pradesh",
     "rajasthan": "Rajasthan",
     "tamil nadu": "Tamil Nadu",
+    "tamilnadu": "Tamil Nadu",
 }
 
 RAG_COVERED_CITIES = {
@@ -391,8 +393,10 @@ def format_official_source_answer(query: str, results: List[RAGSearchResult]) ->
                 if len(lines) >= 3:
                     break
 
-    destination = results[0].destination or results[0].city or "Tourism"
-    return f"**Official Website Data - {destination}**\n\n" + "\n\n".join(lines[:3])
+    # For broad destination questions the useful overview is the answer. The
+    # individual document name belongs in citations, not in the main heading.
+    requested_city = infer_city_from_query(query, results[0].city or "Tourism")
+    return f"**About {requested_city}**\n\n" + "\n\n".join(lines[:3])
 
 def is_noisy_official_line(line: str) -> bool:
     lower = line.lower().strip()

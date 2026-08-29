@@ -429,11 +429,13 @@ def nearby_agent(question, city="None", interests="None"):
             f"across {cats}."
         )
 
-        return {
-            "source": "discover",
-            "answer": answer_text,
-            "nearbyResult": result
-        }
+        if result.get("categories"):
+            return {
+                "source": "discover",
+                "answer": answer_text,
+                "nearbyResult": result
+            }
+        print("[DISCOVER] No categorized results; continuing through attraction fallbacks")
 
     # ---------------------------------
     # EXISTING FLOW
@@ -460,7 +462,7 @@ def nearby_agent(question, city="None", interests="None"):
     # RAG CACHE
     # Skip RAG for discover queries
     # ---------------------------------
-    if not is_trip_plan:
+    if not is_trip_plan and not discover_mode:
 
         try:
             from rag_service import get_answer

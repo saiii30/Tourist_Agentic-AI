@@ -63,6 +63,7 @@ from graph import graph
 from repositories.trip_repository import TripRepository
 from routes import travel_routes, calendar_routes
 from routers.nearby import nearby as nearby_lookup
+from routers.auth import router as auth_router
 
 travel_search_flights = travel_routes.search_flights
 travel_search_buses = travel_routes.search_buses
@@ -87,6 +88,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 
 trip_service = TripService()
 
@@ -405,7 +408,7 @@ def chat(req: ChatRequest):
     )
 
     # 0. Intercept Travel Booking / Confirmation Texts
-    ticket_keywords = ["confirmation number", "pnr", "boarding pass", "e-ticket", "train to", "flight to", "booking reference", "organiser:", "departure:", "arrival:"]
+    ticket_keywords = ["confirmation number", "pnr", "boarding pass", "e-ticket", "booking reference", "organiser:", "departure:", "arrival:"]
     is_ticket = any(kw in question_lower for kw in ticket_keywords) or ("train" in question_lower and "mdu" in question_lower)
     
     if is_ticket:
@@ -452,8 +455,93 @@ def chat(req: ChatRequest):
                 }
             }
 
+    # Destination discovery is different from asking about one known place or
+    # requesting an itinerary for an already chosen destination.
+    if flow_plan.intent == "recommendation" and not is_active_before_plan:
+        from services.destination_recommendation_service import recommend_destinations
+
+        recommendation = recommend_destinations(
+            origin=flow_plan.entities.get("current_location") or profile_value("homeCity"),
+            days=flow_plan.entities.get("days") or (str(req.days) if req.days else None),
+            season=flow_plan.entities.get("season"),
+            interests=flow_plan.entities.get("interests") or profile_list_text("favoriteTravelStyles"),
+            target_region=flow_plan.entities.get("target_region"),
+        )
+        recommendation_sources = recommendation.get("sources", [])
+        recommendation_source_block = ""
+        if recommendation_sources:
+            recommendation_source_block = "\n\n**Live web sources**\n" + "\n".join(
+                f"- [{source.get('title', 'Travel source')}]({source.get('url')})"
+                for source in recommendation_sources
+                if source.get("url")
+            )
+        return {
+            "status": "success",
+            "answer": f"{recommendation['answer']}{recommendation_source_block}",
+            "routes": ["recommendation"],
+            "trip": None,
+            "image_url": (recommendation.get("image_urls") or [None])[0],
+            "image_urls": recommendation.get("image_urls", []),
+            "metadata": {
+                "source": "destination_recommendation_service",
+                "generated_by": "intent_router",
+                "needs_clarification": recommendation.get("needs_clarification", False),
+                "recommendations": recommendation.get("options", []),
+                "search_query": recommendation.get("search_query"),
+                "search_errors": recommendation.get("errors", []),
+                "chat_flow": {
+                    "intent": flow_plan.intent,
+                    "confidence": flow_plan.confidence,
+                    "entities": flow_plan.entities,
+                    "reason": flow_plan.reason,
+                },
+                "generated_at": datetime.now().isoformat(),
+            },
+        }
+
+    if flow_plan.intent == "attraction" and not is_active_before_plan:
+        from agents.nearby_agent import nearby_agent
+
+        attraction_city = req.destination or req.city or flow_plan.destination
+        if not attraction_city:
+            return {
+                "status": "success",
+                "answer": "Which city or area would you like me to explore?",
+                "routes": ["nearby"],
+                "trip": None,
+            }
+        attraction_result = nearby_agent(
+            req.question,
+            attraction_city,
+            flow_plan.entities.get("interests") or profile_list_text("favoriteTravelStyles") or "None",
+        )
+        nearby_result = attraction_result.get("nearbyResult") if isinstance(attraction_result, dict) else None
+        attach_discovery_photo_urls(nearby_result)
+        return {
+            "status": "success",
+            "answer": attraction_result.get("answer") or f"Here are places to visit in {attraction_city}.",
+            "routes": ["nearby"],
+            "trip": None,
+            "nearbyResult": nearby_result,
+            "metadata": {
+                "source": attraction_result.get("source", "nearby_agent"),
+                "generated_by": "nearby_discover_pipeline",
+                "attractions": attraction_result.get("data", []),
+                "chat_flow": {
+                    "intent": flow_plan.intent,
+                    "confidence": flow_plan.confidence,
+                    "entities": flow_plan.entities,
+                    "reason": flow_plan.reason,
+                },
+                "generated_at": datetime.now().isoformat(),
+            },
+        }
+
     # 0. Direct trusted-knowledge query before the graph can start questionnaires.
-    if flow_plan.should_use_direct_rag:
+    # A short questionnaire answer such as "history" or "food" must be saved
+    # as the active trip preference. Never let direct RAG hijack an in-progress
+    # guided planning flow.
+    if flow_plan.should_use_direct_rag and not is_active_before_plan:
         rag_error = None
         rag_res = {}
         city_for_rag = req.destination or req.city or flow_plan.destination or g_state.get("destination") or "Madurai"
@@ -465,11 +553,11 @@ def chat(req: ChatRequest):
                 cites = rag_res.get("citations", [])
                 cite_str = ""
                 if cites:
-                    cite_str = "\n\n**Verified RAG Sources**:\n" + "\n".join([f"- [{c['source_name']}]({c['source_url']}) ({c['trust_score']})" for c in cites])
+                    cite_str = "\n\n**Verified sources**\n" + "\n".join([f"- [{c['source_name']}]({c['source_url']})" for c in cites])
                 
                 return {
                     "status": "success",
-                    "answer": f"**RAG Knowledge Answer**\n\n{rag_answer}{cite_str}",
+                    "answer": f"{rag_answer}{cite_str}",
                     "routes": ["rag_service"],
                     "trip": None,
                     "metadata": {
@@ -499,16 +587,14 @@ def chat(req: ChatRequest):
                     f"- [{source['title']}]({source['url']})"
                     for source in sources[:4]
                 )
-                source_block = f"\n\n**Live Web Sources**:\n{source_lines}" if source_lines else ""
+                source_block = f"\n\n**Live web sources**\n{source_lines}" if source_lines else ""
                 return {
                     "status": "success",
-                    "answer": (
-                        "**Live Web Search Answer**\n\n"
-                        "I could not find a verified RAG match, so I checked live web results.\n\n"
-                        f"{web_res['answer']}{source_block}"
-                    ),
+                    "answer": f"{web_res['answer']}{source_block}",
                     "routes": ["rag_service", "live_web_search"],
                     "trip": None,
+                    "image_url": web_res.get("image_url"),
+                    "image_urls": web_res.get("image_urls", []),
                     "metadata": {
                         "source": "live_web_search",
                         "generated_by": "live_web_search_service",
@@ -571,11 +657,7 @@ def chat(req: ChatRequest):
     # Deactivate guided planning if a new single-topic query is asked, to escape any stuck flow
     is_single_topic = flow_plan.intent in {"hotel", "restaurant", "weather", "transport"} or any(kw in question_lower for kw in ["attraction", "sightseeing", "places to visit", "things to do"])
     if is_single_topic:
-        update_guided_state("is_active", "0")
-        update_guided_state("last_itinerary_items", "")
-        update_guided_state("last_itinerary", "")
-        update_guided_state("trip_id", "")
-        update_guided_state("trip_status", "")
+        clear_guided_state()
         clear_cached_place_agent_data()
         
     start_keywords = ["trip", "plan", "itinerary", "vacation", "holiday", "tour", "reset", "start over"]
@@ -695,8 +777,12 @@ def chat(req: ChatRequest):
             )
 
     start_city = (city if is_start and city != "None" else None)
-    init_city = start_city or req.city or req.destination or "None"
-    init_dest = start_city or req.destination or req.city or "None"
+    intent_destination = first_real(req.destination, req.city, flow_plan.destination, flow_plan.entities.get("destination"))
+    intent_source = first_real(flow_plan.entities.get("current_location"), req.current_location, profile_home)
+    intent_mode = first_real(flow_plan.entities.get("travel_mode"), req.travel_mode, profile_transport, "Flight")
+    intent_date = first_real(flow_plan.entities.get("travel_date"), req.travel_date, default="None")
+    init_city = start_city or intent_destination or "None"
+    init_dest = start_city or intent_destination or "None"
     graph_payload = {
         "question": req.question,
         "responses": [],
@@ -704,12 +790,12 @@ def chat(req: ChatRequest):
         "destination": init_dest,
         "days": (int(days_str) if is_start and days_str.isdigit() else None) or req.days or 3,
         "budget": (budget if is_start and budget != "None" else None) or req.budget or profile_budget or "None",
-        "travelers": traveler_count(first_real(req.travelers, profile_group, 1, default=1)),
+        "travelers": traveler_count(first_real(g_state.get("travelers"), req.travelers, profile_group, 1, default=1)),
         "travel_style": (travel_style if is_start and travel_style != "None" else None) or req.travel_style or profile_style or "None",
-        "travel_mode": req.travel_mode or profile_transport or "Flight",
-        "current_location": req.current_location or profile_home or "Chennai",
-        "travel_date": req.travel_date or "None",
-        "interests": req.interests or profile_style or "None",
+        "travel_mode": intent_mode if is_single_topic else first_real(g_state.get("travel_mode"), req.travel_mode, profile_transport, "Flight"),
+        "current_location": intent_source if is_single_topic else first_real(g_state.get("current_location"), req.current_location, profile_home, "Chennai"),
+        "travel_date": intent_date if is_single_topic else first_real(g_state.get("travel_date"), req.travel_date, default="None"),
+        "interests": first_real(g_state.get("interests"), req.interests, profile_style, default="None"),
         "breakfast": "None",
         "hotel_type": profile_hotel or "None",
         "amenities": "None",
@@ -812,6 +898,7 @@ def chat(req: ChatRequest):
     last_items = g_state.get("last_itinerary_items")
     if (
         not is_questionnaire_active
+        and flow_plan.intent == "itinerary"
         and (not last_items or last_items == "[]")
         and city
         and city.lower() != "unknown"

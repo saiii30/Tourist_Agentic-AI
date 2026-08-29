@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Sparkles, X, Send, Bot, Check, AlertCircle, RefreshCw } from "lucide-react";
+import { Sparkles, X, Send, Bot, Check, AlertCircle, RefreshCw, Mic, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTravelPlanner } from "../../context/TravelPlannerContext";
 import type { Activity } from "../../context/TravelPlannerContext";
@@ -22,6 +22,20 @@ export const FloatingAICopilot: React.FC<FloatingAICopilotProps> = ({ isOpen, on
   const [prompt, setPrompt] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [preview, setPreview] = useState<PreviewChange | null>(null);
+  const [isListening, setIsListening] = useState(false);
+
+  const toggleListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition || isListening) return;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-IN";
+    recognition.interimResults = false;
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognition.onresult = (event: any) => setPrompt(event.results[0][0].transcript);
+    recognition.start();
+  };
 
   const suggestedPrompts = [
     "Replace today's hotel with budget resort",
@@ -238,8 +252,8 @@ export const FloatingAICopilot: React.FC<FloatingAICopilotProps> = ({ isOpen, on
                   <Sparkles className="w-4.5 h-4.5 animate-pulse" />
                 </div>
                 <div className="text-left">
-                  <h3 className="font-heading text-sm font-bold tracking-tight">AI Itinerary Copilot</h3>
-                  <span className="text-[9.5px] text-teal-400 font-bold uppercase">Active Assistant</span>
+                  <h3 className="font-heading text-sm font-bold tracking-tight">AI Concierge</h3>
+                  <span className="text-[9.5px] text-teal-400 font-bold uppercase">Voice itinerary assistant</span>
                 </div>
               </div>
               <button
@@ -348,6 +362,15 @@ export const FloatingAICopilot: React.FC<FloatingAICopilotProps> = ({ isOpen, on
                   }}
                   className="flex-1 bg-transparent border-none outline-none text-xs text-slate-205 text-slate-300 placeholder-slate-550 font-bold"
                 />
+                <button
+                  type="button"
+                  onClick={toggleListening}
+                  className={`rounded-lg p-1.5 transition-colors ${isListening ? "bg-red-500/15 text-red-300 animate-pulse" : "text-slate-400 hover:bg-slate-800 hover:text-teal-300"}`}
+                  aria-label={isListening ? "Stop listening" : "Use microphone"}
+                  title={isListening ? "Listening…" : "Speak to AI Concierge"}
+                >
+                  {isListening ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+                </button>
                 <button
                   onClick={() => handleSendPrompt()}
                   className="p-1.5 rounded-lg bg-teal-500 text-slate-900 hover:bg-teal-600 transition-colors"

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .routers import nearby, trips, optimize, chat, route
+from .routers import nearby, trips, optimize, chat, route, auth
 
 app = FastAPI(title="TouristAI Backend", version="0.1.0")
 
@@ -19,6 +19,7 @@ app.include_router(route.router, prefix="/api")
 app.include_router(trips.router)
 app.include_router(optimize.router)
 app.include_router(chat.router)
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 # Root health check
 @app.get("/health")

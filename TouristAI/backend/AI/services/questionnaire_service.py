@@ -95,16 +95,38 @@ def extract_attraction_fields(text: str) -> dict:
 
 def extract_calendar_fields(text: str) -> dict:
     extracted = {}
-    city = common_rules.extract_city(text)
+    # Prefer explicit trip grammar before the broad city rule so
+    # "to Dindigul from Theni" does not become one destination string.
+    destination_match = re.search(
+        r"\b(?:trip|travel|itinerary|vacation|holiday|tour)\s+(?:to|in|for)\s+([A-Za-z][A-Za-z .'-]*?)(?=\s+from\b|\s+starting\b|\s+on\b|,|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    city = destination_match.group(1).strip().title() if destination_match else common_rules.extract_city(text)
     if city: extracted["destination"] = city
-    checkin, checkout = common_rules.extract_dates(text)
+    source_match = re.search(
+        r"\bfrom\s+([A-Za-z][A-Za-z .'-]*?)(?=\s+starting\b|\s+on\b|,|$)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if source_match:
+        extracted["current_location"] = source_match.group(1).strip().title()
+
+    natural_date_match = re.search(
+        r"\b(?:starting|on)\s+(\d{1,2}\s+[A-Za-z]+\s+\d{4})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    checkin, checkout = common_rules.extract_dates(natural_date_match.group(1) if natural_date_match else text)
     if checkin: extracted["travel_date"] = checkin
-    days = common_rules.extract_guest_count(text)
-    if days and "day" in text.lower():
-        extracted["days"] = str(days)
-    travelers = common_rules.extract_guest_count(text)
-    if travelers and any(w in text.lower() for w in ["people", "person", "guest", "adult", "traveler"]):
-        extracted["travelers"] = str(travelers)
+    days_match = re.search(r"\b(\d{1,2})\s*[- ]?days?\b", text, flags=re.IGNORECASE)
+    if days_match: extracted["days"] = days_match.group(1)
+    travelers_match = re.search(r"\b(?:for\s+)?(\d{1,2})\s*(?:people|persons?|guests?|adults?|travell?ers?)\b", text, flags=re.IGNORECASE)
+    if travelers_match: extracted["travelers"] = travelers_match.group(1)
+    mode_match = re.search(r"\bby\s+(car|bus|train|flight|plane|bike|auto|taxi|cab)\b", text, flags=re.IGNORECASE)
+    if mode_match:
+        mode = mode_match.group(1).title()
+        extracted["travel_mode"] = "Flight" if mode == "Plane" else mode
     budget = common_rules.extract_budget(text)
     if budget: extracted["budget"] = budget
     style = attraction_rules.extract_traveler_type(text)
@@ -302,7 +324,7 @@ def extract_values_with_llm(agent: str, question: str) -> dict:
     
     try:
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0
         )
@@ -408,7 +430,10 @@ def get_progress_metadata(agent: str, g_state: Dict[str, str]) -> dict:
     if not config:
         return {}
         
-    fields = config["fields"]
+    # Progress represents the questions this flow actually asks. Optional
+    # calendar fields remain supported but are not part of the required trip
+    # planning questionnaire.
+    fields = config["priority"]
     total = len(fields)
     completed = 0
     for field in fields:

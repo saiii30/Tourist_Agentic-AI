@@ -13,7 +13,7 @@ from rag_service import client
 
 class ItineraryService:
     def __init__(self) -> None:
-        self.model = "llama-3.1-8b-instant"
+        self.model = "openai/gpt-oss-20b"
 
     def parse_markdown_to_items(self, markdown_text: str) -> List[ItineraryItem]:
         """

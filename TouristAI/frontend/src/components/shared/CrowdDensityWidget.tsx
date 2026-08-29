@@ -25,7 +25,7 @@ interface CrowdDensityWidgetProps {
   dateStr?: string;
   timeStr?: string;
   category?: string;
-  variant?: "default" | "floating";
+  variant?: "default" | "floating" | "meter";
 }
 
 const getCrowdStatus = (pct: number) => {
@@ -155,6 +155,9 @@ export const CrowdDensityWidget: React.FC<CrowdDensityWidgetProps> = ({
   }, [destination, cityName, dateStr, timeStr, category]);
 
   if (loading) {
+    if (variant === "meter") {
+      return <div className="h-14 w-14 animate-pulse rounded-full border-[6px] border-slate-200 dark:border-slate-700" title="Predicting crowd" />;
+    }
     if (variant === "floating") {
       return (
         <div className="rounded-2xl border border-white/15 bg-black/45 px-3 py-2.5 text-xs text-white shadow-lg backdrop-blur-md flex items-center gap-2 animate-pulse">
@@ -177,7 +180,7 @@ export const CrowdDensityWidget: React.FC<CrowdDensityWidgetProps> = ({
   const pct = prediction.current_crowd_percentage;
   const status = getCrowdStatus(pct);
   const detailPanel = (
-    <div className="pointer-events-none absolute left-0 right-0 top-full z-30 mt-2 opacity-0 translate-y-1 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0">
+    <div className="pointer-events-none absolute right-0 top-full z-30 mt-2 w-72 opacity-0 translate-y-1 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100 group-hover:translate-y-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0">
       <div className="rounded-xl border border-slate-200 bg-white p-3 text-left shadow-xl dark:border-slate-800 dark:bg-slate-950">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -203,6 +206,16 @@ export const CrowdDensityWidget: React.FC<CrowdDensityWidgetProps> = ({
       </div>
     </div>
   );
+
+  if (variant === "meter") {
+    return (
+      <div tabIndex={0} className="group relative inline-flex cursor-help flex-col items-center gap-1 outline-none focus-visible:ring-2 focus-visible:ring-teal-400" aria-label={`Crowd ${status.label}, ${pct}%`}>
+        <CrowdRing pct={pct} color={status.color} size={58} textClass={status.textClass} />
+        <span className={`text-[9px] font-extrabold ${status.textClass}`}>{status.label}</span>
+        {detailPanel}
+      </div>
+    );
+  }
 
   if (variant === "floating") {
     return (

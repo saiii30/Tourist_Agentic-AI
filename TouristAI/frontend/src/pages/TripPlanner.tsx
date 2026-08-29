@@ -14,6 +14,7 @@ import { AddToItineraryDialog } from "../components/dialogs/AddToItineraryDialog
 import { LocalTransportBookingCard } from "../components/shared/LocalTransportBookingCard";
 import { NearbyExplorerWidget } from "../components/shared/NearbyExplorerWidget";
 import { CrowdDensityWidget } from "../components/shared/CrowdDensityWidget";
+import { ImageSlider } from "../components/chat/ImageSlider";
 import { API_BASE_URL } from "../api/config";
 
 // Icons
@@ -24,7 +25,7 @@ import {
   Activity as ActivityIcon, Wallet, CheckSquare, Square,
   Bell, Volume2, X, LayoutDashboard, Hotel, Utensils, Landmark,
   MapPin, Plane, BedDouble, Coffee, Camera, Clock, MoreVertical,
-  GripVertical, Plus, SlidersHorizontal, ArrowUpDown, Star, Wifi, Car, Waves, Dumbbell, Accessibility, Briefcase, Baby, Dog
+  GripVertical, Plus, SlidersHorizontal, ArrowUpDown, Star, Wifi, Car, Waves, Dumbbell, Accessibility, Briefcase, Baby, Dog, Route, Zap
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import VoiceNotificationService from "../services/VoiceNotificationService";
@@ -272,10 +273,11 @@ const getAttractionReasons = (place: any) => {
 
 interface TripCountdownProps {
   startDateStr: string;
+  compact?: boolean;
 }
 
-const TripCountdown: React.FC<TripCountdownProps> = ({ startDateStr }) => {
-  const [countdown, setCountdown] = useState({ days: "00", hours: "00", minutes: "00", seconds: "00" });
+const TripCountdown: React.FC<TripCountdownProps> = ({ startDateStr, compact = false }) => {
+  const [countdown, setCountdown] = useState({ days: "00", hours: "00", minutes: "00", seconds: "00", started: false });
 
   useEffect(() => {
     const getCountdown = () => {
@@ -294,7 +296,7 @@ const TripCountdown: React.FC<TripCountdownProps> = ({ startDateStr }) => {
         }
         const diffMs = start.getTime() - now.getTime();
         if (diffMs <= 0) {
-          return { days: "00", hours: "00", minutes: "00", seconds: "00" };
+          return { days: "00", hours: "00", minutes: "00", seconds: "00", started: true };
         }
         const totalSecs = Math.floor(diffMs / 1000);
         const secs = totalSecs % 60;
@@ -308,10 +310,11 @@ const TripCountdown: React.FC<TripCountdownProps> = ({ startDateStr }) => {
           days: days.toString().padStart(2, "0"),
           hours: hours.toString().padStart(2, "0"),
           minutes: mins.toString().padStart(2, "0"),
-          seconds: secs.toString().padStart(2, "0")
+          seconds: secs.toString().padStart(2, "0"),
+          started: false,
         };
       } catch {
-        return { days: "00", hours: "00", minutes: "00", seconds: "00" };
+        return { days: "00", hours: "00", minutes: "00", seconds: "00", started: false };
       }
     };
 
@@ -323,6 +326,23 @@ const TripCountdown: React.FC<TripCountdownProps> = ({ startDateStr }) => {
 
     return () => clearInterval(interval);
   }, [startDateStr]);
+
+  if (compact) {
+    const days = Number(countdown.days);
+    const label = countdown.started
+      ? "Trip started"
+      : days > 1
+        ? `Departs in ${days} days`
+        : days === 1
+          ? "Departs tomorrow"
+          : `Departs in ${Number(countdown.hours)}h ${Number(countdown.minutes)}m`;
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-white/50 bg-white/90 px-2.5 py-1 text-[9.5px] font-extrabold text-teal-800 shadow-sm backdrop-blur-md">
+        <Clock className="h-3 w-3 text-teal-600" />
+        {label}
+      </span>
+    );
+  }
 
   return (
     <div className="p-4 bg-teal-600 text-white rounded-2xl shadow-sm text-center space-y-2">
@@ -522,6 +542,7 @@ interface RoadmapEventCardProps {
   onDelete: (id: string) => void;
   onReplace: (id: string) => void;
   onViewOnMap: (location: string, title: string) => void;
+  compactTimeline?: boolean;
 }
 
 const RoadmapEventCard: React.FC<RoadmapEventCardProps> = ({
@@ -530,22 +551,42 @@ const RoadmapEventCard: React.FC<RoadmapEventCardProps> = ({
   onDelete,
   onReplace,
   onViewOnMap,
+  compactTimeline = false,
 }) => {
   const meta = getRoadmapMeta(activity);
-  const Icon = meta.icon;
   const isTransport = activity.category === "Transport";
   const imageKind = getRoadmapImageKind(activity);
   const fallbackImage = resolveImageUrl(null, cityName, imageKind, activity.title);
   const [imageFailed, setImageFailed] = useState(false);
   const image = imageFailed ? fallbackImage : resolvePlaceImageUrl(activity.image, activity.googlePhotoName, cityName, imageKind, activity.title);
 
+  if (compactTimeline) {
+    return (
+      <div className="group flex items-stretch gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-sm transition hover:border-teal-200 hover:shadow-md dark:border-slate-800 dark:bg-[#111827]">
+        <div className="h-24 w-28 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-900 sm:w-32">
+          <img src={image} alt={activity.title} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setImageFailed(true)} className="h-full w-full object-cover" />
+        </div>
+        <div className="min-w-0 flex-1 py-0.5 text-left">
+          <div className="flex items-center gap-2">
+            <span className={`rounded-md px-2 py-0.5 text-[9px] font-extrabold ${meta.tone}`}>{meta.label}</span>
+            <span className="text-[10px] font-bold text-slate-400">{activity.time} · {activity.duration}</span>
+            <div className="ml-auto flex items-center gap-0.5 text-slate-400">
+              <button type="button" onClick={() => onReplace(activity.id)} className="rounded-md p-1 hover:bg-slate-100 hover:text-blue-600 dark:hover:bg-slate-800" aria-label="Replace event"><RefreshCw className="h-3.5 w-3.5" /></button>
+              <button type="button" onClick={() => onDelete(activity.id)} className="rounded-md p-1 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/25" aria-label="Delete event"><X className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+          <h4 className="mt-1 truncate text-sm font-extrabold text-slate-850 dark:text-slate-100">{activity.title}</h4>
+          {activity.location && <button type="button" onClick={() => onViewOnMap(activity.location, activity.title)} className="mt-1 flex max-w-full items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-teal-600 dark:text-slate-400"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{activity.location}</span></button>}
+          <p className="mt-1 line-clamp-2 text-[10.5px] font-medium leading-relaxed text-slate-500 dark:text-slate-400">{getRoadmapSubtitle(activity)}</p>
+        </div>
+        {!isTransport && <div className="flex w-16 shrink-0 items-center justify-center border-l border-slate-100 pl-2 dark:border-slate-800"><CrowdDensityWidget destination={activity.title} cityName={cityName} timeStr={activity.time || "10:00"} category={activity.category} variant="meter" /></div>}
+      </div>
+    );
+  }
+
   return (
     <div className="group rounded-xl border border-slate-200/80 bg-white p-3 shadow-sm transition hover:border-violet-200 hover:shadow-md dark:border-slate-800 dark:bg-[#111827] dark:hover:border-violet-900/60">
       <div className="flex items-start gap-3">
-        <div className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white shadow-sm ${meta.dot}`}>
-          <Icon className="h-4.5 w-4.5" />
-        </div>
-
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-md px-2 py-0.5 text-[10px] font-extrabold ${meta.tone}`}>
@@ -674,13 +715,17 @@ const escapeHtml = (value: string | number | undefined | null) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
-export const TripPlanner: React.FC = () => {
+interface TripPlannerProps {
+  itineraryOnly?: boolean;
+}
+
+export const TripPlanner: React.FC<TripPlannerProps> = ({ itineraryOnly = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { activeTrip, updateActiveTrip, generateNewMockTrip, saveTrip, syncCalendar } = useTravelPlanner();
 
   // Page load and active workspace tab
-  const [activeTab, setActiveTab] = useState<PlannerTab>("Overview");
+  const [activeTab, setActiveTab] = useState<PlannerTab>(itineraryOnly ? "Itinerary" : "Overview");
   const [activeItineraryDay, setActiveItineraryDay] = useState<number>(1);
 
   // Modals / Drawers states
@@ -694,6 +739,7 @@ export const TripPlanner: React.FC = () => {
   const [isReplaceDialogOpen, setIsReplaceDialogOpen] = useState(false);
   const [itemToAdd, setItemToAdd] = useState<{ type: 'hotel' | 'restaurant' | 'attraction', id: string, name: string, location: string, rating: number, image: string, googlePhotoName?: string | null } | null>(null);
   const [mapSearchQuery, setMapSearchQuery] = useState<string | null>(null);
+  const shouldRenderInteractiveMap = activeTab === "Map" || itineraryOnly;
   
   // Replacement state
   const [replacementTarget, setReplacementTarget] = useState<{ dayNum: number; activityId: string; activity: any } | null>(null);
@@ -701,6 +747,7 @@ export const TripPlanner: React.FC = () => {
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const [osrmRouteData, setOsrmRouteData] = useState<any>(null);
   const [isLoadingRoute, setIsLoadingRoute] = useState(false);
+  const [isApplyingOptimizedRoute, setIsApplyingOptimizedRoute] = useState(false);
   const [currentPosition, setCurrentPosition] = useState<CoordinatePair | null>(null);
   const [hotelBudgetFilter, setHotelBudgetFilter] = useState<HotelBudgetFilter>("all");
   const [hotelRatingFilter, setHotelRatingFilter] = useState<HotelRatingFilter>("all");
@@ -1197,19 +1244,34 @@ export const TripPlanner: React.FC = () => {
   }, [activeTrip, effectiveHotels, effectiveRestaurants, effectiveAttractions]);
 
   const visibleMapPoints = useMemo(() => {
-    if (!mapSearchQuery || !activeTrip) return mapPoints;
+    if (!activeTrip) return [];
+    const scopedPoints = itineraryOnly
+      ? mapPoints.filter((point) => point.kind === "itinerary" && point.day === activeItineraryDay)
+      : mapPoints;
+    if (!mapSearchQuery) return scopedPoints;
     const query = mapSearchQuery.toLowerCase();
 
-    if (query === activeTrip.cityName.toLowerCase()) return mapPoints;
-    if (query.includes("hotels in")) return mapPoints.filter((point) => point.kind === "hotel");
-    if (query.includes("restaurants in")) return mapPoints.filter((point) => point.kind === "restaurant");
-    if (query.includes("itinerary")) return mapPoints.filter((point) => point.kind === "itinerary");
+    if (itineraryOnly) {
+      if (query.includes("hotels in")) return mapPoints.filter((point) => point.kind === "hotel");
+      if (query.includes("restaurants in")) return mapPoints.filter((point) => point.kind === "restaurant");
+      if (query.includes("itinerary") || query.includes("route")) return scopedPoints;
+      if (query === activeTrip.cityName.toLowerCase()) return mapPoints;
+      const selectedDayStop = scopedPoints.some((point) =>
+        `${point.name} ${point.subtitle || ""}`.toLowerCase().includes(query.replace(`, ${activeTrip.cityName.toLowerCase()}`, ""))
+      );
+      if (selectedDayStop) return scopedPoints;
+    }
 
-    const matched = mapPoints.filter((point) =>
+    if (query === activeTrip.cityName.toLowerCase()) return scopedPoints;
+    if (query.includes("hotels in")) return scopedPoints.filter((point) => point.kind === "hotel");
+    if (query.includes("restaurants in")) return scopedPoints.filter((point) => point.kind === "restaurant");
+    if (query.includes("itinerary")) return scopedPoints.filter((point) => point.kind === "itinerary");
+
+    const matched = scopedPoints.filter((point) =>
       `${point.name} ${point.subtitle || ""}`.toLowerCase().includes(query.replace(`, ${activeTrip.cityName.toLowerCase()}`, ""))
     );
-    return matched.length > 0 ? matched : mapPoints;
-  }, [activeTrip, mapPoints, mapSearchQuery]);
+    return matched.length > 0 ? matched : scopedPoints;
+  }, [activeItineraryDay, activeTrip, itineraryOnly, mapPoints, mapSearchQuery]);
 
   // Dynamically load Leaflet CDN CSS and JS
   useEffect(() => {
@@ -1218,7 +1280,7 @@ export const TripPlanner: React.FC = () => {
       return;
     }
 
-    if (activeTab === "Map" && !leafletLoaded) {
+    if (shouldRenderInteractiveMap && !leafletLoaded) {
       const link = document.createElement("link");
       link.rel = "stylesheet";
       link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
@@ -1233,10 +1295,10 @@ export const TripPlanner: React.FC = () => {
       };
       document.body.appendChild(script);
     }
-  }, [activeTab, leafletLoaded]);
+  }, [leafletLoaded, shouldRenderInteractiveMap]);
 
   useEffect(() => {
-    if (activeTab !== "Map" || currentPosition || !navigator.geolocation) return;
+    if (!shouldRenderInteractiveMap || currentPosition || !navigator.geolocation) return;
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -1250,11 +1312,11 @@ export const TripPlanner: React.FC = () => {
       },
       { enableHighAccuracy: true, timeout: 6000, maximumAge: 60000 },
     );
-  }, [activeTab, currentPosition]);
+  }, [currentPosition, shouldRenderInteractiveMap]);
 
   // Fetch OSRM route data with fast fallback
   useEffect(() => {
-    if (activeTab === "Map" && activeTrip) {
+    if (shouldRenderInteractiveMap && activeTrip) {
       const getRoute = async () => {
         setIsLoadingRoute(true);
         const controller = new AbortController();
@@ -1310,12 +1372,12 @@ export const TripPlanner: React.FC = () => {
 
       getRoute();
     }
-  }, [activeTab, activeTrip, currentPosition]);
+  }, [activeTrip, currentPosition, shouldRenderInteractiveMap]);
 
   // Initialize and update Leaflet Map
   useEffect(() => {
     let map: any = null;
-    if (activeTab === "Map" && leafletLoaded && mapContainerRef.current && activeTrip) {
+    if (shouldRenderInteractiveMap && leafletLoaded && mapContainerRef.current && activeTrip) {
       const L = (window as any).L;
       if (L) {
         if (mapInstanceRef.current) {
@@ -1359,11 +1421,11 @@ export const TripPlanner: React.FC = () => {
             start: { bg: "#16a34a", label: "S" },
           };
 
-          const makeIcon = (kind: MapPointKind | "start") => {
+          const makeIcon = (kind: MapPointKind | "start", customLabel?: string) => {
             const style = markerStyles[kind] || markerStyles.attraction;
             return L.divIcon({
               className: "",
-              html: `<div style="width:30px;height:30px;border-radius:999px;background:${style.bg};color:white;border:3px solid white;box-shadow:0 8px 18px rgba(15,23,42,.28);display:flex;align-items:center;justify-content:center;font:800 12px/1 Inter,system-ui,sans-serif;">${style.label}</div>`,
+              html: `<div style="width:30px;height:30px;border-radius:999px;background:${style.bg};color:white;border:3px solid white;box-shadow:0 8px 18px rgba(15,23,42,.28);display:flex;align-items:center;justify-content:center;font:800 12px/1 Inter,system-ui,sans-serif;">${customLabel || style.label}</div>`,
               iconSize: [30, 30],
               iconAnchor: [15, 15],
               popupAnchor: [0, -16],
@@ -1372,7 +1434,7 @@ export const TripPlanner: React.FC = () => {
 
           const markers: any[] = [];
 
-          if (osrmRouteData?.start?.lat && osrmRouteData?.start?.lng && (!mapSearchQuery || mapSearchQuery === activeTrip.cityName)) {
+          if (!itineraryOnly && osrmRouteData?.start?.lat && osrmRouteData?.start?.lng && (!mapSearchQuery || mapSearchQuery === activeTrip.cityName)) {
             markers.push(
               L.marker([osrmRouteData.start.lat, osrmRouteData.start.lng], { icon: makeIcon("start") })
                 .addTo(map)
@@ -1380,15 +1442,24 @@ export const TripPlanner: React.FC = () => {
             );
           }
 
-          visibleMapPoints.forEach((point) => {
+          visibleMapPoints.forEach((point, index) => {
             const dayText = point.day ? `<br/>Day ${escapeHtml(point.day)}` : "";
-            const marker = L.marker([point.lat, point.lng], { icon: makeIcon(point.kind) })
+            const marker = L.marker([point.lat, point.lng], { icon: makeIcon(point.kind, itineraryOnly && point.kind === "itinerary" ? String(index + 1) : undefined) })
               .addTo(map)
               .bindPopup(`<b>${escapeHtml(point.name)}</b><br/>${escapeHtml(point.subtitle || point.kind)}${dayText}`);
             markers.push(marker);
           });
 
-          if ((!mapSearchQuery || mapSearchQuery === activeTrip.cityName) && osrmRouteData?.polyline?.length > 1) {
+          if (itineraryOnly && visibleMapPoints.length > 1 && visibleMapPoints.every((point) => point.kind === "itinerary")) {
+            L.polyline(visibleMapPoints.map((point) => [point.lat, point.lng]), {
+              color: "#0d9488",
+              weight: 5,
+              opacity: 0.85,
+              dashArray: "10 7",
+            }).addTo(map);
+          }
+
+          if (!itineraryOnly && (!mapSearchQuery || mapSearchQuery === activeTrip.cityName) && osrmRouteData?.polyline?.length > 1) {
             L.polyline(osrmRouteData.polyline, {
               color: "#0d9488",
               weight: 5,
@@ -1400,6 +1471,15 @@ export const TripPlanner: React.FC = () => {
             const group = new L.featureGroup(markers);
             map.fitBounds(group.getBounds(), { padding: [42, 42], maxZoom: 15 });
             if (visibleMapPoints.length === 1) markers[0].openPopup();
+            if (itineraryOnly && mapSearchQuery) {
+              const selectedIndex = visibleMapPoints.findIndex((point) =>
+                `${point.name} ${point.subtitle || ""}`.toLowerCase().includes(mapSearchQuery.toLowerCase().split(",")[0])
+              );
+              if (selectedIndex >= 0 && markers[selectedIndex]) {
+                map.setView([visibleMapPoints[selectedIndex].lat, visibleMapPoints[selectedIndex].lng], 15);
+                markers[selectedIndex].openPopup();
+              }
+            }
           }
 
           [100, 300, 600].forEach((delay) => {
@@ -1427,12 +1507,36 @@ export const TripPlanner: React.FC = () => {
         mapInstanceRef.current = null;
       }
     };
-  }, [activeTab, activeTrip, leafletLoaded, mapSearchQuery, osrmRouteData, visibleMapPoints]);
+  }, [activeTrip, itineraryOnly, leafletLoaded, mapSearchQuery, osrmRouteData, shouldRenderInteractiveMap, visibleMapPoints]);
 
   // Voice alerts state and sync handlers
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  const plannerBannerImage = useMemo(() => resolveImageUrl(activeTrip?.bannerImage, activeTrip?.cityName || "India", "banner"), [activeTrip?.bannerImage, activeTrip?.cityName]);
+  const plannerBannerImages = useMemo(() => {
+    if (!activeTrip) return [resolveImageUrl(null, "India", "banner")];
+    const fetchedImages: string[] = [];
+    const addFetchedImage = (item: any) => {
+      if (!item) return;
+      const photoName = item.googlePhotoName || item.google_photo_name;
+      if (photoName) {
+        const googleImage = googlePlacePhotoUrl(photoName, 1400, 800);
+        if (googleImage) fetchedImages.push(googleImage);
+      }
+      const source = item.image || item.imageUrl || item.image_url;
+      if (source) fetchedImages.push(source.startsWith("/place-photo") ? `${API_BASE_URL}${source}` : source);
+    };
+
+    (activeTrip.discoveredPlaces || []).forEach(addFetchedImage);
+    Object.values(activeTrip.itinerary || {}).flat().forEach(addFetchedImage);
+    (activeTrip.hotels || []).forEach(addFetchedImage);
+    (activeTrip.restaurants || []).forEach(addFetchedImage);
+
+    const uniqueFetched = Array.from(new Set(fetchedImages.filter(Boolean))).slice(0, 6);
+    return uniqueFetched.length > 0
+      ? uniqueFetched
+      : [resolveImageUrl(activeTrip.bannerImage, activeTrip.cityName, "banner")];
+  }, [activeTrip]);
+  const plannerBannerImage = plannerBannerImages[0];
 
   useEffect(() => {
     if (activeTrip?.notifications) {
@@ -1565,6 +1669,48 @@ export const TripPlanner: React.FC = () => {
     setToastMessage(msg);
     setToastType(type);
     setTimeout(() => setToastMessage(null), 3000);
+  };
+
+  const handleApplyOptimizedRoute = () => {
+    if (!activeTrip || !osrmRouteData?.places?.length) {
+      triggerToast("The optimized map route is still loading. Please try again in a moment.", "info");
+      return;
+    }
+
+    setIsApplyingOptimizedRoute(true);
+    const routeOrder = new Map<string, number>(
+      osrmRouteData.places.map((place: any, index: number) => [String(place.name || "").trim().toLowerCase(), index])
+    );
+
+    updateActiveTrip((trip) => {
+      if (!trip) return null;
+      const dayActivities = [...(trip.itinerary[activeDayNum] || [])];
+      const movable = dayActivities
+        .filter((activity) => activity.category !== "Hotel" && activity.category !== "Transport")
+        .sort((left, right) => {
+          const leftOrder = routeOrder.get(String(left.title || "").trim().toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+          const rightOrder = routeOrder.get(String(right.title || "").trim().toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+          return leftOrder - rightOrder;
+        });
+      let movableIndex = 0;
+      const reordered = dayActivities.map((activity) =>
+        activity.category === "Hotel" || activity.category === "Transport"
+          ? activity
+          : movable[movableIndex++] || activity
+      );
+      return {
+        ...trip,
+        itinerary: { ...trip.itinerary, [activeDayNum]: reordered },
+        historyTimeline: [{
+          id: `hist-route-${Date.now()}`,
+          action: `Optimized Day ${activeDayNum} route from the itinerary map`,
+          timestamp: "Just now",
+          iconName: "route",
+        }, ...trip.historyTimeline],
+      };
+    });
+    setIsApplyingOptimizedRoute(false);
+    triggerToast(`Day ${activeDayNum} route optimized`, "success");
   };
 
   if (!activeTrip) {
@@ -2257,7 +2403,7 @@ export const TripPlanner: React.FC = () => {
     <div className="flex-1 flex flex-col min-w-0 relative bg-slate-50 dark:bg-[#0b0f19]">
 
       {/* Scrollable Workspace */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-28 space-y-6">
+      <div className={`flex-1 overflow-y-auto pb-28 space-y-4 ${itineraryOnly ? "p-2 sm:p-3" : "p-4 sm:p-6"}`}>
 
         {/* ──────── 1. OFFLINE STATUS HEADER BAR ──────── */}
         {isOffline && (
@@ -2294,20 +2440,17 @@ export const TripPlanner: React.FC = () => {
           </div>
         )}
 
+        {!itineraryOnly && <>
         {/* ──────── 2. TOP HERO STATS BLOCK ──────── */}
         <div className="relative rounded-3xl overflow-hidden border border-slate-200/80 dark:border-slate-800/80 bg-white dark:bg-[#111827] shadow-sm text-left">
           {/* Banner Image */}
-          <div className="h-44 sm:h-52 relative bg-slate-100 dark:bg-slate-800">
-            <img
-              src={plannerBannerImage}
-              alt={activeTrip.cityName}
-              loading="eager"
-              decoding="async"
-              className="w-full h-full object-contain bg-slate-950"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+          <div className="relative h-44 bg-gradient-to-br from-teal-50 via-sky-50 to-amber-50 sm:h-52 dark:from-teal-950/40 dark:via-sky-950/30 dark:to-amber-950/20">
+            <div className="absolute inset-0 z-0">
+              <ImageSlider images={plannerBannerImages} variant="banner" />
+            </div>
+            <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-teal-950/85 via-sky-900/25 to-transparent" />
 
-            <div className="absolute bottom-4 left-5 text-white">
+            <div className="absolute bottom-4 left-5 z-20 text-white">
               <span className="text-[10px] font-extrabold text-teal-400 bg-teal-950/60 backdrop-blur-sm px-2.5 py-0.5 rounded border border-teal-500/20 uppercase tracking-widest inline-block mb-1">
                 Active Itinerary
               </span>
@@ -2326,11 +2469,12 @@ export const TripPlanner: React.FC = () => {
                 </span>
                 <span>·</span>
                 <span className="font-bold text-teal-450 uppercase">{activeTrip.travelStyle} Style</span>
+                <TripCountdown startDateStr={activeTrip.startDate} compact />
               </p>
             </div>
 
-            <div className="absolute top-4 right-4 flex gap-2">
-              <span className="px-3 py-1 bg-black/40 backdrop-blur-md text-[10px] font-bold text-white border border-white/10 rounded-full flex items-center gap-1">
+            <div className="absolute right-4 top-4 z-20 flex gap-2">
+              <span className="flex items-center gap-1 rounded-full border border-white/70 bg-white/85 px-3 py-1 text-[10px] font-bold text-slate-700 shadow-sm backdrop-blur-md">
                 <Thermometer className="w-3.5 h-3.5 text-amber-500" />
                 {tempStr} Weather
                 {activeTrip.weatherIntelligence?.outdoor_score ? ` · ${activeTrip.weatherIntelligence.outdoor_score}/100` : ""}
@@ -2340,7 +2484,7 @@ export const TripPlanner: React.FC = () => {
               </span>
             </div>
 
-            <div className="absolute bottom-4 right-4 hidden w-72 lg:block">
+            <div className="absolute bottom-4 right-4 z-20 hidden w-72 lg:block">
               <CrowdDensityWidget
                 destination={activeTrip.cityName}
                 cityName={activeTrip.cityName}
@@ -2430,7 +2574,7 @@ export const TripPlanner: React.FC = () => {
 
         {/* ──────── 3. WORKSPACE TABS SELECTOR ──────── */}
         <div className="flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar pb-px">
-          {(["Overview", "Itinerary", "Tickets", "Hotels", "Restaurants", "Attractions", "Map", "Budget", "Notes", "Smart Assistant"] as const).map((tab) => {
+          {(["Overview", "Tickets", "Hotels", "Restaurants", "Attractions", "Budget", "Notes"] as const).map((tab) => {
             const active = activeTab === tab;
             const iconsMap: Record<string, React.ReactNode> = {
               Overview: <LayoutDashboard className="w-3.5 h-3.5" />,
@@ -2465,6 +2609,40 @@ export const TripPlanner: React.FC = () => {
             );
           })}
         </div>
+        </>}
+
+        {itineraryOnly && (
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200/70 bg-white px-4 py-3 text-left shadow-sm dark:border-slate-800 dark:bg-[#111827]">
+            <div className="flex min-w-0 items-center gap-3">
+              <img
+                src={plannerBannerImage}
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = resolveImageUrl(activeTrip.bannerImage, activeTrip.cityName, "banner");
+                }}
+                className="h-11 w-11 shrink-0 rounded-xl object-cover"
+              />
+              <div className="min-w-0">
+                <h1 className="truncate font-heading text-base font-extrabold text-slate-900 dark:text-white">{activeTrip.durationDays} Days in {activeTrip.cityName}</h1>
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-400"><Calendar className="h-3.5 w-3.5" /> {activeTrip.startDate} – {activeTrip.endDate}<span>·</span><Users className="h-3.5 w-3.5" /> {activeTrip.travelersCount} Travelers</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setIsModifyOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-[10px] font-extrabold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"><Edit3 className="h-3.5 w-3.5 text-teal-600" /><span className="hidden xl:inline">Modify</span></button>
+              <button type="button" onClick={() => setIsRegenOpen(true)} className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-[10px] font-extrabold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"><RefreshCw className="h-3.5 w-3.5 text-teal-600" /><span className="hidden xl:inline">Regenerate</span></button>
+              <button
+                type="button"
+                onClick={() => activeTrip.calendarSynced ? void handleRemoveCalendarEvents() : setIsSyncOpen(true)}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-extrabold ${activeTrip.calendarSynced ? "border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900/40" : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"}`}
+              >
+                <Calendar className="h-3.5 w-3.5" /><span className="hidden xl:inline">{activeTrip.calendarSynced ? "Unsync" : "Calendar"}</span>
+              </button>
+              <button type="button" onClick={() => setIsShareOpen(true)} className="rounded-xl border border-slate-200 px-3 py-2 text-[10px] font-extrabold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900">Share</button>
+              <button type="button" onClick={() => setIsSaveOpen(true)} className="rounded-xl bg-teal-600 px-3.5 py-2 text-[10px] font-extrabold text-white hover:bg-teal-700">Save trip</button>
+            </div>
+          </div>
+        )}
 
         {/* ──────── 4. DYNAMIC TAB VIEW WORKSPACE PANELS ──────── */}
         <div className="min-h-[300px]">
@@ -2581,33 +2759,10 @@ export const TripPlanner: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Trip Audit Trail History Timeline */}
-                  <div className="p-5 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm space-y-4">
-                    <h3 className="font-heading text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                      <ActivityIcon className="w-4.5 h-4.5 text-teal-600" />
-                      Trip History Event logs (Audit Trail)
-                    </h3>
-                    <div className="space-y-4 pl-2 relative border-l border-slate-100 dark:border-slate-800">
-                      {activeTrip.historyTimeline.map((ev) => (
-                        <div key={ev.id} className="relative pl-6">
-                          {/* Dot indicator */}
-                          <span className="absolute left-[-5px] top-1.5 w-2.5 h-2.5 rounded-full bg-teal-500 border border-white dark:border-[#111827]" />
-                          <div className="text-xs">
-                            <span className="font-bold text-slate-700 dark:text-slate-205">{ev.action}</span>
-                            <span className="block text-[9.5px] text-slate-400 mt-0.5">{ev.timestamp}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
                 </div>
 
                 {/* Right Side: Widgets (Countdown, emergency list, weather converter) */}
                 <div className="md:col-span-1 space-y-6">
-
-                  {/* Trip Countdown Timer */}
-                  <TripCountdown startDateStr={activeTrip.startDate} />
 
                   {/* Currency Converter */}
                   <div className="p-5 bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl shadow-sm space-y-3">
@@ -2775,43 +2930,41 @@ export const TripPlanner: React.FC = () => {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="mx-auto max-w-6xl"
+                className={itineraryOnly ? "w-full" : "mx-auto max-w-6xl"}
               >
-                <div className="grid gap-4 lg:grid-cols-[7.5rem_1fr]">
-                  <aside className="lg:sticky lg:top-4 lg:self-start">
-                    <div className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible">
+                <div className={`grid gap-3 ${itineraryOnly ? "lg:grid-cols-[minmax(0,1.25fr)_minmax(24rem,.75fr)]" : "lg:grid-cols-[7.5rem_minmax(0,1fr)_19rem]"}`}>
+                  <aside className={itineraryOnly ? "lg:col-span-2" : "lg:sticky lg:top-4 lg:self-start"}>
+                    {itineraryOnly && <p className="mb-2 text-left text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Choose a day</p>}
+                    <div className={`flex gap-2 overflow-x-auto pb-1 ${itineraryOnly ? "rounded-2xl border border-slate-200/70 bg-white p-2 shadow-sm dark:border-slate-800 dark:bg-[#111827]" : "lg:flex-col lg:overflow-visible"}`}>
                     {itineraryDayEntries.map(([dayNum, list]) => {
                       const active = activeDayNum === dayNum;
                       return (
                         <button
                           key={dayNum}
                           onClick={() => setActiveItineraryDay(dayNum)}
-                            className={`min-w-24 shrink-0 rounded-xl border px-3 py-3 text-left shadow-sm transition-all ${
+                            className={`${itineraryOnly ? "min-w-[4.75rem] px-3 py-2 text-center" : "min-w-24 px-3 py-3 text-left shadow-sm"} shrink-0 rounded-xl border transition-all ${
                             active
-                                ? "border-violet-300 bg-white text-violet-700 ring-2 ring-violet-100 dark:border-violet-800 dark:bg-[#111827] dark:text-violet-300 dark:ring-violet-950/50"
-                                : "border-slate-200 bg-white text-slate-650 hover:border-violet-200 hover:text-violet-700 dark:border-slate-800 dark:bg-[#111827] dark:text-slate-350"
+                                ? "border-teal-600 bg-teal-600 text-white shadow-sm dark:border-teal-500 dark:bg-teal-500 dark:text-slate-950"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-teal-950/20"
                           }`}
                         >
                             <span className="block text-xs font-extrabold">Day {dayNum}</span>
-                            <span className="mt-1 block text-[10px] font-bold text-slate-400">{getItineraryDayDate(dayNum)}</span>
-                            <span className="mt-2 inline-flex rounded-md bg-slate-50 px-2 py-0.5 text-[9px] font-extrabold text-slate-500 dark:bg-slate-900 dark:text-slate-400">
-                              {list.length} stops
-                            </span>
+                            {!itineraryOnly && <><span className="mt-1 block text-[10px] font-bold text-slate-400">{getItineraryDayDate(dayNum)}</span><span className="mt-2 inline-flex rounded-md bg-slate-50 px-2 py-0.5 text-[9px] font-extrabold text-slate-500 dark:bg-slate-900 dark:text-slate-400">{list.length} stops</span></>}
                         </button>
                       );
                     })}
                       <button
                         type="button"
                         onClick={() => triggerToast("Add stops from Hotels, Restaurants, or Attractions.", "info")}
-                        className="min-w-24 shrink-0 rounded-xl border border-dashed border-slate-250 bg-white px-3 py-3 text-left text-xs font-extrabold text-slate-500 transition hover:border-violet-300 hover:text-violet-700 dark:border-slate-800 dark:bg-[#111827] dark:text-slate-400"
+                        className={`${itineraryOnly ? "min-w-[3rem] px-3 py-2 text-center" : "min-w-24 px-3 py-3 text-left"} shrink-0 rounded-xl border border-dashed border-slate-250 bg-white text-xs font-extrabold text-slate-500 transition hover:border-teal-300 hover:text-teal-700 dark:border-slate-800 dark:bg-[#111827] dark:text-slate-400`}
                       >
-                        <Plus className="mb-1 h-4 w-4" />
-                        Add Day
+                        <Plus className={`${itineraryOnly ? "mx-auto" : "mb-1"} h-4 w-4`} />
+                        {!itineraryOnly && "Add Day"}
                       </button>
                   </div>
                   </aside>
 
-                  <section className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111827]">
+                  <section className={`${itineraryOnly ? "overflow-visible" : "overflow-hidden"} rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111827]`}>
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-4 py-3 text-left dark:border-slate-850 dark:bg-slate-900/30">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -2883,6 +3036,7 @@ export const TripPlanner: React.FC = () => {
                                       distance={act.travel.distance}
                                       destination={`${act.title} ${act.location}`.trim()}
                                       compact
+                                      inline={itineraryOnly}
                                     />
                                   )}
                                   <RoadmapEventCard
@@ -2891,6 +3045,7 @@ export const TripPlanner: React.FC = () => {
                                     onDelete={(id: string) => handleDeleteActivity(activeDayNum, id)}
                                     onReplace={(id: string) => handleReplaceActivity(activeDayNum, id)}
                                     onViewOnMap={handleViewOnMap}
+                                    compactTimeline={itineraryOnly}
                                   />
                                 </div>
                               </div>
@@ -2908,6 +3063,83 @@ export const TripPlanner: React.FC = () => {
                       </motion.div>
                     </AnimatePresence>
                   </section>
+
+                  <aside className="space-y-3 lg:sticky lg:top-4 lg:self-start">
+                    <div className="overflow-hidden rounded-2xl border border-slate-200/70 bg-white shadow-sm dark:border-slate-800 dark:bg-[#111827]">
+                      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+                        <div>
+                          <h3 className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-100">
+                            <MapPin className="h-4 w-4 text-teal-600" /> Day {activeDayNum} map
+                          </h3>
+                          <p className="mt-0.5 text-[9px] font-semibold text-slate-400">Select a stop to locate it</p>
+                        </div>
+                        <button type="button" onClick={() => setActiveTab("Map")} className="rounded-lg bg-teal-50 px-2.5 py-1.5 text-[9px] font-extrabold text-teal-700 hover:bg-teal-100 dark:bg-teal-950/30 dark:text-teal-300">
+                          Open full map
+                        </button>
+                      </div>
+                      {itineraryOnly && (
+                        <div className="flex flex-wrap gap-1.5 border-b border-slate-100 bg-slate-50/70 p-2.5 dark:border-slate-800 dark:bg-slate-900/40">
+                          <button type="button" onClick={() => setMapSearchQuery(activeTrip.cityName)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[9px] font-extrabold text-slate-600 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Center City</button>
+                          <button type="button" onClick={() => setMapSearchQuery(`Hotels in ${activeTrip.cityName}`)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[9px] font-extrabold text-slate-600 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Show Stays</button>
+                          <button type="button" onClick={() => setMapSearchQuery(`Restaurants in ${activeTrip.cityName}`)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[9px] font-extrabold text-slate-600 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Show Restaurants</button>
+                          <button type="button" onClick={() => setMapSearchQuery(`Itinerary Day ${activeDayNum} in ${activeTrip.cityName}`)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[9px] font-extrabold text-slate-600 hover:border-teal-400 hover:text-teal-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Show Itinerary</button>
+                          <button type="button" onClick={() => setMapSearchQuery(`Route Day ${activeDayNum} in ${activeTrip.cityName}`)} className="inline-flex items-center gap-1 rounded-lg bg-teal-600 px-2.5 py-1.5 text-[9px] font-extrabold text-white hover:bg-teal-700"><Route className="h-3 w-3" /> Route 1–{activeDayActivities.length}</button>
+                          <button
+                            type="button"
+                            onClick={handleApplyOptimizedRoute}
+                            disabled={isApplyingOptimizedRoute || isLoadingRoute}
+                            className="inline-flex items-center gap-1 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[9px] font-extrabold text-violet-700 hover:bg-violet-100 disabled:cursor-wait disabled:opacity-60 dark:border-violet-900/60 dark:bg-violet-950/25 dark:text-violet-300"
+                          >
+                            <Zap className={`h-3 w-3 ${isApplyingOptimizedRoute || isLoadingRoute ? "animate-pulse" : ""}`} />
+                            {isApplyingOptimizedRoute || isLoadingRoute ? "Optimizing…" : "Optimize Route"}
+                          </button>
+                        </div>
+                      )}
+                      <div className="relative h-[28rem] bg-slate-100 dark:bg-slate-900 lg:h-[calc(100vh-15rem)] lg:min-h-[32rem]">
+                        {itineraryOnly ? <div ref={mapContainerRef} className="absolute inset-0 z-20 h-full w-full" /> : <iframe
+                          title={`Map for itinerary day ${activeDayNum}`}
+                          className="absolute inset-0 h-full w-full border-0"
+                          src={`https://maps.google.com/maps?q=${encodeURIComponent(mapSearchQuery || activeDayActivities[0]?.location || activeDayActivities[0]?.title || activeTrip.cityName)}&t=&z=13&ie=UTF8&iwloc=&output=embed`}
+                          loading="lazy"
+                        />}
+                        {itineraryOnly && !leafletLoaded && <div className="absolute inset-0 z-30 grid place-items-center bg-slate-100/90 text-xs font-bold text-slate-500 dark:bg-slate-900/90 dark:text-slate-400"><RefreshCw className="mr-2 inline h-4 w-4 animate-spin" />Loading interactive route map…</div>}
+                      </div>
+                      <div className="max-h-44 space-y-1 overflow-y-auto p-2">
+                        {activeDayActivities.map((activity, index) => (
+                          <button
+                            key={`map-stop-${activity.id}`}
+                            type="button"
+                            onClick={() => setMapSearchQuery(`${activity.title} ${activity.location || activeTrip.cityName}`)}
+                            className="flex w-full items-start gap-2 rounded-xl px-2.5 py-2 text-left transition hover:bg-teal-50 dark:hover:bg-teal-950/20"
+                          >
+                            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-teal-600 text-[9px] font-extrabold text-white">{index + 1}</span>
+                            <span className="min-w-0"><strong className="block truncate text-[10px] text-slate-700 dark:text-slate-200">{activity.title}</strong><small className="block truncate text-[9px] text-slate-400">{activity.location || activeTrip.cityName}</small></span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {itineraryOnly && (
+                      <div className="rounded-2xl border border-slate-200/70 bg-white p-4 text-left shadow-sm dark:border-slate-800 dark:bg-[#111827]">
+                        <div className="mb-4 flex items-center justify-between gap-3">
+                          <div>
+                            <h3 className="flex items-center gap-1.5 text-xs font-extrabold text-slate-800 dark:text-slate-100"><ActivityIcon className="h-4 w-4 text-teal-600" /> Trip History</h3>
+                            <p className="mt-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-400">Event logs · Audit trail</p>
+                          </div>
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-[9px] font-extrabold text-slate-500 dark:bg-slate-900 dark:text-slate-400">{activeTrip.historyTimeline.length} events</span>
+                        </div>
+                        <div className="relative max-h-72 space-y-4 overflow-y-auto border-l border-slate-200 pl-5 dark:border-slate-800">
+                          {activeTrip.historyTimeline.map((event) => (
+                            <div key={event.id} className="relative">
+                              <span className="absolute -left-[1.47rem] top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-teal-500 dark:border-[#111827]" />
+                              <p className="text-[10.5px] font-bold leading-relaxed text-slate-700 dark:text-slate-200">{event.action}</p>
+                              <time className="mt-0.5 block text-[9px] font-semibold text-slate-400">{event.timestamp}</time>
+                            </div>
+                          ))}
+                          {activeTrip.historyTimeline.length === 0 && <p className="text-[10px] font-semibold text-slate-400">No itinerary changes recorded yet.</p>}
+                        </div>
+                      </div>
+                    )}
+                  </aside>
                 </div>
               </motion.div>
             )}
@@ -3057,7 +3289,17 @@ export const TripPlanner: React.FC = () => {
                     <div key={h.id} className="bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                       {/* Cover Photo */}
                       <div className="h-44 relative bg-slate-100 dark:bg-slate-800">
-                      <img src={resolvePlaceImageUrl(h.image, h.googlePhotoName, activeTrip?.cityName || "India", "hotel", h.name)} loading="lazy" decoding="async" className="w-full h-full object-contain bg-slate-100 dark:bg-slate-900" alt="" />
+                      <img
+                        src={resolvePlaceImageUrl(h.image, h.googlePhotoName, activeTrip?.cityName || "India", "hotel", h.name)}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full bg-slate-100 object-cover dark:bg-slate-900"
+                        alt={h.name}
+                        onError={(event) => {
+                          const fallback = getFallbackImage(activeTrip?.cityName || "India", "hotel", h.name);
+                          if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
+                        }}
+                      />
                         {isCurrent && (
                           <span className="absolute top-3 left-3 bg-teal-600 text-white px-2.5 py-0.5 text-[9px] font-extrabold uppercase rounded-lg shadow">
                             Current Stay
@@ -3271,7 +3513,17 @@ export const TripPlanner: React.FC = () => {
                 {visibleRestaurants.map((r) => (
                   <div key={r.id} className="bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                     <div className="h-32 relative bg-slate-100 dark:bg-slate-800">
-                      <img src={resolvePlaceImageUrl(r.image, r.googlePhotoName, activeTrip?.cityName || "India", "restaurant", r.name)} loading="lazy" decoding="async" className="w-full h-full object-contain bg-slate-100 dark:bg-slate-900" alt="" />
+                      <img
+                        src={resolvePlaceImageUrl(r.image, r.googlePhotoName, activeTrip?.cityName || "India", "restaurant", r.name)}
+                        loading="lazy"
+                        decoding="async"
+                        className="h-full w-full bg-slate-100 object-cover dark:bg-slate-900"
+                        alt={r.name}
+                        onError={(event) => {
+                          const fallback = getFallbackImage(activeTrip?.cityName || "India", "restaurant", r.name);
+                          if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
+                        }}
+                      />
                       <span className="absolute bottom-3 left-3 bg-black/60 backdrop-blur-md text-[9px] font-bold text-white px-2 py-0.5 rounded">
                         {r.cuisine}
                       </span>
@@ -3458,7 +3710,17 @@ export const TripPlanner: React.FC = () => {
         <div key={p.id} className="bg-white dark:bg-[#111827] border border-slate-200/60 dark:border-slate-800/60 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
           <div className="h-32 relative bg-slate-100 dark:bg-slate-800">
             {img ? (
-              <img src={img} loading="lazy" decoding="async" className="w-full h-full object-contain bg-slate-100 dark:bg-slate-900" alt={p.name} />
+              <img
+                src={img}
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full bg-slate-100 object-cover dark:bg-slate-900"
+                alt={p.name}
+                onError={(event) => {
+                  const fallback = getFallbackImage(activeTrip?.cityName || "India", "attraction", p.name);
+                  if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
+                }}
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-slate-500 text-[10px]">Photo unavailable</div>
             )}
@@ -3904,7 +4166,7 @@ export const TripPlanner: React.FC = () => {
       </div>
 
       {/* ──────── 5. STICKY ACTION CONTROL BAR ──────── */}
-      {activeTab === "Itinerary" && (
+      {activeTab === "Itinerary" && !itineraryOnly && (
         <div className="fixed bottom-16 sm:bottom-0 left-0 right-0 sm:left-20 lg:left-68 bg-white/95 dark:bg-[#111827]/95 backdrop-blur-md border-t border-slate-200/60 dark:border-slate-800/60 p-4 flex items-center justify-between sm:justify-around px-5 z-40">
 
           {/* Sync calendar connected summary */}
@@ -3982,7 +4244,7 @@ export const TripPlanner: React.FC = () => {
       )}
 
       {/* ──────── 6. FLOATING AI ASSISTANT FAB BUTTON ──────── */}
-      <div className="fixed bottom-24 right-5 sm:right-6 z-45">
+      <div className={`fixed right-5 z-45 sm:right-6 ${itineraryOnly ? "bottom-24" : "bottom-24 sm:bottom-20"}`}>
         <button
           onClick={() => setIsCopilotOpen(true)}
           className="flex items-center gap-2 px-4.5 py-3 rounded-full bg-slate-900 dark:bg-slate-100 hover:bg-slate-800 dark:hover:bg-white text-white dark:text-slate-950 text-xs font-heading font-extrabold shadow-xl hover-scale group"

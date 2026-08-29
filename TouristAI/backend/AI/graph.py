@@ -552,7 +552,7 @@ def transport_node(state):
 
     g_state = get_guided_state()
     current_loc = clean_val(state.get("current_location")) or clean_val(g_state.get("current_location"))
-    dest_city = clean_val(state.get("destination")) or clean_val(state.get("city")) or clean_val(g_state.get("destination")) or clean_val(g_state.get("city")) or "Bangalore"
+    dest_city = clean_val(state.get("destination")) or clean_val(state.get("city")) or clean_val(g_state.get("destination")) or clean_val(g_state.get("city"))
     t_date = clean_val(state.get("travel_date")) or clean_val(g_state.get("travel_date"))
 
     def is_coords(s: str) -> bool:
@@ -561,6 +561,13 @@ def transport_node(state):
 
     source_city = current_loc if (current_loc and not is_coords(current_loc)) else None
     destination_city = dest_city
+
+    if not destination_city:
+        return {
+            "responses": ["Transport options:\nPlease specify your destination, for example: **Find trains from Chennai to Madurai tomorrow.**"],
+            "transport_data": [],
+            "transport_status": {"status": "needs_input", "reason": "destination_required"},
+        }
 
     # Check question for "from X to Y"
     q_text = state.get("question", "")
@@ -582,12 +589,16 @@ def transport_node(state):
             if not t_date:
                 t_date = clean_val(details.get("travel_date"))
 
-    # Ensure source_city is valid and NOT equal to destination_city
+    # Never invent an origin. Ask for it when it is missing or equals the destination.
     if not source_city or is_coords(source_city) or source_city.lower() == destination_city.lower():
-        if destination_city.lower() in {"chennai", "madras"}:
-            source_city = "Bangalore"
-        else:
-            source_city = "Chennai"
+        return {
+            "responses": [
+                f"Transport options:\nWhat city are you travelling **from** to {destination_city}? "
+                f"For example: **Find trains from Bengaluru to {destination_city} tomorrow.**"
+            ],
+            "transport_data": [],
+            "transport_status": {"status": "needs_input", "reason": "origin_required"},
+        }
 
     if not t_date or t_date.lower() in {"none", "null"}:
         from datetime import datetime, timedelta
@@ -739,6 +750,14 @@ def merge_node(state):
         if not context.strip():
             return {"answer": state.get("answer", "")}
         return {"answer": context}
+
+    q_lower = str(state.get("question", "")).lower()
+    requires_itinerary = (
+        any(route in {"calendar", "calendar_preview"} for route in state.get("routes", []))
+        or any(k in q_lower for k in ["trip", "plan", "itinerary", "iternary", "vacation", "holiday", "tour"])
+    )
+    if not requires_itinerary:
+        return {"answer": "\n\n".join(str(response) for response in state.get("responses", []) if response)}
 
     # If the destination city is not specified
     if state.get("city", "None") == "None":

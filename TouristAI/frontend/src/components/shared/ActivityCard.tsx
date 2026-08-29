@@ -72,7 +72,7 @@ export const ActivityCard: React.FC<ActivityCardProps> = ({
           alt={activity.title}
           loading="lazy"
           decoding="async"
-          className="w-full h-full object-contain bg-slate-100 transition-transform duration-300 dark:bg-slate-900"
+          className="h-full w-full bg-slate-100 object-cover transition-transform duration-300 dark:bg-slate-900"
         />
         {/* Time overlay */}
         <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-lg bg-black/60 backdrop-blur-md text-[10px] font-bold text-white flex items-center gap-1">

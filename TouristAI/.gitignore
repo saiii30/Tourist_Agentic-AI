@@ -2,3 +2,12 @@
 backend/AI/client_secret.json
 backend/AI/token_*.json
 
+# Python bytecode and local databases
+__pycache__/
+*.py[cod]
+*.db
+
+# Local credentials and environment configuration
+backend/client_secret.json
+.env*
+!.env.example

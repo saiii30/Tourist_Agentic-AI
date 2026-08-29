@@ -22,17 +22,18 @@ RAG_IMAGE_URLS = {
         "https://upload.wikimedia.org/wikipedia/commons/a/a6/Nilgiri_Mountain_Railway_train%2C_India.jpg",
     ],
     "Madurai": [
-        "https://upload.wikimedia.org/wikipedia/commons/e/ea/Madurai_Meenakshi_Temple_West_Tower.jpg",
-        "https://upload.wikimedia.org/wikipedia/commons/2/25/Thirumalai_Nayakkar_Mahal_courtyard.jpg",
-        "https://upload.wikimedia.org/wikipedia/commons/5/53/Gandhi_Memorial_Museum%2C_Madurai.jpg",
+        # Special:Redirect/file avoids brittle hash paths when Commons files move.
+        "https://commons.wikimedia.org/wiki/Special:Redirect/file/West_Tower_of_Madurai_Meenakshi_Temple.jpg?width=1000",
+        "https://commons.wikimedia.org/wiki/Special:Redirect/file/The_Court_Hall%2C_Thirumalai_Nayakkar_Mahal%2C_Madurai.jpg?width=1000",
+        "https://commons.wikimedia.org/wiki/Special:Redirect/file/Thirumalai_Nayakkar_Mahal%2C_Madurai.JPG?width=1000",
     ],
     "Meenakshi Amman Temple": [
         "https://upload.wikimedia.org/wikipedia/commons/e/ea/Madurai_Meenakshi_Temple_West_Tower.jpg",
         "https://upload.wikimedia.org/wikipedia/commons/a/ae/Madurai_Meenakshi_Amman_Temple_Gopuram.jpg",
     ],
     "Thirumalai Nayakkar Palace": [
-        "https://upload.wikimedia.org/wikipedia/commons/2/25/Thirumalai_Nayakkar_Mahal_courtyard.jpg",
-        "https://upload.wikimedia.org/wikipedia/commons/8/8b/Thirumalai_Nayakkar_Mahal_Interior.jpg",
+        "https://commons.wikimedia.org/wiki/Special:Redirect/file/The_Court_Hall%2C_Thirumalai_Nayakkar_Mahal%2C_Madurai.jpg?width=1000",
+        "https://commons.wikimedia.org/wiki/Special:Redirect/file/Thirumalai_nayak_mahal.jpg?width=1000",
     ],
     "Kanniyakumari Tourist Spots": [
         "https://upload.wikimedia.org/wikipedia/commons/a/a4/Vivekananda_Rock_Memorial%2C_Kanyakumari.jpg",

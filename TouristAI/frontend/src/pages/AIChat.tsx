@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Send, Mic, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronDown, Volume2, VolumeX, Edit3, Save, Eye, Coffee, Clock, Moon, Plane, AlertCircle, RefreshCw, BookOpen, Globe2 } from "lucide-react";
+import { Send, Image, Sparkles, Bot, User, Cloud, Hotel, Utensils, Compass, ArrowRight, Info, Calendar, DollarSign, Users, Sun, MapPin, Star, ExternalLink, Phone, CreditCard, Accessibility, CheckCircle2, ChevronDown, Edit3, Save, Eye, ListChecks, Coffee, Clock, Moon, Plane, AlertCircle, RefreshCw, BookOpen, Globe2, Brain } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTravelPlanner } from "../context/TravelPlannerContext";
 import type { TripDetails } from "../context/TravelPlannerContext";
@@ -9,7 +9,6 @@ import type { NearbyResult } from "../context/TravelPlannerContext";//added this
 import { API_BASE_URL } from "../api/config";
 import { ImageSlider } from "../components/chat/ImageSlider";
 import { ChatLoadingIndicator } from "../components/chat/ChatLoadingIndicator";
-import { LocalTransportBookingCard } from "../components/shared/LocalTransportBookingCard";
 
 const escapeHtml = (value: string) =>
   value
@@ -77,6 +76,25 @@ const googlePhotoUrl = (photoName: string) =>
     photoName
   )}&maxwidth=800`;
 
+const itineraryDeckImages = (trip: TripDetails): string[] => {
+  const images: string[] = [];
+  const addItemImage = (item: any) => {
+    if (!item) return;
+    const photoName = item.googlePhotoName || item.google_photo_name;
+    if (photoName) images.push(googlePhotoUrl(photoName));
+    const source = item.image || item.imageUrl || item.image_url;
+    if (source) images.push(source.startsWith("/place-photo") ? `${API_BASE_URL}${source}` : source);
+  };
+
+  (trip.discoveredPlaces || []).forEach(addItemImage);
+  Object.values(trip.itinerary || {}).flat().forEach(addItemImage);
+  (trip.hotels || []).forEach(addItemImage);
+  (trip.restaurants || []).forEach(addItemImage);
+
+  const fetchedImages = Array.from(new Set(images.filter(Boolean))).slice(0, 6);
+  return fetchedImages.length > 0 ? fetchedImages : [trip.bannerImage].filter(Boolean);
+};
+
 function PlaceMedia({
   image,
   googlePhotoName,
@@ -112,7 +130,7 @@ function PlaceMedia({
         <img
           src={source}
           alt={name}
-          className="h-full w-full object-contain bg-slate-900"
+          className="h-full w-full bg-slate-900 object-cover"
           loading="lazy"
           decoding="async"
           onError={() => setSourceIndex((current) => current + 1)}
@@ -640,6 +658,11 @@ type ScheduleDay = {
   sections: ScheduleSection[];
 };
 
+type SchedulePreviewItem = {
+  time?: string;
+  name: string;
+};
+
 const getScheduleSectionMeta = (label: string) => {
   const normalized = label.toLowerCase();
   if (normalized.includes("travel") || normalized.includes("return")) return { icon: Plane, tone: "text-cyan-500 bg-cyan-50 dark:bg-cyan-950/20", label };
@@ -671,6 +694,37 @@ const parseTravelContentLine = (line: string): { mode?: string; duration?: strin
   const mode = parts.find((part) => part !== duration && part !== distance) || parts[0];
   if (!mode && !duration && !distance) return null;
   return { mode, duration, distance };
+};
+
+const compactScheduleSection = (section: ScheduleSection): SchedulePreviewItem[] => {
+  const label = section.label.toLowerCase();
+  const cleanLines = section.content.map((line) => stripMarkdown(line).replace(/^[📍✈️🏨🍳🍽🌅🌇🌙🛍🍴\-\s]+/, "").trim());
+
+  if (label.includes("travel") || label.includes("return")) {
+    const combined = cleanLines.join(" ");
+    const time = combined.match(/\b(\d{1,2}:\d{2})(?:\s*-\s*\d{1,2}:\d{2})?/)?.[1];
+    const route = combined.match(/\(([^()]+\s+to\s+[^()]+)\)/i)?.[1];
+    const destination = route?.split(/\s+to\s+/i).pop()?.trim();
+    return [{ time, name: destination ? `${section.label} — ${destination}` : section.label }];
+  }
+
+  const previews: SchedulePreviewItem[] = [];
+  for (const line of cleanLines) {
+    if (!line || parseTravelContentLine(line)) continue;
+    if (/\b(?:rating|reviews?|booking source|scraped recommendation|ticket|required)\b/i.test(line)) continue;
+    if (/\bTamil Nadu\s*\d{6}\b/i.test(line) || (line.split(",").length >= 4 && /\b(?:road|rd|street|st|main|cross|opposite|near)\b/i.test(line))) continue;
+    if (/^(?:check in|enjoy|unwind|start your day|keep this slot|relax at|dine at a local)/i.test(line)) continue;
+
+    const timeMatch = line.match(/^(\d{1,2}:\d{2})\s*(?:-|–)\s*/);
+    let name = line.replace(/^(\d{1,2}:\d{2})\s*(?:-|–)\s*/, "").trim();
+    name = name.split(/\s+at\s+/i)[0].trim();
+    name = name.split(/\.\s+(?:Enjoy|Start|Unwind|Built|Hindu|Explore)/i)[0].trim();
+    if (!name) continue;
+    previews.push({ time: timeMatch?.[1], name });
+  }
+
+  if (previews.length === 0) return [{ time: section.time, name: section.label }];
+  return previews.filter((item, index, all) => all.findIndex((candidate) => candidate.name.toLowerCase() === item.name.toLowerCase()) === index);
 };
 
 const parseItinerarySchedule = (text: string): ScheduleDay[] => {
@@ -736,30 +790,12 @@ function ItinerarySchedule({ days }: { days: ScheduleDay[] }) {
                       )}
                     </div>
                     <div className="space-y-1.5">
-                      {section.content.map((item, itemIndex) => {
-                        const travel = parseTravelContentLine(item);
-                        if (travel) {
-                          const nextLine = section.content[itemIndex + 1] || "";
-                          return (
-                            <LocalTransportBookingCard
-                              key={`${section.label}-${itemIndex}`}
-                              mode={travel.mode}
-                              duration={travel.duration}
-                              distance={travel.distance}
-                              destination={stripMarkdown(nextLine).replace(/^[📍\-\s]+/, "")}
-                              compact
-                            />
-                          );
-                        }
-
-                        return (
-                          <p
-                            key={`${section.label}-${itemIndex}`}
-                            className="text-[12px] font-medium leading-relaxed text-slate-600 dark:text-slate-350"
-                            dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(item)) }}
-                          />
-                        );
-                      })}
+                      {compactScheduleSection(section).map((item, itemIndex) => (
+                        <div key={`${section.label}-${itemIndex}`} className="flex items-start gap-2 text-[12px] font-medium leading-relaxed text-slate-600 dark:text-slate-350">
+                          {item.time && <span className="shrink-0 font-bold text-teal-600 dark:text-teal-400">{item.time}</span>}
+                          <span>{item.name}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -787,6 +823,33 @@ function renderStructuredMessage(text: string, skipOptions = false) {
 
     if (!line) {
       i += 1;
+      continue;
+    }
+
+    const sourceHeading = line.match(/^\*\*(Verified sources|Live web sources)\*\*:?$/i);
+    if (sourceHeading) {
+      const sources: string[] = [];
+      const sourceLabels = new Set<string>();
+      i += 1;
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        const source = lines[i].trim().replace(/^[-*]\s+/, "");
+        const label = (source.match(/^\[([^\]]+)\]/)?.[1] || source).trim().toLowerCase();
+        if (!sourceLabels.has(label)) {
+          sourceLabels.add(label);
+          sources.push(source);
+        }
+        i += 1;
+      }
+      elements.push(
+        <div key={`sources-${i}`} className="mt-3 border-t border-slate-200 pt-2 dark:border-slate-800">
+          <div className="mb-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">{sourceHeading[1]}</div>
+          <ul className="ml-4 list-disc space-y-0.5 text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+            {sources.map((source, index) => (
+              <li key={index} dangerouslySetInnerHTML={{ __html: formatInlineMarkdown(stripMarkdown(source)) }} />
+            ))}
+          </ul>
+        </div>
+      );
       continue;
     }
 
@@ -868,22 +931,20 @@ const getClickableQuestionOptions = (text: string): string[] => {
   return optionSet.options.filter((option) => normalizedText.includes(option.toLowerCase()));
 };
 
-export const AIChat: React.FC = () => {
+interface AIChatProps {
+  embedded?: boolean;
+}
+
+export const AIChat: React.FC<AIChatProps> = ({ embedded = false }) => {
   const navigate = useNavigate();
-  const { chatMessages, askAIChat, isLoadingChat, chatProgressStage, setActiveTrip, saveTrip } = useTravelPlanner();
+  const { chatMessages, askAIChat, isLoadingChat, chatProgressStage, setActiveTrip, saveTrip, travelProfile } = useTravelPlanner();
   
   const [question, setQuestion] = useState("");
   const [selectedDays, setSelectedDays] = useState<number>(3);
   const [selectedTravelers, setSelectedTravelers] = useState<number>(2);
   const [selectedTravelMode, setSelectedTravelMode] = useState<string>("Flight");
-  const [isListening, setIsListening] = useState(false);
   const [loadingStageIndex, setLoadingStageIndex] = useState(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const SpeechRecognitionConstructor =
-    typeof window !== "undefined"
-      ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-      : null;
-  const isSpeechRecognitionSupported = Boolean(SpeechRecognitionConstructor);
 
   // States to handle overlays inside chat card actions
   const [targetTripCard, setTargetTripCard] = useState<TripDetails | null>(null);
@@ -893,50 +954,6 @@ export const AIChat: React.FC = () => {
 
   // Toast alert status state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  // Smart Voice-Over Settings
-  const [isVoiceOverEnabled, setIsVoiceOverEnabled] = useState(() => {
-    return localStorage.getItem("isVoiceOverEnabled") === "true";
-  });
-
-  const toggleVoiceOver = () => {
-    setIsVoiceOverEnabled((prev) => {
-      const next = !prev;
-      localStorage.setItem("isVoiceOverEnabled", String(next));
-      if (!next && typeof window !== "undefined" && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-      return next;
-    });
-  };
-
-  const speakText = (text: string) => {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      
-      // Filter out markdown characters, brackets, URLs, etc. for clear speech synthesis
-      const cleanText = text
-        .replace(/[*#_~`\[\]()]/g, "")
-        .replace(/[-+•]\s+/g, "")
-        .replace(/:\s*(\n|$)/g, ". ")
-        .replace(/\n+/g, ". ");
-        
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  // Automatically read aloud new incoming assistant messages when voice over is enabled
-  useEffect(() => {
-    if (chatMessages.length > 0 && isVoiceOverEnabled) {
-      const lastMsg = chatMessages[chatMessages.length - 1];
-      if (lastMsg.role === "assistant") {
-        speakText(lastMsg.text);
-      }
-    }
-  }, [chatMessages.length, isVoiceOverEnabled]);
 
   const loadingStages = [
     "Planning your trip",
@@ -969,9 +986,6 @@ export const AIChat: React.FC = () => {
 
   const triggerToast = (msg: string) => {
     setToastMessage(msg);
-    if (isVoiceOverEnabled) {
-      speakText(msg);
-    }
     setTimeout(() => setToastMessage(null), 3000);
   };
 
@@ -995,10 +1009,16 @@ export const AIChat: React.FC = () => {
         return { label: "Attractions Agent", icon: Compass, color: "text-purple-605 text-purple-600 bg-purple-50 dark:bg-purple-950/20 border-purple-100 dark:border-purple-900/30" };
       case "budget":
         return { label: "Budget Agent", icon: DollarSign, color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900/30" };
+      case "calendar":
+      case "merge":
+      case "questionnaire":
+        return { label: "Trip Planner", icon: Calendar, color: "text-teal-700 bg-teal-50 dark:bg-teal-950/25 border-teal-100 dark:border-teal-900/40" };
       case "rag_service":
         return { label: "RAG Knowledge", icon: BookOpen, color: "text-indigo-700 bg-indigo-50 dark:bg-indigo-950/25 border-indigo-100 dark:border-indigo-900/40" };
       case "live_web_search":
         return { label: "Live Web Search", icon: Globe2, color: "text-teal-700 bg-teal-50 dark:bg-teal-950/25 border-teal-100 dark:border-teal-900/40" };
+      case "recommendation":
+        return { label: "Destination Suggestions", icon: Compass, color: "text-purple-700 bg-purple-50 dark:bg-purple-950/25 border-purple-100 dark:border-purple-900/40" };
       case "offline":
         return { label: "Offline Fallback", icon: AlertCircle, color: "text-amber-700 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-900/40" };
       default:
@@ -1010,6 +1030,11 @@ export const AIChat: React.FC = () => {
   const handleLoadTrip = (trip: TripDetails) => {
     setActiveTrip(trip);
     navigate("/planner");
+  };
+
+  const handleViewItinerary = (trip: TripDetails) => {
+    setActiveTrip(trip);
+    navigate("/itinerary");
   };
 
   const handleCardModify = (trip: TripDetails) => {
@@ -1042,43 +1067,6 @@ export const AIChat: React.FC = () => {
     }
   };
 
-  // Web Speech API Microphone listener
-  const toggleListening = () => {
-    if (!SpeechRecognitionConstructor) {
-      triggerToast("Speech recognition is not supported in this browser.");
-      return;
-    }
-
-    if (isListening) {
-      setIsListening(false);
-      return;
-    }
-
-    const recognition = new SpeechRecognitionConstructor();
-    recognition.lang = "en-US";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    setIsListening(true);
-
-    recognition.onresult = (event: any) => {
-      const speechToText = event.results[0][0].transcript;
-      setQuestion(speechToText);
-      setIsListening(false);
-      setTimeout(() => handleSend(speechToText), 800);
-    };
-
-    recognition.onerror = () => {
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-
-    recognition.start();
-  };
-
   const suggestedPrompts = [
     "Plan a 3-day cultural trip to Madurai",
     "Find romantic restaurants in Chennai Marina",
@@ -1087,32 +1075,46 @@ export const AIChat: React.FC = () => {
   ];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50/50 dark:bg-[#0b0f19] relative">
+    <div className={`flex flex-col bg-slate-50/50 dark:bg-[#0b0f19] relative ${embedded ? "h-[760px] min-h-[620px] rounded-2xl overflow-hidden border border-slate-200/70 dark:border-slate-800/70 shadow-sm" : "h-[calc(100vh-4rem)]"}`}>
       
       {/* Voice-Over Mode Header Bar */}
       <div className="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 bg-white/55 dark:bg-[#111827]/55 backdrop-blur px-5 py-3 text-left">
         <div>
           <h2 className="text-xs font-bold text-slate-800 dark:text-slate-205 flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-teal-605" />
-            AI Travel Assistant
+            AI Concierge
           </h2>
         </div>
-        <button
-          onClick={toggleVoiceOver}
-          className={`px-3 py-1.5 rounded-full border text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[9px] font-extrabold sm:text-[10px] ${travelProfile.aiMemoryEnabled
+              ? "border-violet-100 bg-violet-50 text-violet-700 dark:border-violet-900/40 dark:bg-violet-950/20 dark:text-violet-300"
+              : "border-slate-200 bg-slate-50 text-slate-400 dark:border-slate-800 dark:bg-slate-900"
+            }`}
+            title="Profile memory uses your saved travel preferences when planning"
+          >
+            <Brain className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Profile memory</span>
+            <span>{travelProfile.aiMemoryEnabled ? "ON" : "OFF"}</span>
+          </span>
+          {/* Voice conversation controls live in the itinerary AI Concierge. */}
+          {/* <button
+            onClick={toggleVoiceOver}
+            className={`px-2.5 py-1.5 rounded-full border text-[9px] sm:text-[10px] font-extrabold flex items-center gap-1.5 transition-all select-none hover-scale ${
             isVoiceOverEnabled
               ? "bg-teal-50 dark:bg-teal-950/20 text-teal-700 dark:text-teal-400 border-teal-100 dark:border-teal-900/40 shadow-sm"
               : "bg-slate-50 dark:bg-slate-900 text-slate-455 dark:text-slate-400 border-slate-200 dark:border-slate-800"
-          }`}
-          title="Toggle Smart Voice Notification Aloud Mode"
-        >
-          {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-          <span>{isVoiceOverEnabled ? "Voice notifications ON" : "Voice notifications OFF"}</span>
-        </button>
+            }`}
+            title="Toggle Smart Voice Notification Aloud Mode"
+          >
+            {isVoiceOverEnabled ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
+            <span>{isVoiceOverEnabled ? "Read replies ON" : "Read replies OFF"}</span>
+          </button> */}
+        </div>
       </div>
 
       {/* 1. Chat Dialog Log */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 no-scrollbar">
+      <div className="chat-scrollbar flex-1 overflow-y-scroll p-4 sm:p-6 space-y-6">
         
         {chatMessages.length === 0 ? (
           /* Landing Empty State */
@@ -1152,6 +1154,7 @@ export const AIChat: React.FC = () => {
           <div className="space-y-6 max-w-3xl mx-auto pb-4">
             {chatMessages.map((msg, idx) => {
               const isUser = msg.role === "user";
+              const deckImages = msg.tripCard ? itineraryDeckImages(msg.tripCard) : [];
               const isOfflineReply = !isUser && msg.routes?.includes("offline");
               return (
                 <div key={idx} className={`flex gap-3 text-left ${isUser ? "justify-end" : "justify-start"}`}>
@@ -1168,24 +1171,12 @@ export const AIChat: React.FC = () => {
                     
                     {/* ChatGPT-style bubbles */}
                     <div
-                      className={`relative p-4 rounded-2xl shadow-sm border leading-relaxed ${
+                      className={`relative p-4 rounded-2xl leading-relaxed ${
                         isUser
-                          ? "bg-teal-600 border-teal-650 text-white rounded-br-none"
-                          : "bg-white dark:bg-[#111827] border-slate-200/60 dark:border-slate-800 text-slate-700 dark:text-slate-200 rounded-bl-none pr-9"
+                          ? "bg-teal-600 text-white rounded-br-none"
+                          : "bg-white/80 dark:bg-[#111827]/80 text-slate-700 dark:text-slate-200 rounded-bl-none pr-9"
                       }`}
                     >
-                      {/* Read Aloud button for assistant replies */}
-                      {!isUser && (
-                        <button
-                          onClick={() => speakText(msg.text)}
-                          className="absolute top-2.5 right-2.5 p-1 rounded-lg text-slate-400 hover:text-teal-605 hover:bg-slate-105 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all hover-scale"
-                          title="Read Aloud"
-                        >
-                          <Volume2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-
-                    
                       {isOfflineReply && (
                         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left text-[11px] font-semibold text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/25 dark:text-amber-300">
                           <div className="flex items-start gap-2">
@@ -1255,7 +1246,7 @@ export const AIChat: React.FC = () => {
                       {!isUser && msg.questionnaire && (
                         <div className="mt-3.5 border-t border-slate-100 pt-3 text-left dark:border-slate-800/80">
                           <div className="mb-1.5 flex items-center justify-between gap-3 text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
-                            <span>{msg.questionnaire.agent} questions</span>
+                            <span>{msg.questionnaire.agent === "calendar" ? "Trip planning questions" : `${msg.questionnaire.agent} questions`}</span>
                             <span>{msg.questionnaire.completed}/{msg.questionnaire.total}</span>
                           </div>
                           <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -1273,9 +1264,9 @@ export const AIChat: React.FC = () => {
                       </span>
 
                       {/* Enabled Agent Chips */}
-                      {msg.routes && msg.routes.length > 0 && (
+                      {msg.routes && msg.routes.some((route) => !["rag_service", "live_web_search", "recommendation"].includes(route)) && (
                         <div className="flex flex-wrap gap-1 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
-                          {msg.routes.map((rt) => {
+                          {msg.routes.filter((route) => !["rag_service", "live_web_search", "recommendation"].includes(route)).map((rt) => {
                             const badge = getAgentBadge(rt);
                             const Icon = badge.icon;
                             return (
@@ -1300,16 +1291,10 @@ export const AIChat: React.FC = () => {
                         className="rounded-2xl overflow-hidden border border-slate-200/60 dark:border-slate-800/85 bg-white dark:bg-[#111827] shadow-md text-left"
                       >
                         {/* City Cover Image */}
-                        <div className="h-32 relative bg-slate-100 dark:bg-slate-800">
-                          <img
-                            src={msg.tripCard.bannerImage}
-                            alt={msg.tripCard.cityName}
-                            loading="lazy"
-                            decoding="async"
-                            className="w-full h-full object-contain bg-slate-950"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 to-transparent" />
-                          <div className="absolute bottom-3 left-4 text-white text-left">
+                        <div className="relative min-h-52 overflow-hidden bg-slate-100 dark:bg-slate-800">
+                          <ImageSlider images={deckImages} />
+                          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent" />
+                          <div className="pointer-events-none absolute bottom-5 left-5 z-10 text-left text-white">
                             <span className="text-[9px] font-bold text-teal-400 bg-teal-950/60 backdrop-blur-sm px-2.5 py-0.5 rounded border border-teal-500/20 uppercase tracking-wider mb-1 inline-block">
                               Itinerary Deck
                             </span>
@@ -1366,6 +1351,15 @@ export const AIChat: React.FC = () => {
                           >
                             <Save className="h-3.5 w-3.5" />
                             Save Trip
+                          </button>
+
+                          <button
+                            onClick={() => handleViewItinerary(msg.tripCard!)}
+                            title="View the day-by-day itinerary"
+                            className="min-h-9 justify-center px-3 py-2 border border-teal-200 dark:border-teal-900/60 text-teal-700 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-950/25 rounded-xl text-[10.5px] font-bold flex items-center gap-1.5 hover-scale"
+                          >
+                            <ListChecks className="h-3.5 w-3.5" />
+                            View Itinerary
                           </button>
 
                           <button
@@ -1612,7 +1606,7 @@ export const AIChat: React.FC = () => {
             {/* Input field */}
             <input
               type="text"
-              placeholder={isListening ? "Listening... Speak your request" : "Describe where to go, budget, sights..."}
+              placeholder="Describe where to go, budget, sights..."
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
@@ -1621,22 +1615,23 @@ export const AIChat: React.FC = () => {
               className="flex-1 bg-transparent border-none outline-none text-xs sm:text-sm text-slate-700 dark:text-slate-305 placeholder-slate-405 font-medium"
             />
 
-            {/* Web Speech voice */}
-            <button
+            {/* Speech conversation is available in the itinerary AI Concierge. */}
+            {/* <button
               onClick={toggleListening}
               disabled={!isSpeechRecognitionSupported}
-              className={`p-2 rounded-lg transition-colors ${
+              className={`flex items-center gap-1.5 rounded-lg px-2 py-2 text-[10px] font-bold transition-colors ${
                 !isSpeechRecognitionSupported
                   ? "cursor-not-allowed text-slate-300 dark:text-slate-700"
                   : isListening
                   ? "bg-red-50 text-red-500 dark:bg-red-950/20 animate-pulse"
                   : "text-slate-400 hover:text-slate-655 hover:bg-slate-100 dark:hover:bg-slate-800"
               }`}
-              aria-label="Speech to Text"
-              title={isSpeechRecognitionSupported ? "Speech to Text" : "Speech recognition is not supported in this browser"}
+              aria-label="Speak to AI (speech to text)"
+              title={isSpeechRecognitionSupported ? "Speak to AI (speech to text)" : "Speech recognition is not supported in this browser"}
             >
               <Mic className="w-4.5 h-4.5" />
-            </button>
+              <span className="hidden sm:inline">{isListening ? "Listening…" : "Speak"}</span>
+            </button> */}
 
             {/* Send */}
             <button
@@ -1650,7 +1645,7 @@ export const AIChat: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 font-semibold">
-            <span>{isListening ? "🎤 Web Speech Listening Active" : "Google Cloud powered travel agents"}</span>
+            <span>Google Cloud powered travel agents</span>
             <span className="flex items-center gap-1">
               <Info className="w-3.5 h-3.5" />
               Markdown details supported

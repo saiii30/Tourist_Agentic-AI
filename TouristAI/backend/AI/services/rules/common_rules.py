@@ -133,35 +133,31 @@ def extract_dates(text: str) -> Tuple[Optional[str], Optional[str]]:
 
 def extract_budget(text: str) -> Optional[str]:
     lower = text.lower()
-    nums = re.findall(r"\b\d+\b", lower.replace(",", ""))
-    
-    budget_keywords = ["budget", "cheap", "low", "affordable", "economy", "pocket friendly", "less expensive", "rs", "inr", "rupees"]
+    budget_keywords = ["cheap", "low", "affordable", "economy", "budget friendly", "budget-friendly", "pocket friendly", "less expensive"]
     moderate_keywords = ["moderate", "medium", "mid", "average", "normal", "decent", "reasonable"]
     luxury_keywords = ["luxury", "premium", "expensive", "high", "fancy", "5 star", "five star", "best", "top"]
-    
-    has_budget_context = any(w in lower for w in budget_keywords + moderate_keywords + luxury_keywords)
-    
-    if nums:
-        val = int(nums[0])
-        # Ignore years unless budget context is explicitly present
-        if 2024 <= val <= 2035 and not has_budget_context:
-            return None
-        # Bare small numbers like 1, 2, 3 should not be parsed as budget unless budget context is present.
-        if val < 500 and not has_budget_context:
-            return None
+
+    # Explicit tiers must win over unrelated numbers such as trip duration,
+    # traveler count, or year.
+    if any(w in lower for w in luxury_keywords):
+        return "Luxury"
+    if any(w in lower for w in moderate_keywords):
+        return "Moderate"
+    if any(w in lower for w in budget_keywords):
+        return "Low"
+
+    amount_match = re.search(
+        r"(?:₹|rs\.?|inr|rupees?|budget\s*(?:of|is|:)?\s*)\s*([0-9][0-9,]*)",
+        lower,
+    )
+    if amount_match:
+        val = int(amount_match.group(1).replace(",", ""))
         if val <= 5000:
             return "Low"
         elif val <= 15000:
             return "Moderate"
         else:
             return "Luxury"
-            
-    if any(w in lower for w in budget_keywords):
-        return "Low"
-    if any(w in lower for w in moderate_keywords):
-        return "Moderate"
-    if any(w in lower for w in luxury_keywords):
-        return "Luxury"
         
     return None
 
